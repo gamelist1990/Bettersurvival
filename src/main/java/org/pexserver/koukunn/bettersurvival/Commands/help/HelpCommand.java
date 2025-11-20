@@ -22,12 +22,12 @@ public class HelpCommand extends BaseCommand {
 
     @Override
     public String getName() {
-        return "pexhelp";
+        return "BetterHelp";
     }
 
     @Override
     public String getDescription() {
-        return "PEX Survival のコマンド一覧を表示";
+        return "Better Survival のコマンド一覧を表示";
     }
 
     @Override
@@ -37,7 +37,7 @@ public class HelpCommand extends BaseCommand {
 
     @Override
     public boolean execute(CommandSender sender, String[] args) {
-        sender.sendMessage("§b========== PEX Survival コマンド一覧 ==========");
+        sender.sendMessage("§b========== Better Survival コマンド一覧 ==========");
 
         for (BaseCommand cmd : commandManager.getCommands().values()) {
             // 実行者がそのコマンドを実行できるか確認（カスタム権限 or PermissionLevel）
@@ -55,7 +55,7 @@ public class HelpCommand extends BaseCommand {
 
     @Override
     public String getUsage() {
-        return "/pexhelp [ページ番号]";
+        return "/BetterHelp [ページ番号]";
     }
 
     @Override

@@ -8,6 +8,7 @@ public final class Loader extends JavaPlugin {
 
     private CommandManager commandManager;
     private ConfigManager configManager;
+    private org.pexserver.koukunn.bettersurvival.Modules.ToggleModule toggleModule;
 
     @Override
     public void onEnable() {
@@ -18,6 +19,26 @@ public final class Loader extends JavaPlugin {
 
         // コマンドを登録
         registerCommands();
+
+        // Toggle module (GUI)
+        toggleModule = new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule(this);
+        getServer().getPluginManager().registerEvents(new org.pexserver.koukunn.bettersurvival.Modules.ToggleListener(toggleModule), this);
+
+        // TreeMine モジュール登録
+        org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule treemine = new org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule(toggleModule);
+        getServer().getPluginManager().registerEvents(treemine, this);
+        // OreMine モジュール登録
+        org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule oremine = new org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule(toggleModule);
+        getServer().getPluginManager().registerEvents(oremine, this);
+        // Toggle 機能として登録
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します", org.bukkit.Material.DIAMOND_AXE));
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（ツルハシ＋スニークで発動）", org.bukkit.Material.DIAMOND_PICKAXE));
+        if (!toggleModule.hasGlobal("treemine")) {
+            toggleModule.setGlobal("treemine", true);
+        }
+        if (!toggleModule.hasGlobal("oremine")) {
+            toggleModule.setGlobal("oremine", true);
+        }
 
 
         getLogger().info("Better Survival Plugin が有効になりました");
@@ -30,6 +51,8 @@ public final class Loader extends JavaPlugin {
     private void registerCommands() {
         // ヘルプコマンド
         commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand(commandManager));
+        // Toggle command
+        commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand(this));
         // 他のコマンドはここに追加できます
     }
 
@@ -44,6 +67,10 @@ public final class Loader extends JavaPlugin {
   
     public org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager getConfigManager() {
         return configManager;
+    }
+
+    public org.pexserver.koukunn.bettersurvival.Modules.ToggleModule getToggleModule() {
+        return toggleModule;
     }
 
     @Override
