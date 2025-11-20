@@ -27,14 +27,22 @@ public final class Loader extends JavaPlugin {
         // TreeMine モジュール登録
         org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule treemine = new org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(treemine, this);
+        getServer().getPluginManager().registerEvents(new org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoFeed.AutoFeedModule(toggleModule), this);
         // OreMine モジュール登録
         org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule oremine = new org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(oremine, this);
         // Toggle 機能として登録
-        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します", org.bukkit.Material.DIAMOND_AXE));
-        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（ツルハシ＋スニークで発動）", org.bukkit.Material.DIAMOND_PICKAXE));
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します(スニーク必須)", org.bukkit.Material.DIAMOND_AXE));
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（スニーク必須）", org.bukkit.Material.DIAMOND_PICKAXE));
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("autofeed", "AutoFeed", "餌を与えると周辺の動物にも自動で餌を与えます", org.bukkit.Material.WHEAT));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
+        }
+        if (!toggleModule.hasGlobal("oremine")) {
+            toggleModule.setGlobal("oremine", true);
+        }
+        if (!toggleModule.hasGlobal("autofeed")) {
+            toggleModule.setGlobal("autofeed", true);
         }
         if (!toggleModule.hasGlobal("oremine")) {
             toggleModule.setGlobal("oremine", true);
