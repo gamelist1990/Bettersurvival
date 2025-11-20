@@ -1,0 +1,6 @@
+name: Bettersurvival
+version: '1.0-SNAPSHOT'
+main: org.pexserver.koukunn.bettersurvival.Bettersurvival
+api-version: '1.21'
+authors: [ Koukunn ]
+description: PEXServer Plugin
