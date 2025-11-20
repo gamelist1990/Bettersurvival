@@ -105,6 +105,10 @@ public class AutoFeedModule implements Listener {
                         } catch (Throwable ignored) {
                             canBreed = false;
                         }
+                        // 既にlove状態ならスキップ
+                        try {
+                            if (animal.getLoveModeTicks() > 0) continue;
+                        } catch (Throwable ignored) {}
                         if (!canBreed)
                             continue;
 

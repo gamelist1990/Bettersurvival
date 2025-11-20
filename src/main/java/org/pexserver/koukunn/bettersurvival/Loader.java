@@ -28,6 +28,10 @@ public final class Loader extends JavaPlugin {
         org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule treemine = new org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(treemine, this);
         getServer().getPluginManager().registerEvents(new org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoFeed.AutoFeedModule(toggleModule), this);
+        // AnythingFeed module (allow edible items on non-breedable mobs)
+        getServer().getPluginManager().registerEvents(new org.pexserver.koukunn.bettersurvival.Modules.Feature.AnythingFeed.AnythingFeedModule(toggleModule), this);
+        // AutoPlant モジュール登録
+        getServer().getPluginManager().registerEvents(new org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule(toggleModule), this);
         // OreMine モジュール登録
         org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule oremine = new org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(oremine, this);
@@ -35,6 +39,8 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します(スニーク必須)", org.bukkit.Material.DIAMOND_AXE));
         toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（スニーク必須）", org.bukkit.Material.DIAMOND_PICKAXE));
         toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("autofeed", "AutoFeed", "餌を与えると周辺の動物にも自動で餌を与えます", org.bukkit.Material.WHEAT));
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("anythingfeed", "AnythingFeed", "非繁殖動物に任意の食料で反応するようにします", org.bukkit.Material.APPLE));
+        toggleModule.registerFeature(new org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature("autoplant", "AutoPlant", "オフハンドに植えたいアイテムを持ちながら耕した土の近くに行くと自動で植え・収穫します", org.bukkit.Material.WHEAT_SEEDS));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -43,6 +49,12 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("autofeed")) {
             toggleModule.setGlobal("autofeed", true);
+        }
+        if (!toggleModule.hasGlobal("anythingfeed")) {
+            toggleModule.setGlobal("anythingfeed", true);
+        }
+        if (!toggleModule.hasGlobal("autoplant")) {
+            toggleModule.setGlobal("autoplant", true);
         }
         if (!toggleModule.hasGlobal("oremine")) {
             toggleModule.setGlobal("oremine", true);
