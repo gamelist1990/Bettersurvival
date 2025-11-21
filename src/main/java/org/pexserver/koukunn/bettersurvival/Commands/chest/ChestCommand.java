@@ -42,6 +42,14 @@ public class ChestCommand extends BaseCommand {
             return true;
         }
 
+
+        org.pexserver.koukunn.bettersurvival.Modules.ToggleModule toggle = plugin.getToggleModule();
+        boolean current = toggle.getGlobal("chestlock");
+        if (!current) {
+            sendError(sender, "ChestLock 機能は無効化されています");
+            return true;
+        }
+
         Player p = (Player) sender;
 
         if (args.length == 0) {
@@ -119,8 +127,6 @@ public class ChestCommand extends BaseCommand {
                 return true;
             }
             if ("toggle".equals(opSub)) {
-                org.pexserver.koukunn.bettersurvival.Modules.ToggleModule toggle = plugin.getToggleModule();
-                boolean current = toggle.getGlobal("chestlock");
                 toggle.setGlobal("chestlock", !current);
                 sendSuccess(sender, "ChestLock のグローバル設定を " + (!current ? "有効" : "無効") + " にしました");
                 return true;

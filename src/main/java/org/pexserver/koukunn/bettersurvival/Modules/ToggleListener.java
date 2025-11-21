@@ -47,6 +47,15 @@ public class ToggleListener implements Listener {
                     module.setGlobal(f.getKey(), !current);
                     clicker.sendMessage((!current ? "§a『" + display + "』のグローバルを有効にしました" : "§c『" + display + "』のグローバルを無効にしました"));
                 } else {
+                    // ユーザーによる切替を禁止されている場合はエラーメッセージ
+                    try {
+                        if (!f.isUserToggleAllowed()) {
+                            clicker.sendMessage("§cこの機能は個別に切り替えできません。管理者によって有効/無効を制御してください。");
+                            return;
+                        }
+                    } catch (NoSuchMethodError ex) {
+                        // older ToggleFeature may not have this method — fall back to existing behavior
+                    }
                     boolean current = module.isEnabledFor(clicker.getUniqueId().toString(), f.getKey());
                     module.setEnabledFor(clicker.getUniqueId().toString(), f.getKey(), !current);
                     clicker.sendMessage((!current ? "§a『" + display + "』の機能を有効にしました" : "§c『" + display + "』の機能を無効にしました"));

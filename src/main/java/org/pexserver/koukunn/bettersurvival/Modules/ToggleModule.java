@@ -56,6 +56,14 @@ public class ToggleModule implements Listener {
             if (hasGlobal(f.getKey()) && !getGlobal(f.getKey())) {
                 continue;
             }
+            // ユーザーからの個別切替が禁止されている機能は UI に表示しない
+            try {
+                if (!f.isUserToggleAllowed()) {
+                    continue;
+                }
+            } catch (NoSuchMethodError e) {
+                // 互換: 古い ToggleFeature には isUserToggleAllowed がない場合は表示
+            }
 
             visible.add(f);
         }
@@ -112,6 +120,11 @@ public class ToggleModule implements Listener {
     }
 
     public boolean isEnabledFor(String uuid, String featureKey) {
+        ToggleFeature f = features.get(featureKey);
+        // If feature does not allow per-user toggle, follow global
+        if (f != null && !f.isUserToggleAllowed()) {
+            return getGlobal(featureKey);
+        }
         Optional<PEXConfig> cfg = configManager.loadConfig(getUserConfigPath(uuid));
         if (!cfg.isPresent()) return false;
         Object obj = cfg.get().get(featureKey);
@@ -119,6 +132,8 @@ public class ToggleModule implements Listener {
     }
 
     public boolean setEnabledFor(String uuid, String featureKey, boolean value) {
+        ToggleFeature f = features.get(featureKey);
+        if (f != null && !f.isUserToggleAllowed()) return false;
         PEXConfig cfg = configManager.loadConfig(getUserConfigPath(uuid)).orElseGet(PEXConfig::new);
         cfg.put(featureKey, value);
         return configManager.saveConfig(getUserConfigPath(uuid), cfg);
@@ -146,13 +161,20 @@ public class ToggleModule implements Listener {
         private final String displayName;
         private final String description;
         private final Material icon;
+        private final boolean userToggleAllowed;
 
         public ToggleFeature(String key, String displayName, String description, Material icon) {
+            this(key, displayName, description, icon, true);
+        }
+
+        public ToggleFeature(String key, String displayName, String description, Material icon, boolean userToggleAllowed) {
             this.key = key;
             this.displayName = displayName;
             this.description = description;
             this.icon = icon;
+            this.userToggleAllowed = userToggleAllowed;
         }
+        public boolean isUserToggleAllowed() { return userToggleAllowed; }
     public String getDescription() { return description; }
 
         public String getKey() { return key; }
