@@ -1,5 +1,8 @@
 package org.pexserver.koukunn.bettersurvival.Commands.toggle;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
@@ -55,8 +58,8 @@ public class ToggleCommand extends BaseCommand {
     }
 
     @Override
-    public java.util.List<String> getTabCompletions(CommandSender sender, String[] args) {
-        java.util.List<String> list = new java.util.ArrayList<>();
+    public List<String> getTabCompletions(CommandSender sender, String[] args) {
+        List<String> list = new ArrayList<>();
         if (args.length == 1) list.add("op");
         return list;
     }

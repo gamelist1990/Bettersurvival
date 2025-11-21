@@ -5,7 +5,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-// import org.bukkit.block.Chest;
+import org.bukkit.block.BlockState;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -13,27 +13,28 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
-// import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
-// import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.event.inventory.InventoryType;
-// import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
+import org.bukkit.OfflinePlayer;
 
 import java.util.*;
+import java.util.UUID;
 
 public class ChestLockModule implements Listener {
 
     private final ChestLockStore store;
-    private final org.pexserver.koukunn.bettersurvival.Modules.ToggleModule toggle;
+    private final ToggleModule toggle;
 
-    public ChestLockModule(org.pexserver.koukunn.bettersurvival.Modules.ToggleModule toggle, ConfigManager manager) {
+    public ChestLockModule(ToggleModule toggle, ConfigManager manager) {
         this.toggle = toggle;
         this.store = new ChestLockStore(manager);
     }
@@ -45,7 +46,6 @@ public class ChestLockModule implements Listener {
         if (b.getType() != Material.CHEST && b.getType() != Material.TRAPPED_CHEST && b.getType() != Material.BARREL) return list;
         list.add(b.getLocation());
 
-        // Check double chest neighbors
         for (BlockFace face : Arrays.asList(BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)) {
             Block nb = b.getRelative(face);
             if (nb.getType() == b.getType()) {
@@ -80,19 +80,18 @@ public class ChestLockModule implements Listener {
     @EventHandler
     public void onBlockBreak(BlockBreakEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
-        // no toggle gating: chest locks are always active if present
         Block b = e.getBlock();
         for (Location loc : getChestRelatedLocations(b)) {
             Optional<ChestLock> opt = store.get(loc);
             if (!opt.isPresent()) continue;
             ChestLock lock = opt.get();
-            if (e.getPlayer().isOp()) continue; // op can break
+            if (e.getPlayer().isOp()) continue; 
             if (!lock.getOwner().equals(e.getPlayer().getUniqueId().toString())) {
                 e.setCancelled(true);
                 String ownerName = "不明";
                 try {
-                    java.util.UUID ownerUuid = java.util.UUID.fromString(lock.getOwner());
-                    org.bukkit.OfflinePlayer op = Bukkit.getOfflinePlayer(ownerUuid);
+                    UUID ownerUuid = UUID.fromString(lock.getOwner());
+                    OfflinePlayer op = Bukkit.getOfflinePlayer(ownerUuid);
                     if (op != null && op.getName() != null) ownerName = op.getName();
                 } catch (Exception ex) {
                     ownerName = lock.getOwner();
@@ -106,7 +105,6 @@ public class ChestLockModule implements Listener {
     @EventHandler
     public void onInventoryOpen(InventoryOpenEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
-        // no toggle gating: chest locks are always active if present
         if (e.getInventory() == null) return;
         if (e.getInventory().getType() != InventoryType.CHEST && e.getInventory().getType() != InventoryType.BARREL) return;
         if (!(e.getPlayer() instanceof Player)) return;
@@ -123,8 +121,8 @@ public class ChestLockModule implements Listener {
                 if (ownerLock.isPresent()) {
                     ChestLock l = ownerLock.get();
                     try {
-                        java.util.UUID ownerUuid = java.util.UUID.fromString(l.getOwner());
-                        org.bukkit.OfflinePlayer op = Bukkit.getOfflinePlayer(ownerUuid);
+                        UUID ownerUuid = UUID.fromString(l.getOwner());
+                        OfflinePlayer op = Bukkit.getOfflinePlayer(ownerUuid);
                         if (op != null && op.getName() != null) ownerName = op.getName();
                     } catch (Exception ex) {
                         ownerName = l.getOwner();
@@ -148,10 +146,9 @@ public class ChestLockModule implements Listener {
     @EventHandler
     public void onInventoryMoveItem(InventoryMoveItemEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
-        // no toggle gating: chest locks are always active if present
         if (e.getSource() == null || e.getDestination() == null) return;
-        Location srcLoc = (e.getSource().getHolder() instanceof org.bukkit.block.BlockState) ? ((org.bukkit.block.BlockState) e.getSource().getHolder()).getLocation() : null;
-        Location dstLoc = (e.getDestination().getHolder() instanceof org.bukkit.block.BlockState) ? ((org.bukkit.block.BlockState) e.getDestination().getHolder()).getLocation() : null;
+        Location srcLoc = (e.getSource().getHolder() instanceof BlockState) ? ((BlockState) e.getSource().getHolder()).getLocation() : null;
+        Location dstLoc = (e.getDestination().getHolder() instanceof BlockState) ? ((BlockState) e.getDestination().getHolder()).getLocation() : null;
         if (srcLoc != null && store.get(srcLoc).isPresent()) {
             e.setCancelled(true);
             return;
@@ -165,7 +162,6 @@ public class ChestLockModule implements Listener {
     @EventHandler
     public void onPistonExtend(BlockPistonExtendEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
-        // no toggle gating: chest locks are always active if present
         for (Block b : e.getBlocks()) {
             if (store.get(b.getLocation()).isPresent()) {
                 e.setCancelled(true);
@@ -177,7 +173,6 @@ public class ChestLockModule implements Listener {
     @EventHandler
     public void onPistonRetract(BlockPistonRetractEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
-        // no toggle gating: chest locks are always active if present
         for (Block b : e.getBlocks()) {
             if (store.get(b.getLocation()).isPresent()) {
                 e.setCancelled(true);
@@ -189,7 +184,6 @@ public class ChestLockModule implements Listener {
     @EventHandler
     public void onExplode(EntityExplodeEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
-        // protect against explosion: remove locked chests from exploding blocks
         List<Block> remove = new ArrayList<>();
         for (Block b : e.blockList()) {
             if (store.get(b.getLocation()).isPresent()) {
@@ -213,22 +207,18 @@ public class ChestLockModule implements Listener {
         SkullMeta meta = null;
         if (clicked.getItemMeta() instanceof SkullMeta) meta = (SkullMeta) clicked.getItemMeta();
         if (meta == null || meta.getOwningPlayer() == null) {
-            // might be lock/unlock button
-            org.bukkit.inventory.meta.ItemMeta m = clicked.getItemMeta();
+            ItemMeta m = clicked.getItemMeta();
             if (m != null && m.hasDisplayName()) {
                 String d = m.getDisplayName();
-                // Lock
                 if (d.contains("ロックする")) {
                     Location ctx = ChestLockUI.getOpenLocation(p.getUniqueId());
                     if (ctx == null) return;
-                    // create lock with auto name
-                    ChestLock newLock = new ChestLock(p.getUniqueId().toString(), "lock-" + java.util.UUID.randomUUID().toString().substring(0,6));
+                    ChestLock newLock = new ChestLock(p.getUniqueId().toString(), "lock-" + UUID.randomUUID().toString().substring(0,6));
                     for (Location l : getChestRelatedLocations(ctx.getBlock())) store.save(l, newLock);
                     p.sendMessage("§aチェストをロックしました: " + newLock.getName());
                     ChestLockUI.openForPlayer(p, newLock, ctx, store);
                     return;
                 }
-                // Unlock
                 if (d.contains("ロック解除")) {
                     Location ctx = ChestLockUI.getOpenLocation(p.getUniqueId());
                     if (ctx == null) return;
@@ -244,7 +234,7 @@ public class ChestLockModule implements Listener {
             }
             return;
         }
-        org.bukkit.OfflinePlayer target = meta.getOwningPlayer();
+        OfflinePlayer target = meta.getOwningPlayer();
         ChestLock lock = ChestLockUI.getOpenLock(p.getUniqueId());
         if (lock == null) return;
         String uuid = target.getUniqueId().toString();
@@ -255,14 +245,12 @@ public class ChestLockModule implements Listener {
             lock.addMember(uuid);
             p.sendMessage("§aメンバーに追加しました: " + target.getName());
         }
-        // Save
         Location loc = ChestLockUI.getOpenLocation(p.getUniqueId());
         if (loc != null) {
             for (Location l : getChestRelatedLocations(loc.getBlock())) {
                 store.save(l, lock);
             }
         }
-        // refresh UI
         ChestLockUI.openForPlayer(p, lock, loc, store);
     }
 

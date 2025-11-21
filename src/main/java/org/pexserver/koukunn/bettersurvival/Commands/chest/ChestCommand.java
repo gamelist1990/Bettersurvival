@@ -6,15 +6,22 @@ import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLock;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockStore;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockUI;
 
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.Container;
 import org.bukkit.Location;
+import org.bukkit.OfflinePlayer;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.ArrayList;
 
 public class ChestCommand extends BaseCommand {
 
@@ -43,7 +50,7 @@ public class ChestCommand extends BaseCommand {
         }
 
 
-        org.pexserver.koukunn.bettersurvival.Modules.ToggleModule toggle = plugin.getToggleModule();
+        ToggleModule toggle = plugin.getToggleModule();
         boolean current = toggle.getGlobal("chestlock");
         if (!current) {
             sendError(sender, "ChestLock 機能は無効化されています");
@@ -119,9 +126,9 @@ public class ChestCommand extends BaseCommand {
             } else if ("see".equals(opSub)) {
                 // open inventory
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    org.bukkit.block.BlockState st = b.getState();
-                    if (st instanceof org.bukkit.block.Container) {
-                        p.openInventory(((org.bukkit.block.Container) st).getInventory());
+                   BlockState st = b.getState();
+                    if (st instanceof Container) {
+                        p.openInventory(((Container) st).getInventory());
                     } else sendError(sender, "インベントリを開けません");
                 });
                 return true;
@@ -177,7 +184,7 @@ public class ChestCommand extends BaseCommand {
                 StringBuilder sb = new StringBuilder();
                 sb.append("メンバー: ");
                 for (String m : lock.getMembers()) {
-                    org.bukkit.OfflinePlayer op = Bukkit.getOfflinePlayer(java.util.UUID.fromString(m));
+                    OfflinePlayer op = Bukkit.getOfflinePlayer(UUID.fromString(m));
                     sb.append(op.getName() == null ? m : op.getName()).append(", ");
                 }
                 sendInfo(sender, sb.toString());
@@ -195,7 +202,7 @@ public class ChestCommand extends BaseCommand {
             if (locs.isEmpty()) { sendError(sender, "対象はチェスト/樽のみです"); return true; }
             ChestLock lock = store.get(locs.get(0)).orElse(null);
             plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockUI.openForPlayer(p, lock, locs.get(0), store);
+                    ChestLockUI.openForPlayer(p, lock, locs.get(0), store);
                 });
             return true;
         }
@@ -205,8 +212,8 @@ public class ChestCommand extends BaseCommand {
     }
 
     @Override
-    public java.util.List<String> getTabCompletions(CommandSender sender, String[] args) {
-        java.util.List<String> list = new java.util.ArrayList<>();
+    public List<String> getTabCompletions(CommandSender sender, String[] args) {
+        List<String> list = new ArrayList<>();
         if (args.length == 1) {
             list.add("lock"); list.add("unlock"); list.add("member"); list.add("ui"); list.add("op");
         }

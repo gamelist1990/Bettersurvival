@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Core.Util;
 
 // Bukkit import not required
 import org.bukkit.entity.Player;
+import org.geysermc.floodgate.api.FloodgateApi;
 
 import java.util.UUID;
 
@@ -13,9 +14,9 @@ public final class FloodgateUtil {
 
     private FloodgateUtil() {}
 
-    private static org.geysermc.floodgate.api.FloodgateApi api() {
+    private static FloodgateApi api() {
         try {
-            return org.geysermc.floodgate.api.FloodgateApi.getInstance();
+            return FloodgateApi.getInstance();
         } catch (NoClassDefFoundError | Exception e) {
             return null;
         }
@@ -32,7 +33,7 @@ public final class FloodgateUtil {
      * 指定UUIDがBedrock (Floodgate) プレイヤーか
      */
     public static boolean isBedrock(UUID uuid) {
-        org.geysermc.floodgate.api.FloodgateApi api = api();
+        FloodgateApi api = api();
         if (api == null) return false;
         try {
             return api.isFloodgatePlayer(uuid);

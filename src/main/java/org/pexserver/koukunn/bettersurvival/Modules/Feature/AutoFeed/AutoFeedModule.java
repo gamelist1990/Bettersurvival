@@ -11,6 +11,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.inventory.ItemStack;
+import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.util.*;
@@ -44,7 +45,6 @@ public class AutoFeedModule implements Listener {
             return;
         Player player = e.getPlayer();
 
-        // Toggle are respected
         if (!toggle.getGlobal("autofeed"))
             return;
         if (!toggle.isEnabledFor(player.getUniqueId().toString(), "autofeed"))
@@ -56,7 +56,6 @@ public class AutoFeedModule implements Listener {
         if (hand == null)
             return;
 
-        // まず Animals#isBreedItem を使って判定
         boolean isBreedItem = false;
         try {
             isBreedItem = target instanceof org.bukkit.entity.Animals
@@ -64,7 +63,6 @@ public class AutoFeedModule implements Listener {
         } catch (Throwable ignored) {
         }
 
-        // API が使えない場合は acceptedFoods の fallback を利用
         if (!isBreedItem) {
             List<Material> foods = acceptedFoods.get(type);
             if (foods == null || foods.isEmpty())
@@ -74,58 +72,54 @@ public class AutoFeedModule implements Listener {
                 return;
         }
 
-        // delay one tick to allow vanilla feed action first
         Material mat = hand.getType();
-        Bukkit.getScheduler().runTaskLater(org.pexserver.koukunn.bettersurvival.Loader
-                .getPlugin(org.pexserver.koukunn.bettersurvival.Loader.class), () -> {
+        Bukkit.getScheduler().runTaskLater(Loader
+                .getPlugin(Loader.class), () -> {
                     ItemStack current = player.getInventory().getItemInMainHand();
                     if (current == null || current.getType() != mat)
-                        return; // no more food
-                    // Search nearby animals, filter candidates then feed sequentially
+                        return;
                     List<Entity> nearby = target.getNearbyEntities(radius, radius, radius);
                     List<Animals> candidates = new ArrayList<>();
                     for (Entity ent : nearby) {
                         if (!(ent instanceof Animals))
                             continue;
                         Animals animal = (Animals) ent;
-                        // Don't feed the same as target
                         if (ent.equals(target))
                             continue;
-                        // Ageable -> must be adult
                         if (animal instanceof Ageable) {
                             Ageable age = (Ageable) animal;
                             if (!age.isAdult())
                                 continue;
                         }
-                        // Check if animal already in love mode
-                        // 正式APIが使えるなら isLoveMode を利用
+
                         boolean canBreed = false;
                         try {
                             canBreed = animal.canBreed();
                         } catch (Throwable ignored) {
                             canBreed = false;
                         }
-                        // 既にlove状態ならスキップ
                         try {
-                            if (animal.getLoveModeTicks() > 0) continue;
-                        } catch (Throwable ignored) {}
+                            if (animal.getLoveModeTicks() > 0)
+                                continue;
+                        } catch (Throwable ignored) {
+                        }
                         if (!canBreed)
                             continue;
 
-                        // Ensure this animal accepts same food (prefer API isBreedItem)
                         boolean accepts = false;
                         try {
                             accepts = animal.isBreedItem(player.getInventory().getItemInMainHand());
-                        } catch (Throwable ignored) {}
+                        } catch (Throwable ignored) {
+                        }
                         if (!accepts) {
                             List<Material> destFoods = acceptedFoods.get(ent.getType());
-                            if (destFoods == null || !destFoods.contains(mat)) continue;
+                            if (destFoods == null || !destFoods.contains(mat))
+                                continue;
                         }
 
                         candidates.add(animal);
                     }
 
-                    // Feed candidates one by one until items run out
                     for (Animals animal : candidates) {
                         if (consumeOne(player)) {
                             try {
@@ -133,7 +127,8 @@ public class AutoFeedModule implements Listener {
                                 animal.setLoveModeTicks(6000);
                             } catch (Throwable t) {
                             }
-                        } else break;
+                        } else
+                            break;
                     }
                 }, 1L);
     }

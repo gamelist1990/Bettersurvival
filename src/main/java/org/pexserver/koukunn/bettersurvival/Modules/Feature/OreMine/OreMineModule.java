@@ -2,6 +2,9 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine;
 
  
 import org.bukkit.block.Block;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -33,8 +36,8 @@ public class OreMineModule implements Listener {
 
         // 条件: プレイヤーがツルハシを持っていて、シフト（スニーク）していること
         if (!p.isSneaking()) return;
-        org.bukkit.inventory.ItemStack main = p.getInventory().getItemInMainHand();
-        if (main == null || main.getType() == org.bukkit.Material.AIR) return;
+        ItemStack main = p.getInventory().getItemInMainHand();
+        if (main == null || main.getType() == Material.AIR) return;
         String name = main.getType().name();
         if (!name.endsWith("_PICKAXE")) return;
 
@@ -47,14 +50,14 @@ public class OreMineModule implements Listener {
         if (toBreak.isEmpty()) return;
 
         // Activation sound
-        p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_ATTACK_SWEEP, 0.6f, 1.0f);
+        p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 0.6f, 1.0f);
 
         for (Block block : toBreak) {
-            p.getWorld().playSound(block.getLocation(), org.bukkit.Sound.BLOCK_STONE_BREAK, 0.8f, 1.0f);
+            p.getWorld().playSound(block.getLocation(), Sound.BLOCK_STONE_BREAK, 0.8f, 1.0f);
             block.breakNaturally();
         }
 
-        p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.2f);
+        p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.2f);
     }
 
     private Set<Block> collectOreBlocks(Block start) {

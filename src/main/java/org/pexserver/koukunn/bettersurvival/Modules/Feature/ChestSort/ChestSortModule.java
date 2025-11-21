@@ -32,7 +32,6 @@ public class ChestSortModule implements Listener {
         if (!(e.getPlayer() instanceof Player)) return;
         Player p = e.getPlayer();
 
-        // スニークかつ手に木の棒
         if (!p.isSneaking()) return;
         if (e.getItem() == null) return;
         if (e.getItem().getType() != Material.STICK) return;
@@ -40,7 +39,6 @@ public class ChestSortModule implements Listener {
         Block clicked = e.getClickedBlock();
         if (clicked == null) return;
 
-        // InventoryHolder をサポートするブロック（チェスト、樽など）なら整理対象
         if (!(clicked.getState() instanceof InventoryHolder)) return;
         InventoryHolder holder = (InventoryHolder) clicked.getState();
         Inventory inv = holder.getInventory();
@@ -50,7 +48,6 @@ public class ChestSortModule implements Listener {
         if (!toggle.getGlobal(key)) return;
         if (!toggle.isEnabledFor(p.getUniqueId().toString(), key)) return;
 
-        // 整理を行う (チェストを開かないようキャンセル)
         e.setCancelled(true);
         List<ItemStack> before = new ArrayList<>();
         for (ItemStack it : inv.getContents()) {
@@ -59,7 +56,6 @@ public class ChestSortModule implements Listener {
 
         sortInventory(inv);
 
-        // feedback
         p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.2f);
         p.sendMessage("§aチェストを整理しました");
     }
@@ -89,7 +85,7 @@ public class ChestSortModule implements Listener {
             if (r != 0) return r;
             int ae = a.getEnchantments().size();
             int be = b.getEnchantments().size();
-            return Integer.compare(be, ae); // 多い方を前に
+            return Integer.compare(be, ae); 
         };
 
         items.sort(cmp);
@@ -137,7 +133,6 @@ public class ChestSortModule implements Listener {
                 if (!Objects.equals(an, bn)) return false;
             }
         }
-        // Enchantment equality: same keys and levels
         if (!a.getEnchantments().equals(b.getEnchantments())) return false;
         return true;
     }

@@ -10,6 +10,8 @@ import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.util.*;
 import org.bukkit.Sound;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.Material;
 
 public class TreeMineModule implements Listener {
 
@@ -30,9 +32,9 @@ public class TreeMineModule implements Listener {
 
         // 条件: プレイヤーが斧を持っていて、シフト（スニーク）していること
         if (!p.isSneaking()) return;
-        org.bukkit.inventory.ItemStack main = p.getInventory().getItemInMainHand();
-        if (main == null || main.getType() == org.bukkit.Material.AIR) return;
-        org.bukkit.Material mt = main.getType();
+        ItemStack main = p.getInventory().getItemInMainHand();
+        if (main == null || main.getType() == Material.AIR) return;
+        Material mt = main.getType();
         // 斧の性質で判定: Material 名が "_AXE" で終わるかどうか
         String name = mt.name();
         boolean isAxe = name.endsWith("_AXE");

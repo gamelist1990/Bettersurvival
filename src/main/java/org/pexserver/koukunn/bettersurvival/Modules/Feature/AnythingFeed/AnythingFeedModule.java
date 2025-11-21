@@ -38,14 +38,12 @@ public class AnythingFeedModule implements Listener {
         if (hand == null) return;
 
         Material mat = hand.getType();
-        // Only allow edible items
         boolean edible = false;
         try {
             edible = mat.isEdible();
         } catch (Throwable ignored) {}
         if (!edible) return;
 
-        // If target is Animals and not accepting breed items, try to set love mode
         if (e.getRightClicked() instanceof Animals) {
             Animals animal = (Animals) e.getRightClicked();
 
@@ -54,7 +52,6 @@ public class AnythingFeedModule implements Listener {
                 acceptsAsBreed = animal.isBreedItem(hand);
             } catch (Throwable ignored) {}
 
-            // If item is a breed item for this animal, skip (AutoFeed should handle)
             if (acceptsAsBreed) return;
 
             boolean canBreed = false;
@@ -74,10 +71,9 @@ public class AnythingFeedModule implements Listener {
             return;
         }
 
-        // For non-Animals living entities, just show hearts and consume one item
         if (e.getRightClicked() instanceof LivingEntity) {
             LivingEntity ent = (LivingEntity) e.getRightClicked();
-            // Do not allow feeding hostile mobs (like Zombies) or villagers
+            // ゾンビ系(敵対モブ)と村人は除外するじゃないと(バランス崩壊する)
             if (ent instanceof Monster) return;
             if (ent instanceof Villager) return;
             player.getWorld().spawnParticle(Particle.HEART, ent.getLocation().add(0, 1, 0), 3);

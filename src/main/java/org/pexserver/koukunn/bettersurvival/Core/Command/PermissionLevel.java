@@ -51,7 +51,6 @@ public enum PermissionLevel {
      * @return 実行可能な場合true
      */
     public boolean hasAccess(CommandSender sender, String customPermission) {
-        // カスタム権限がある場合はそれを優先
         if (customPermission != null && !customPermission.isEmpty()) {
             return sender.hasPermission(customPermission);
         }

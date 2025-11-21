@@ -7,6 +7,8 @@ import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
+import java.util.ArrayList;
 
 public class ChestLockStore {
 
@@ -28,9 +30,9 @@ public class ChestLockStore {
             Map<String,Object> map = (Map<String,Object>) obj;
             ChestLock lock = new ChestLock((String) map.get("owner"), (String) map.get("name"));
             Object mem = map.get("members");
-            if (mem instanceof java.util.List) {
-                java.util.List<Object> list = (java.util.List<Object>) mem;
-                java.util.List<String> members = new java.util.ArrayList<>();
+            if (mem instanceof List) {
+                List<Object> list = (List<Object>) mem;
+                List<String> members = new ArrayList<>();
                 for (Object o : list) members.add(String.valueOf(o));
                 lock.setMembers(members);
             }

@@ -5,7 +5,6 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.Plugin;
-// Component import not required; using LegacyComponentSerializer for legacy-formatted messages
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import java.lang.reflect.Field;
@@ -132,7 +131,7 @@ public class CommandManager {
         }
 
         @Override
-        public boolean testPermissionSilent(org.bukkit.command.CommandSender sender) {
+        public boolean testPermissionSilent(CommandSender sender) {
             // Brigadier / Bukkit の候補表示などはこのメソッドで権限チェックされることがあるため
             // カスタム権限 (getPermission) がある場合はそれを優先し、無ければ PermissionLevel を利用する
             PermissionLevel permLevel = command.getPermissionLevel();
