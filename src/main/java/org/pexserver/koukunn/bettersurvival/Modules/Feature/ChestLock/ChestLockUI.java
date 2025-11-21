@@ -83,11 +83,110 @@ public class ChestLockUI {
             inv.setItem(btnSlot, unlockBtn);
         }
 
+        // If Bedrock (Floodgate), try SimpleForm — fully manage via forms
+        if (org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil.isBedrock(p)) {
+            // Fully build button list and handlers — if shown, don't open inventory
+            boolean shown = openBedrockMainForm(p, nearby, lock, loc, store);
+            if (shown) return;
+        }
+
         p.openInventory(inv);
     }
 
     public static void closeForPlayer(Player p) {
         openLocks.remove(p.getUniqueId());
         openLocations.remove(p.getUniqueId());
+    }
+
+    // Bedrock form menus
+    private static boolean openBedrockMainForm(Player p, List<Player> nearby, ChestLock lock, Location loc, ChestLockStore store) {
+        java.util.List<String> buttons = new ArrayList<>();
+        // Lock state and actions
+        if (lock == null) {
+            buttons.add("🔒 ロックする (自動名)");
+        } else {
+            // show unlock if owner or op
+            boolean ownerOrOp = p.isOp() || (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString()));
+            if (ownerOrOp) buttons.add("🔓 ロック解除");
+            buttons.add("👥 メンバー管理");
+        }
+
+        // Nearby players for adding (only if locked)
+        if (lock != null) {
+            for (Player pl : nearby) {
+                if (pl.getUniqueId().equals(p.getUniqueId())) continue;
+                String label = lock.isMember(pl.getUniqueId().toString()) ? "- " + pl.getName() + " (メンバー)" : "+ " + pl.getName();
+                buttons.add(label);
+            }
+        }
+
+        // Close
+        buttons.add("閉じる");
+
+        boolean shown = org.pexserver.koukunn.bettersurvival.Core.Util.FormsUtil.openSimpleForm(p, TITLE_PREFIX + (lock == null ? "(未ロック)" : lock.getName()), buttons, idx -> {
+            if (idx < 0) return;
+            int action = idx;
+            if (lock == null) {
+                if (action == 0) {
+                    // create lock
+                    ChestLock newLock = new ChestLock(p.getUniqueId().toString(), "lock-" + java.util.UUID.randomUUID().toString().substring(0,6));
+                    for (Location l : org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock())) store.save(l, newLock);
+                    // reopen
+                    openForPlayer(p, newLock, loc, store);
+                }
+                return;
+            }
+
+            // if locked, handle unlock/member/players
+            boolean ownerOrOp = p.isOp() || (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString()));
+            int base = 0;
+            if (ownerOrOp) {
+                if (action == base) {
+                    // unlock
+                    for (Location l : org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock())) store.remove(l);
+                    openForPlayer(p, null, loc, store);
+                    return;
+                }
+                base++;
+            }
+            // member manage
+            if (action == base) {
+                // open member list
+                java.util.List<String> mbtns = new ArrayList<>();
+                for (String m : lock.getMembers()) {
+                    org.bukkit.OfflinePlayer op = Bukkit.getOfflinePlayer(java.util.UUID.fromString(m));
+                    mbtns.add(op.getName() == null ? m : op.getName());
+                }
+                mbtns.add("戻る");
+                org.pexserver.koukunn.bettersurvival.Core.Util.FormsUtil.openSimpleForm(p, "メンバー管理 - " + lock.getName(), mbtns, midx -> {
+                    if (midx < 0) return;
+                    if (midx == mbtns.size() - 1) { openForPlayer(p, lock, loc, store); return; }
+                    String removeUuid = lock.getMembers().get(midx);
+                    lock.removeMember(removeUuid);
+                    for (Location l : org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock())) store.save(l, lock);
+                    openForPlayer(p, lock, loc, store);
+                });
+                return;
+            }
+            base++;
+
+            // nearby players: find clicked player index
+            int idxPlayers = action - base;
+            if (idxPlayers >= 0 && idxPlayers < nearby.size()) {
+                Player target = nearby.get(idxPlayers);
+                String uid = target.getUniqueId().toString();
+                if (lock.isMember(uid)) {
+                    lock.removeMember(uid);
+                } else {
+                    lock.addMember(uid);
+                }
+                for (Location l : org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock())) store.save(l, lock);
+                openForPlayer(p, lock, loc, store);
+                return;
+            }
+            // close
+        });
+
+        return shown;
     }
 }
