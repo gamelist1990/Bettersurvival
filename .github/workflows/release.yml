@@ -58,6 +58,24 @@ jobs:
           echo "RELEASE_DATE=$date" >> $GITHUB_OUTPUT
           echo "TAG_NAME=$tag" >> $GITHUB_OUTPUT
 
+      - name: Delete existing same-day release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const tag = '${{ steps.release_meta.outputs.TAG_NAME }}';
+            const repo = context.repo;
+            try {
+              const existing = await github.rest.repos.getReleaseByTag({ owner: repo.owner, repo: repo.repo, tag });
+              await github.rest.repos.deleteRelease({ owner: repo.owner, repo: repo.repo, release_id: existing.data.id });
+              console.log(`Deleted existing release for tag ${tag}`);
+            } catch (err) {
+              if (err.status === 404) {
+                console.log('No existing release for this tag');
+              } else {
+                throw err;
+              }
+            }
+
       - name: Determine changelog compare URL
         id: changelog
         run: |
@@ -80,7 +98,7 @@ jobs:
           body: |
             Changelog: ${{ steps.changelog.outputs.COMPARE_URL }}
 
-            README: https://github.com/${{ github.repository }}/blob/${{ github.ref }} /README.md
+            README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
 
             Download once uploaded: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_meta.outputs.TAG_NAME }}/${{ steps.find_jar.outputs.JAR_NAME }}
           draft: false
