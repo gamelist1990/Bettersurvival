@@ -13,7 +13,7 @@ import java.util.ArrayList;
 public class ChestLockStore {
 
     private final ConfigManager cfg;
-    private final String path = "chestlocks.json";
+    private final String path = "ChestLock/chestlocks.json";
 
     public ChestLockStore(ConfigManager cfg) {
         this.cfg = cfg;
