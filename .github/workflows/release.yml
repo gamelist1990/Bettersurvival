@@ -78,16 +78,16 @@ jobs:
 
       - name: Determine changelog compare URL
         id: changelog
-        run: |
-          set -euo pipefail
-          git fetch --tags
-          prev_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
-          if [ -n "$prev_tag" ]; then
-            compare_url="https://github.com/${{ github.repository }}/compare/$prev_tag...${{ github.sha }}"
-          else
-            compare_url="https://github.com/${{ github.repository }}/commits/${{ github.sha }}"
-          fi
-          echo "COMPARE_URL=$compare_url" >> $GITHUB_OUTPUT
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const repo = context.repo;
+            const releases = await github.rest.repos.listReleases(repo);
+            const latest = releases.data.find(r => !r.draft && !r.prerelease);
+            if (latest) {
+              return `https://github.com/${repo.owner}/${repo.repo}/compare/${latest.tag_name}...${process.env.GITHUB_SHA}`;
+            }
+            return `https://github.com/${repo.owner}/${repo.repo}/commits/${process.env.GITHUB_SHA}`;
 
       - name: Create GitHub Release
         id: create_release
@@ -96,7 +96,7 @@ jobs:
           tag_name: ${{ steps.release_meta.outputs.TAG_NAME }}
           release_name: ${{ steps.release_meta.outputs.RELEASE_DATE }}
           body: |
-            Changelog: ${{ steps.changelog.outputs.COMPARE_URL }}
+            Changelog: ${{ steps.changelog.outputs.result }}
 
             README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
 
