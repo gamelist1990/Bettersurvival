@@ -41,14 +41,15 @@ public class ToggleListener implements Listener {
         while (it.hasNext()) {
             ToggleFeature f = it.next();
             if (index == slot) {
+                String display = f.getDisplayName();
                 if (adminMode) {
                     boolean current = module.getGlobal(f.getKey());
                     module.setGlobal(f.getKey(), !current);
-                    clicker.sendMessage((!current ? "§aグローバルを有効にしました" : "§cグローバルを無効にしました"));
+                    clicker.sendMessage((!current ? "§a『" + display + "』のグローバルを有効にしました" : "§c『" + display + "』のグローバルを無効にしました"));
                 } else {
                     boolean current = module.isEnabledFor(clicker.getUniqueId().toString(), f.getKey());
                     module.setEnabledFor(clicker.getUniqueId().toString(), f.getKey(), !current);
-                    clicker.sendMessage((!current ? "§a機能を有効にしました" : "§c機能を無効にしました"));
+                    clicker.sendMessage((!current ? "§a『" + display + "』の機能を有効にしました" : "§c『" + display + "』の機能を無効にしました"));
                 }
                 // close & reopen to refresh
                 clicker.closeInventory();
