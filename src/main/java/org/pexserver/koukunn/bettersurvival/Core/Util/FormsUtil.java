@@ -10,6 +10,7 @@ import org.geysermc.cumulus.response.ModalFormResponse;
 import org.geysermc.cumulus.form.CustomForm;
 import org.geysermc.cumulus.response.CustomFormResponse;
 import org.geysermc.cumulus.component.Component;
+import org.geysermc.cumulus.util.FormImage;
 import org.geysermc.floodgate.api.FloodgateApi;
 
 /**
@@ -29,7 +30,7 @@ public final class FormsUtil {
 
     private FormsUtil() {}
 
-    public static boolean openSimpleForm(Player p, String title, List<String> buttons, Consumer<Integer> callback) {
+    public static boolean openSimpleForm(Player p, String title, List<?> buttons, Consumer<Integer> callback) {
         if (p == null) return false;
 
         // Bedrock check
@@ -39,8 +40,14 @@ public final class FormsUtil {
 
             try {
                 SimpleForm.Builder b = SimpleForm.builder().title(title).content("");
-                for (String btn : buttons) {
-                    b.button(btn);
+                for (Object btn : buttons) {
+                    if (btn instanceof String) {
+                        b.button((String) btn);
+                    } else if (btn instanceof ButtonSpec) {
+                        ButtonSpec spec = (ButtonSpec) btn;
+                        if (spec.image != null) b.button(spec.text, spec.image);
+                        else b.button(spec.text);
+                    }
                 }
                 b.validResultHandler((form, resp) -> {
                     if (resp == null) {
@@ -60,6 +67,26 @@ public final class FormsUtil {
 
         // Fallback: Not Bedrock or forms not available. Return false to indicate not displayed as SimpleForm.
         return false;
+    }
+
+    /**
+     * ButtonSpec を使った SimpleForm 表示のオーバーロード。
+     * ButtonSpec.text をボタンラベルに、ButtonSpec.image をボタン画像に使います。
+     */
+    
+
+    public static final class ButtonSpec {
+        public final String text;
+        public final FormImage image;
+
+        public ButtonSpec(String text, FormImage image) {
+            this.text = text;
+            this.image = image;
+        }
+
+        public static ButtonSpec ofText(String text) { return new ButtonSpec(text, null); }
+        public static ButtonSpec ofUrl(String text, String url) { return new ButtonSpec(text, FormImage.of(FormImage.Type.URL, url)); }
+        public static ButtonSpec ofPath(String text, String path) { return new ButtonSpec(text, FormImage.of(FormImage.Type.PATH, path)); }
     }
 
     /**

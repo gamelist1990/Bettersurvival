@@ -26,7 +26,7 @@ import java.util.Map;
 public class AutoPlantModule implements Listener {
 
     private final ToggleModule toggle;
-    private final int radius = 2;
+    private final int radius = 3;
     private final Plugin plugin;
     @SuppressWarnings("unused")
     private BukkitTask task;
@@ -93,7 +93,7 @@ public class AutoPlantModule implements Listener {
         this.toggle = toggle;
         this.plugin = Loader.getPlugin(Loader.class);
         if (this.plugin != null) this.plugin.getLogger().info("AutoPlant scheduled");
-        long intervalTicks = 20; // 1 second(バランス的にこれがbest)
+        long intervalTicks = 10; // 0.5 second(バランス的にこれがbest)
         task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             try {
                 runIntervalTask();
@@ -136,6 +136,7 @@ public class AutoPlantModule implements Listener {
                 }
                 if (!found) continue;
 
+                @SuppressWarnings("null")
                 Block above = below.getRelative(BlockFace.UP);
 
                 if (above.getType() == Material.AIR) {

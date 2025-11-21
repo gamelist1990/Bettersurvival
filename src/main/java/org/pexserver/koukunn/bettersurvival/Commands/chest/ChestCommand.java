@@ -19,6 +19,7 @@ import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.ArrayList;
@@ -207,6 +208,26 @@ public class ChestCommand extends BaseCommand {
             return true;
         }
 
+        if ("list".equals(sub)) {
+            Map<String, ChestLock> all = store.getAll();
+            int count = all.size();
+            sendInfo(sender, "保護済みチェスト数: " + count);
+            if (count == 0) return true;
+            int i = 0;
+            for (Map.Entry<String, ChestLock> e : all.entrySet()) {
+                if (i++ >= 100) { sendInfo(sender, "(省略...) 表示上限到達"); break; }
+                String key = e.getKey();
+                ChestLock lock = e.getValue();
+                String[] parts = key.split(":");
+                String coords = key;
+                if (parts.length >= 4) coords = parts[0] + " " + parts[1] + "," + parts[2] + "," + parts[3];
+                String ownerName = lock.getOwner();
+                try { ownerName = Bukkit.getOfflinePlayer(UUID.fromString(lock.getOwner())).getName(); } catch (Exception ex) {}
+                sendInfo(sender, coords + " - " + lock.getName() + " (owner: " + ownerName + ")");
+            }
+            return true;
+        }
+
         sendError(sender, "不明なコマンド");
         return true;
     }
@@ -214,10 +235,74 @@ public class ChestCommand extends BaseCommand {
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         List<String> list = new ArrayList<>();
+
         if (args.length == 1) {
-            list.add("lock"); list.add("unlock"); list.add("member"); list.add("ui"); list.add("op");
+            list.add("lock"); list.add("unlock"); list.add("member"); list.add("ui"); list.add("list"); list.add("op");
+            return list;
         }
-        if (args.length == 2 && "op".equalsIgnoreCase(args[0])) { list.add("unlock"); list.add("see"); list.add("toggle"); }
+
+        String first = args[0].toLowerCase();
+
+        if (args.length == 2) {
+            if ("op".equalsIgnoreCase(first)) {
+                list.add("unlock"); list.add("see"); list.add("toggle");
+                return list;
+            }
+            if ("member".equalsIgnoreCase(first)) {
+                list.add("add"); list.add("remove"); list.add("list");
+                return list;
+            }
+            // no suggestions for other second args
+            return list;
+        }
+
+        // args.length >= 3
+        if (args.length == 3 && "member".equalsIgnoreCase(first)) {
+            String op = args[1].toLowerCase();
+            String partial = args[2].toLowerCase();
+
+            if (!(sender instanceof Player)) return list;
+            Player p = (Player) sender;
+
+            // determine targeted chest lock (like command verbs do)
+            Block b = p.getTargetBlockExact(6);
+            if (b == null) return list;
+            List<Location> locs = ChestLockModule.getChestRelatedLocations(b);
+            if (locs.isEmpty()) return list;
+
+            Optional<ChestLock> opt = store.get(locs.get(0));
+            if (!opt.isPresent()) return list;
+            ChestLock lock = opt.get();
+
+            if ("add".equals(op)) {
+                for (Player pl : Bukkit.getOnlinePlayers()) {
+                    if (!pl.getWorld().equals(p.getWorld())) continue;
+                    if (pl.getUniqueId().equals(p.getUniqueId())) continue;
+                    String name = pl.getName();
+                    String low = name.toLowerCase();
+                    if (!low.contains(partial)) continue;
+                    String uid = pl.getUniqueId().toString();
+                    if (lock.getOwner() != null && lock.getOwner().equals(uid)) continue;
+                    if (lock.isMember(uid)) continue;
+                    list.add(name);
+                }
+                return list;
+            }
+
+            if ("remove".equals(op)) {
+                for (String m : lock.getMembers()) {
+                    try {
+                        OfflinePlayer opPl = Bukkit.getOfflinePlayer(UUID.fromString(m));
+                        String name = opPl.getName() == null ? m : opPl.getName();
+                        if (name.toLowerCase().contains(partial)) list.add(name);
+                    } catch (Exception ignored) {
+                        if (m.toLowerCase().contains(partial)) list.add(m);
+                    }
+                }
+                return list;
+            }
+        }
+
         return list;
     }
 }
