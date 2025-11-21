@@ -84,8 +84,9 @@ jobs:
             const repo = context.repo;
             const releases = await github.rest.repos.listReleases(repo);
             const latest = releases.data.find(r => !r.draft && !r.prerelease);
+            const newTag = '${{ steps.release_meta.outputs.TAG_NAME }}';
             if (latest) {
-              return `https://github.com/${repo.owner}/${repo.repo}/compare/${latest.tag_name}...${process.env.GITHUB_SHA}`;
+              return `https://github.com/${repo.owner}/${repo.repo}/compare/${latest.tag_name}...${newTag}`;
             }
             return `https://github.com/${repo.owner}/${repo.repo}/commits/${process.env.GITHUB_SHA}`;
 
