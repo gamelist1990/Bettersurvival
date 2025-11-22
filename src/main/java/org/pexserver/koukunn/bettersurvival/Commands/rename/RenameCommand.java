@@ -65,7 +65,7 @@ public class RenameCommand extends BaseCommand {
         meta.setDisplayName(name);
         item.setItemMeta(meta);
 
-        sendSuccess(sender, "手持ちのアイテム名を変更しました: " + name.replace('\n', '/'));
+        sendSuccess(sender, "手持ちのアイテム名を変更しました: " + name.replace("\n", "/n"));
         return true;
     }
 
