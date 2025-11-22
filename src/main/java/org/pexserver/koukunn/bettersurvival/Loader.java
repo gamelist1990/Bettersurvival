@@ -13,6 +13,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantM
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestSort.ChestSortModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
@@ -55,6 +56,9 @@ public final class Loader extends JavaPlugin {
         // ChestLock module registration
         ChestLockModule chestLock = new ChestLockModule(toggleModule, configManager);
         getServer().getPluginManager().registerEvents(chestLock, this);
+        // ChestShop module registration
+        ChestShopModule chestShop = new ChestShopModule(toggleModule, configManager, chestLock);
+        getServer().getPluginManager().registerEvents(chestShop, this);
         // Toggle 機能として登録
         toggleModule.registerFeature(new ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します(スニーク必須)", Material.DIAMOND_AXE));
         toggleModule.registerFeature(new ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（スニーク必須）", Material.DIAMOND_PICKAXE));
@@ -62,6 +66,7 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(new ToggleFeature("anythingfeed", "AnythingFeed", "非繁殖動物に任意の食料で反応するようにします", Material.APPLE));
         toggleModule.registerFeature(new ToggleFeature("autoplant", "AutoPlant", "オフハンドに植えたいアイテムを持ちながら耕した土の近くに行くと自動で植え・収穫します", Material.WHEAT_SEEDS));
         toggleModule.registerFeature(new ToggleFeature("chestlock", "ChestLock", "チェスト保護を有効/無効にします（破壊・移動・取得を制限）", Material.CHEST, false));
+        toggleModule.registerFeature(new ToggleFeature("chestshop", "ChestShop", "看板でチェストをショップ化します(>>Shop 名前)", Material.OAK_SIGN, false));
         toggleModule.registerFeature(new ToggleFeature("chestsort", "ChestSort", "スニーク+木の棒でチェスト内を整理します", Material.STICK));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
@@ -84,6 +89,9 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("chestsort")) {
             toggleModule.setGlobal("chestsort", true);
         }
+            if (!toggleModule.hasGlobal("chestshop")) {
+                toggleModule.setGlobal("chestshop", true);
+            }
         if (!toggleModule.hasGlobal("oremine")) {
             toggleModule.setGlobal("oremine", true);
         }

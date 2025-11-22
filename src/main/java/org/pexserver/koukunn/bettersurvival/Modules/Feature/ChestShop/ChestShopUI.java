@@ -1,0 +1,172 @@
+package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.Material;
+
+import java.util.*;
+
+public class ChestShopUI {
+
+    public static final String TITLE_PREFIX = "Shop UI - ";
+
+    public static final String OWNER_TITLE_PREFIX = "Shop Owner - ";
+    public static final String EDITOR_TITLE_PREFIX = "Shop Editor - ";
+
+    private static final Map<UUID, ChestShop> openShops = new HashMap<>();
+    private static final Map<UUID, Location> openLocations = new HashMap<>();
+
+    public static ChestShop getOpenShop(UUID uid) { return openShops.get(uid); }
+    public static Location getOpenLocation(UUID uid) { return openLocations.get(uid); }
+
+    // Explicitly register an open mapping when switching to editor UI so modules can find shop/location
+    public static void registerOpen(UUID uid, ChestShop shop, Location loc) {
+        if (uid == null) return;
+        openShops.put(uid, shop);
+        openLocations.put(uid, loc);
+    }
+
+    public static void openForPlayer(Player p, ChestShop shop, Location loc, ChestShopStore store) {
+        List<Player> nearby = new ArrayList<>();
+        for (Player pl : Bukkit.getOnlinePlayers()) {
+            if (!pl.getWorld().equals(p.getWorld())) continue;
+            if (pl.getUniqueId().equals(p.getUniqueId())) continue;
+            if (pl.getLocation().distance(loc) <= 50.0) nearby.add(pl);
+        }
+        nearby.sort(Comparator.comparingDouble(pl -> pl.getLocation().distance(loc)));
+
+        int size = 9 * ((nearby.size() + 8) / 9);
+        if (size == 0) size = 9;
+        // ensure buyer inventories are at least 27 and at most 54
+        size = Math.min(Math.max(27, size), 54);
+        String name = (shop == null ? "(無名)" : shop.getName());
+        // if owner, open owner main UI; otherwise buyer UI
+        boolean isOwner = shop != null && shop.getOwner() != null && shop.getOwner().equals(p.getUniqueId().toString());
+        Inventory inv;
+        if (isOwner) inv = Bukkit.createInventory(null, 27, OWNER_TITLE_PREFIX + name);
+        else inv = Bukkit.createInventory(null, 27, TITLE_PREFIX + name);
+
+        // reserve slot 0 for owner UI control if owner; start heads at 1 for owner
+        int slot = isOwner ? 1 : 0;
+        for (Player pl : nearby) {
+            if (slot >= inv.getSize()) break;
+            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+            org.bukkit.inventory.meta.SkullMeta meta = (org.bukkit.inventory.meta.SkullMeta) head.getItemMeta();
+            if (meta != null) {
+                meta.setOwningPlayer(pl);
+                meta.setDisplayName(pl.getName());
+                head.setItemMeta(meta);
+            }
+            inv.setItem(slot++, head);
+        }
+
+        openShops.put(p.getUniqueId(), shop);
+
+        if (isOwner) {
+            // Owner main UI: slot 0 = open editor button
+            org.bukkit.inventory.ItemStack edit = new org.bukkit.inventory.ItemStack(Material.WRITABLE_BOOK);
+            org.bukkit.inventory.meta.ItemMeta em = edit.getItemMeta();
+            if (em != null) { em.setDisplayName("§a編集ページを開く"); List<String> lore = new ArrayList<>(); lore.add("クリックで出品アイテム編集画面を開きます"); em.setLore(lore); edit.setItemMeta(em); }
+            inv.setItem(0, edit);
+            // leave the supply slot (10) and currency slot (12) empty so owner can place items there
+            org.bukkit.inventory.ItemStack info = new org.bukkit.inventory.ItemStack(Material.PAPER);
+            org.bukkit.inventory.meta.ItemMeta im = info.getItemMeta();
+            if (im != null) {
+                im.setDisplayName("§6在庫と売切れ表示");
+                // populate summary using store listings
+                Map<Integer, ShopListing> listings = store.getListings(loc);
+                int total = 0;
+                List<String> soldOut = new ArrayList<>();
+                for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
+                    ShopListing sl = e.getValue();
+                    total += sl.getStock();
+                    if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
+                }
+                List<String> lore = new ArrayList<>();
+                lore.add("総在庫: " + total);
+                lore.add("売切れ: " + (soldOut.isEmpty() ? "なし" : String.join(", ", soldOut)));
+                im.setLore(lore);
+                info.setItemMeta(im);
+            }
+            inv.setItem(19, info);
+            // fill unused owner slots with barriers to prevent interaction
+            org.bukkit.inventory.ItemStack barrier = new org.bukkit.inventory.ItemStack(Material.BARRIER);
+            org.bukkit.inventory.meta.ItemMeta bm = barrier.getItemMeta();
+            if (bm != null) { bm.setDisplayName("§c使用不可"); barrier.setItemMeta(bm); }
+            for (int i = 0; i < inv.getSize(); i++) {
+                // allowed interactive slots for owner: 0 (editor), 10 (supply), 12 (currency), 19 (info), last slot (delete)
+                if (i == 0 || i == 10 || i == 12 || i == 19 || i == inv.getSize()-1) continue;
+                if (inv.getItem(i) == null) inv.setItem(i, barrier);
+            }
+        }
+        openLocations.put(p.getUniqueId(), loc);
+
+        int btnSlot = Math.max(inv.getSize() - 1, 0);
+        // Owner controls
+        if (shop != null && shop.getOwner() != null && shop.getOwner().equals(p.getUniqueId().toString())) {
+            ItemStack closeBtn = new ItemStack(Material.RED_STAINED_GLASS_PANE);
+            ItemMeta m = closeBtn.getItemMeta();
+            if (m != null) { m.setDisplayName("§e閉じる"); closeBtn.setItemMeta(m); }
+            inv.setItem(btnSlot, closeBtn);
+        } else {
+            ItemStack buyHint = new ItemStack(Material.GREEN_STAINED_GLASS_PANE);
+            ItemMeta m = buyHint.getItemMeta();
+            if (m != null) { m.setDisplayName("§a購入方法: チェストに対価を入れてください"); buyHint.setItemMeta(m); }
+            inv.setItem(btnSlot, buyHint);
+        }
+
+        // populate buyer listing view when not owner
+        if (!isOwner) {
+            Map<Integer, ShopListing> listings = store.getListings(loc);
+            for (int i = 0; i < 26; i++) {
+                ShopListing sl = listings.get(i);
+                if (sl == null) continue;
+                Material mat = Material.matchMaterial(sl.getMaterial());
+                if (mat == null) mat = Material.PAPER;
+                org.bukkit.inventory.ItemStack it = new org.bukkit.inventory.ItemStack(mat);
+                org.bukkit.inventory.meta.ItemMeta im2 = it.getItemMeta();
+                if (im2 != null) {
+                    String disp = sl.getDisplayName();
+                    if (disp == null || disp.isEmpty()) disp = mat.name();
+                    im2.setDisplayName(disp);
+                    List<String> lore2 = new ArrayList<>();
+                    if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
+                        lore2.add("§c通貨未設定 (販売不可)");
+                    } else if (sl.getPrice() > 64) {
+                        lore2.add("§c価格が最大を超えています (販売不可)");
+                    } else {
+                        lore2.add("§a販売中 - 価格: " + sl.getPrice());
+                    }
+                    lore2.add("在庫: " + sl.getStock());
+                    if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
+                        String desc = sl.getDescription().replace("<br>", "\n");
+                        String[] lines = desc.split("\\n");
+                        for (String L : lines) lore2.add(L);
+                    }
+                    im2.setLore(lore2);
+                    it.setItemMeta(im2);
+                }
+                inv.setItem(i, it);
+            }
+            // fill unused buyer slots (0..25) with barrier
+            org.bukkit.inventory.ItemStack barrierB = new org.bukkit.inventory.ItemStack(Material.BARRIER);
+            org.bukkit.inventory.meta.ItemMeta bmB = barrierB.getItemMeta();
+            if (bmB != null) { bmB.setDisplayName("§c使用不可"); barrierB.setItemMeta(bmB); }
+            for (int i = 0; i < 26; i++) {
+                if (inv.getItem(i) == null) inv.setItem(i, barrierB);
+            }
+        }
+
+        p.openInventory(inv);
+    }
+
+    public static void closeForPlayer(Player p) {
+        openShops.remove(p.getUniqueId());
+        openLocations.remove(p.getUniqueId());
+    }
+
+}
