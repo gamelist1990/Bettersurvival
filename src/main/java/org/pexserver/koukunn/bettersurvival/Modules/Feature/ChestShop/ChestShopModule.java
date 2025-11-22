@@ -634,6 +634,7 @@ public class ChestShopModule implements Listener {
             e.setCancelled(true);
             // create a shallow copy with a different owner id so openForPlayer treats player as non-owner
             ChestShop browseShop = new ChestShop("", shop.getOwnerName(), shop.getName(), shop.getCurrency());
+            browseShop.setCustomCurrencyName(shop.getCustomCurrencyName());
             ChestShopUI.openForPlayer(p, browseShop, loc, store);
         }
     }
