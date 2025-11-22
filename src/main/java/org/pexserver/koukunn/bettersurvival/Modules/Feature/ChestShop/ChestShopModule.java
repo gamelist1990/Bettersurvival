@@ -76,7 +76,6 @@ public class ChestShopModule implements Listener {
                             Long lastSaved = editorLastSavedTick.getOrDefault(uid, 0L);
                             // debug: show snapshot info when change detected or throttled
                             if (Objects.equals(prevHash, snap)) {
-                                Bukkit.getLogger().info("[ChestShop] snapshot unchanged for player="+p.getName()+" snap="+snap);
                                 continue;
                             }
                             if ((now - lastSaved) < 200L) {
@@ -171,23 +170,6 @@ public class ChestShopModule implements Listener {
     // throttle minimum ticks between saves per-player (avoid excessive I/O)
     private final Map<UUID, Long> editorLastSavedTick = new ConcurrentHashMap<>();
 
-    // helper to compute a stable snapshot hash for an inventory's top 26 slots (editor view)
-    private int computeInventorySnapshotHash(org.bukkit.inventory.Inventory inv) {
-        if (inv == null) return 0;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 26; i++) {
-            org.bukkit.inventory.ItemStack it = inv.getItem(i);
-            if (it == null) { sb.append("-"); continue; }
-            String disp = null;
-            if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) disp = it.getItemMeta().getDisplayName();
-            if (disp == null) disp = it.getType().name();
-            sb.append(it.getType().name()).append('|').append(disp).append('|');
-            if (it.hasItemMeta() && it.getItemMeta().hasLore()) sb.append(String.join("/", it.getItemMeta().getLore()));
-            sb.append(':').append(it.getAmount()).append(';');
-        }
-        return sb.toString().hashCode();
-    }
-
     // helper: resolve shop and canonical location from an inventory title string (title-based resolution is default)
     private static class ResolveResult { public final Location loc; public final ChestShop shop; ResolveResult(Location l, ChestShop s) { this.loc = l; this.shop = s; } }
     private ResolveResult resolveByTitle(String title) {
@@ -272,7 +254,7 @@ public class ChestShopModule implements Listener {
             } catch (Exception ignored) {}
         }
 
-        String display = left.isEmpty() ? it.getType().name() : left;
+        String display = raw;
         ShopListing sl = new ShopListing(it.getType().name(), display, price, desc, prevStock);
         return sl;
     }
@@ -498,6 +480,8 @@ public class ChestShopModule implements Listener {
             } else {
                 ChestShopUI.openForPlayer(p, shop, loc, store);
             }
+            // Clear mapping when editor closes
+            ChestShopUI.closeForPlayer(p);
             return;
         }
 
@@ -526,18 +510,8 @@ public class ChestShopModule implements Listener {
                     p.sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
                 }
             }
-            // if player now has editor open, keep mapping so editor can use it
-            try {
-                org.bukkit.inventory.InventoryView current = p.getOpenInventory();
-                String curTitle = current == null ? null : current.getTitle();
-                if (curTitle != null && curTitle.startsWith(ChestShopUI.EDITOR_TITLE_PREFIX)) {
-                    // keep mapping (do not close)
-                } else {
-                    ChestShopUI.closeForPlayer((Player) e.getPlayer());
-                }
-            } catch (Exception ex) {
-                ChestShopUI.closeForPlayer((Player) e.getPlayer());
-            }
+            // Always keep mapping for editor access, clear only when editor closes
+            // ChestShopUI.closeForPlayer((Player) e.getPlayer());
             return;
         }
 
@@ -778,250 +752,10 @@ public class ChestShopModule implements Listener {
             return;
         }
 
-        // Editor UI - allow normal interactions and schedule automatic save
+        // Editor UI - シンプルなドラッグ&ドロップと基本クリックを許可
         if (title.startsWith(ChestShopUI.EDITOR_TITLE_PREFIX)) {
-            // schedule a save shortly after the click to let the inventory update
-            org.bukkit.plugin.Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
-            Bukkit.getLogger().info("[ChestShop] scheduling editor immediate-save task (click) for player=" + p.getName());
-            if (plugin == null) return;
-            // no manual save button — rely on autosave and click/drag autosave scheduling
-            // sanitize items leaving the editor - prevent editor-only Lore/price metadata leaking to player's inventory
-            try {
-                InventoryView viewNow = e.getView();
-                int topSize = viewNow == null || viewNow.getTopInventory() == null ? 0 : viewNow.getTopInventory().getSize();
-                // clicked inside editor top inventory
-                if (e.getRawSlot() >= 0 && e.getRawSlot() < topSize) {
-                    // HOTBAR swap: ensure item moved into player's hotbar is sanitized (no editor lore)
-                    InventoryAction actionNow = e.getAction();
-                    if (actionNow == InventoryAction.HOTBAR_SWAP) {
-                        try {
-                            int button = e.getHotbarButton();
-                            if (button >= 0 && button < 9) {
-                                Player pl = (Player)e.getWhoClicked();
-                                ItemStack cur = e.getCurrentItem();
-                                ItemStack swap = pl.getInventory().getItem(button);
-                                // move hotbar -> editor normally, but convert editor->hotbar into sanitized copy
-                                if (cur != null) {
-                                    ItemStack sanitized = new ItemStack(cur.getType(), cur.getAmount());
-                                    org.bukkit.inventory.meta.ItemMeta sm = sanitized.getItemMeta();
-                                    if (sm != null) {
-                                        if (cur.hasItemMeta() && cur.getItemMeta().hasDisplayName()) sm.setDisplayName(cur.getItemMeta().getDisplayName());
-                                        sm.setLore(null);
-                                        sanitized.setItemMeta(sm);
-                                    }
-                                    pl.getInventory().setItem(button, sanitized);
-                                    viewNow.getTopInventory().setItem(e.getRawSlot(), swap);
-                                    e.setCancelled(true);
-                                    // if the editor slot became empty due to swap (player swapped with empty hotbar), remove persisted listing
-                                    try {
-                                        ResolveResult rr2 = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                                        if (rr2 != null) {
-                                            Location loc2 = rr2.loc;
-                                            Map<Integer, ShopListing> listingsNow = store.getListings(loc2);
-                                            org.bukkit.inventory.Inventory topInv = viewNow.getTopInventory();
-                                            if (topInv != null && topInv.getItem(e.getRawSlot()) == null) {
-                                                listingsNow.remove(e.getRawSlot());
-                                                store.saveListings(loc2, listingsNow);
-                                                editorSnapshotHash.put(p.getUniqueId(), computeInventorySnapshotHash(topInv));
-                                                editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
-                                            }
-                                        }
-                                    } catch (Exception ignored) {}
-                                    return;
-                                }
-                            }
-                        } catch (Exception ignored) {}
-                    }
-
-                    // SHIFT-CLICK: intercept and move sanitized copy into player inventory
-                    if (e.isShiftClick()) {
-                        ItemStack cur = e.getCurrentItem();
-                        if (cur != null) {
-                            int amount = cur.getAmount();
-                            ItemStack sanitized = new ItemStack(cur.getType(), amount);
-                            org.bukkit.inventory.meta.ItemMeta sm = sanitized.getItemMeta();
-                            if (sm != null) {
-                                if (cur.hasItemMeta() && cur.getItemMeta().hasDisplayName()) sm.setDisplayName(cur.getItemMeta().getDisplayName());
-                                sm.setLore(null);
-                                sanitized.setItemMeta(sm);
-                            }
-                            Map<Integer, ItemStack> remainder = ((Player)e.getWhoClicked()).getInventory().addItem(sanitized);
-                            int moved = amount;
-                            if (!remainder.isEmpty()) {
-                                int left = 0;
-                                for (ItemStack r : remainder.values()) if (r != null) left += r.getAmount();
-                                moved = amount - left;
-                            }
-                            if (moved > 0) {
-                                // reduce or clear editor slot according to moved amount
-                                ItemStack orig = e.getCurrentItem();
-                                if (orig != null) {
-                                    int left = orig.getAmount() - moved;
-                                    if (left > 0) orig.setAmount(left);
-                                    else viewNow.getTopInventory().setItem(e.getRawSlot(), null);
-                                    // if slot emptied, remove persisted listing
-                                    if (viewNow.getTopInventory().getItem(e.getRawSlot()) == null) {
-                                        try {
-                                            ResolveResult rr2 = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                                            if (rr2 != null) {
-                                                Location loc2 = rr2.loc;
-                                                Map<Integer, ShopListing> listingsNow = store.getListings(loc2);
-                                                listingsNow.remove(e.getRawSlot());
-                                                store.saveListings(loc2, listingsNow);
-                                                editorSnapshotHash.put(p.getUniqueId(), computeInventorySnapshotHash(viewNow.getTopInventory()));
-                                                editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
-                                            }
-                                        } catch (Exception ignored) {}
-                                    }
-                                }
-                            }
-                            e.setCancelled(true);
-                            return;
-                        }
-                    }
-
-                    // PICKUP -> picking into cursor: prefer sanitized copy when cursor empty
-                    InventoryAction act = e.getAction();
-                    if ((act == InventoryAction.PICKUP_ALL || act == InventoryAction.PICKUP_HALF || act == InventoryAction.PICKUP_ONE)
-                            && (e.getCursor() == null || e.getCursor().getType() == Material.AIR)) {
-                        ItemStack cur = e.getCurrentItem();
-                        if (cur != null) {
-                            int toTake = 0;
-                            if (act == InventoryAction.PICKUP_ALL) toTake = cur.getAmount();
-                            else if (act == InventoryAction.PICKUP_HALF) toTake = (cur.getAmount() + 1) / 2;
-                            else if (act == InventoryAction.PICKUP_ONE) toTake = 1;
-                            if (toTake > 0) {
-                                ItemStack sanitized = new ItemStack(cur.getType(), toTake);
-                                org.bukkit.inventory.meta.ItemMeta sm = sanitized.getItemMeta();
-                                if (sm != null) {
-                                    if (cur.hasItemMeta() && cur.getItemMeta().hasDisplayName()) sm.setDisplayName(cur.getItemMeta().getDisplayName());
-                                    sm.setLore(null);
-                                    sanitized.setItemMeta(sm);
-                                }
-                                // put sanitized item on cursor and reduce editor stack
-                                e.setCursor(sanitized);
-                                ItemStack orig = e.getCurrentItem();
-                                if (orig != null) {
-                                    int left = orig.getAmount() - toTake;
-                                    if (left > 0) orig.setAmount(left);
-                                    else viewNow.getTopInventory().setItem(e.getRawSlot(), null);
-                                    e.setCurrentItem(orig);
-                                }
-                                e.setCancelled(true);
-                                    return;
-                            }
-                        }
-
-                        // Plain click on an editor slot should return the item(s) to the player.
-                        // If the shop listing has stock, return the stock; otherwise return the editor stack.
-                        try {
-                            org.bukkit.event.inventory.ClickType clickType = e.getClick();
-                            ItemStack curClick = e.getCurrentItem();
-                            if (curClick != null && curClick.getType() != Material.AIR && !e.isShiftClick()
-                                    && clickType != org.bukkit.event.inventory.ClickType.NUMBER_KEY
-                                    && clickType != org.bukkit.event.inventory.ClickType.MIDDLE) {
-                                // resolve shop
-                                ResolveResult rr2 = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                                if (rr2 != null) {
-                                    Location loc2 = rr2.loc;
-                                    Map<Integer, ShopListing> listingsNow = store.getListings(loc2);
-                                    ShopListing prev = listingsNow.get(e.getRawSlot());
-                                    int storedStock = prev == null ? 0 : prev.getStock();
-                                    Material retMat = curClick.getType();
-                                    if (storedStock > 0 && prev != null && prev.getMaterial() != null && !prev.getMaterial().isEmpty()) {
-                                        try { retMat = Material.valueOf(prev.getMaterial()); } catch (Exception ignored) {}
-                                    }
-
-                                    int totalToReturn = storedStock > 0 ? storedStock : curClick.getAmount();
-                                    if (totalToReturn > 0) {
-                                        List<ItemStack> giveList = new ArrayList<>();
-                                        int remaining = totalToReturn;
-                                        int maxStack = Math.max(1, retMat.getMaxStackSize());
-                                        while (remaining > 0) {
-                                            int chunk = Math.min(remaining, maxStack);
-                                            ItemStack chunkItem = new ItemStack(retMat, chunk);
-                                            // preserve display name if present on clicked item
-                                            try {
-                                                org.bukkit.inventory.meta.ItemMeta cm = chunkItem.getItemMeta();
-                                                if (cm != null && curClick.hasItemMeta() && curClick.getItemMeta().hasDisplayName()) cm.setDisplayName(curClick.getItemMeta().getDisplayName());
-                                                if (cm != null) cm.setLore(null);
-                                                if (cm != null) chunkItem.setItemMeta(cm);
-                                            } catch (Exception ignored) {}
-                                            giveList.add(chunkItem);
-                                            remaining -= chunk;
-                                        }
-
-                                        // try to add to player's inventory
-                                        Map<Integer, ItemStack> leftovers = p.getInventory().addItem(giveList.toArray(new ItemStack[0]));
-                                        // drop any leftovers at player's feet
-                                        if (!leftovers.isEmpty()) {
-                                            for (ItemStack left : leftovers.values()) if (left != null) p.getWorld().dropItemNaturally(p.getLocation(), left);
-                                        }
-
-                                        // clear or adjust the editor slot
-                                        org.bukkit.inventory.Inventory topNow = e.getView().getTopInventory();
-                                        try {
-                                            if (topNow != null) topNow.setItem(e.getRawSlot(), null);
-                                        } catch (Exception ignored) {}
-
-                                        // remove persisted listing (remove from for-sale set) when owner clicked to take it back
-                                        if (prev != null) {
-                                            listingsNow.remove(e.getRawSlot());
-                                            store.saveListings(loc2, listingsNow);
-                                        }
-
-                                        // update snapshot/throttle so autosave doesn't re-add
-                                        try {
-                                            if (topNow != null) {
-                                                editorSnapshotHash.put(p.getUniqueId(), computeInventorySnapshotHash(topNow));
-                                                editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
-                                            }
-                                        } catch (Exception ignored) {}
-
-                                        p.sendMessage("§aアイテムを返却しました: " + retMat.toString() + " x" + totalToReturn);
-                                        e.setCancelled(true);
-                                        return;
-                                    }
-                                }
-                            }
-                        } catch (Exception ignored) {}
-                    }
-                }
-            } catch (Exception ignored) {}
-                org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                if (rr == null) return;
-                Location loc = rr.loc;
-                ChestShop shop = rr.shop;
-                org.bukkit.inventory.Inventory invEditor = null;
-                try {
-                    invEditor = p.getOpenInventory().getTopInventory();
-                } catch (Exception ignored) {}
-                if (invEditor == null) return;
-                Map<Integer, ShopListing> old = store.getListings(loc);
-                Map<Integer, ShopListing> updated = new LinkedHashMap<>();
-                for (int i = 0; i < 26; i++) {
-                    org.bukkit.inventory.ItemStack it = invEditor.getItem(i);
-                    if (it == null) continue;
-                    String rawDisplay = null;
-                    if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) rawDisplay = it.getItemMeta().getDisplayName();
-                    if (rawDisplay == null) rawDisplay = it.getType().name();
-                    ShopListing prev = old.get(i);
-                    int prevStock = prev != null ? prev.getStock() : 0;
-                    ShopListing sl = parseRawToListing(it, rawDisplay, prevStock);
-                    if (prev != null) sl.setStock(prev.getStock());
-                    updated.put(i, sl);
-                }
-                    boolean ok = store.saveListings(loc, updated);
-                    if (ok) Bukkit.getLogger().info("[ChestShop] Auto-saved editor (click) for player=" + p.getName() + " shop=" + shop.getName() + " entries=" + updated.size());
-                    else Bukkit.getLogger().info("[ChestShop] Auto-save (click) failed for player="+p.getName()+" shop="+(shop==null?"(null)":shop.getName()));
-                    if (ok) {
-                        // editor lore restoration removed — do not overwrite player's editor items here
-                        p.sendMessage("§a編集内容を自動保存しました (" + updated.size() + " 件)");
-                } else {
-                    p.sendMessage("§c編集の自動保存に失敗しました");
-                }
-            }, 1L);
+            // エディターはシンプルなクリックとドラッグ&ドロップのみ許可
+            // 自動保存に任せて、複雑な操作は避ける
             return;
         }
 
@@ -1126,66 +860,11 @@ public class ChestShopModule implements Listener {
             }
             return;
         }
-        if (!(e.getWhoClicked() instanceof Player)) return;
-        Player p = (Player) e.getWhoClicked();
-        org.bukkit.plugin.Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
-        if (plugin == null) {
-            Bukkit.getLogger().info("[ChestShop] drag-save plugin not found for player=" + p.getName());
+        // エディターのドラッグ処理は無視 (シンプルなインベントリ移動のみ許可)
+        if (title.startsWith(ChestShopUI.EDITOR_TITLE_PREFIX)) {
+            // ドラッグ&ドロップはシンプルに許可し、自動保存に任せる
             return;
         }
-        Bukkit.getLogger().info("[ChestShop] scheduling editor drag-save task for player=" + p.getName());
-        // sanitize new items that would be placed into player inventory (remove editor-only lore)
-        try {
-            InventoryView viewNow = e.getView();
-            int topSize = viewNow == null || viewNow.getTopInventory() == null ? 0 : viewNow.getTopInventory().getSize();
-            Map<Integer, ItemStack> newItems = e.getNewItems();
-            for (Map.Entry<Integer, ItemStack> ent : newItems.entrySet()) {
-                int raw = ent.getKey();
-                if (raw < topSize) continue; // only sanitize items targeted to bottom inventory
-                ItemStack v = ent.getValue();
-                if (v == null) continue;
-                ItemStack sanitized = new ItemStack(v.getType(), v.getAmount());
-                org.bukkit.inventory.meta.ItemMeta im = sanitized.getItemMeta();
-                if (im != null) {
-                    if (v.hasItemMeta() && v.getItemMeta().hasDisplayName()) im.setDisplayName(v.getItemMeta().getDisplayName());
-                    im.setLore(null);
-                    sanitized.setItemMeta(im);
-                }
-                ent.setValue(sanitized);
-            }
-        } catch (Exception ignored) {}
-        org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-            if (rr == null) return;
-            Location loc = rr.loc;
-            ChestShop shop = rr.shop;
-            org.bukkit.inventory.Inventory invEditor = null;
-            try { invEditor = p.getOpenInventory().getTopInventory(); } catch (Exception ignored) {}
-            if (invEditor == null) return;
-            Map<Integer, ShopListing> old = store.getListings(loc);
-            Map<Integer, ShopListing> updated = new LinkedHashMap<>();
-            for (int i = 0; i < 26; i++) {
-                org.bukkit.inventory.ItemStack it = invEditor.getItem(i);
-                if (it == null) continue;
-                String rawDisplay = null;
-                if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) rawDisplay = it.getItemMeta().getDisplayName();
-                if (rawDisplay == null) rawDisplay = it.getType().name();
-                ShopListing prev = old.get(i);
-                int prevStock = prev != null ? prev.getStock() : 0;
-                ShopListing sl = parseRawToListing(it, rawDisplay, prevStock);
-                if (prev != null) sl.setStock(prev.getStock());
-                updated.put(i, sl);
-            }
-            boolean ok = store.saveListings(loc, updated);
-            if (ok) Bukkit.getLogger().info("[ChestShop] Auto-saved editor (drag) for player=" + p.getName() + " shop=" + shop.getName() + " entries=" + updated.size());
-            else Bukkit.getLogger().info("[ChestShop] Auto-save (drag) failed for player="+p.getName()+" shop="+(shop==null?"(null)":shop.getName()));
-            if (ok) {
-                // editor lore restoration removed for drag autosave — do not overwrite player's editor items
-                p.sendMessage("§a編集内容を自動保存しました (ドラッグ検知)");
-            } else {
-                p.sendMessage("§c編集の自動保存に失敗しました (ドラッグ検知)");
-            }
-        }, 1L);
     }
 
     public ChestShopStore getStore() { return store; }

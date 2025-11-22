@@ -93,12 +93,13 @@ public class ChestShopUI {
                 info.setItemMeta(im);
             }
             inv.setItem(19, info);
+
             // fill unused owner slots with barriers to prevent interaction
             org.bukkit.inventory.ItemStack barrier = new org.bukkit.inventory.ItemStack(Material.BARRIER);
             org.bukkit.inventory.meta.ItemMeta bm = barrier.getItemMeta();
             if (bm != null) { bm.setDisplayName("§c使用不可"); barrier.setItemMeta(bm); }
             for (int i = 0; i < inv.getSize(); i++) {
-                // allowed interactive slots for owner: 0 (editor), 10 (supply), 12 (currency), 19 (info), last slot (delete)
+                // allowed interactive slots for owner: 0 (editor), 10 (supply), 12 (currency), 19 (info), last slot (close)
                 if (i == 0 || i == 10 || i == 12 || i == 19 || i == inv.getSize()-1) continue;
                 if (inv.getItem(i) == null) inv.setItem(i, barrier);
             }
@@ -162,6 +163,13 @@ public class ChestShopUI {
         }
 
         p.openInventory(inv);
+    }
+
+    // open a dedicated delete page where owner can view and delete items from inventory
+    public static void openDeletePage(Player p, ChestShop shop, Location loc, ChestShopStore store) {
+        // REMOVED: Delete page functionality is no longer used
+        // Deletion is now handled directly by removing items from the editor
+        p.sendMessage("§c削除ページは削除されました");
     }
 
     public static void closeForPlayer(Player p) {
