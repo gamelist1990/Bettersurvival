@@ -24,6 +24,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.event.inventory.InventoryType;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.bukkit.OfflinePlayer;
 
@@ -34,10 +35,12 @@ public class ChestLockModule implements Listener {
 
     private final ChestLockStore store;
     private final ToggleModule toggle;
+    private final ChestShopStore shopStore;
 
     public ChestLockModule(ToggleModule toggle, ConfigManager manager) {
         this.toggle = toggle;
         this.store = new ChestLockStore(manager);
+        this.shopStore = new ChestShopStore(manager);
     }
 
     public static Location toLocation(Block b) { return b.getLocation(); }
@@ -306,10 +309,14 @@ public class ChestLockModule implements Listener {
                 if (d.contains("ロックする")) {
                     Location ctx = ChestLockUI.getOpenLocation(p.getUniqueId());
                     if (ctx == null) return;
+                    // prevent locking of a chest that belongs to a shop
+                    for (Location r : getChestRelatedLocations(ctx.getBlock())) {
+                        try { if (shopStore != null && shopStore.get(r).isPresent()) { p.sendMessage("§cこのチェストはショップに紐づいているためロックできません"); return; } } catch (Exception ignored) {}
+                    }
                     ChestLock newLock = new ChestLock(p.getUniqueId().toString(), "lock-" + UUID.randomUUID().toString().substring(0,6));
                     for (Location l : getChestRelatedLocations(ctx.getBlock())) store.save(l, newLock);
                     p.sendMessage("§aチェストをロックしました: " + newLock.getName());
-                    ChestLockUI.openForPlayer(p, newLock, ctx, store);
+                    ChestLockUI.openForPlayer(p, newLock, ctx, store, shopStore);
                     return;
                 }
                 if (d.contains("ロック解除")) {
@@ -336,7 +343,7 @@ public class ChestLockModule implements Listener {
                     if (!p.isOp() && !lock.getOwner().equals(p.getUniqueId().toString())) { p.sendMessage("§cあなたはオーナーではありません"); return; }
                     for (Location l : getChestRelatedLocations(ctx.getBlock())) store.remove(l);
                     p.sendMessage("§aチェストのロックを解除しました");
-                    ChestLockUI.openForPlayer(p, null, ctx, store);
+                    ChestLockUI.openForPlayer(p, null, ctx, store, shopStore);
                     return;
                 }
             }
@@ -359,7 +366,7 @@ public class ChestLockModule implements Listener {
                 store.save(l, lock);
             }
         }
-        ChestLockUI.openForPlayer(p, lock, loc, store);
+        ChestLockUI.openForPlayer(p, lock, loc, store, shopStore);
     }
 
 }

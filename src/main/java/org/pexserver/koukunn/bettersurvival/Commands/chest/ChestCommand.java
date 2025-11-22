@@ -28,10 +28,12 @@ public class ChestCommand extends BaseCommand {
 
     private final Loader plugin;
     private final ChestLockStore store;
+    private final org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore;
 
     public ChestCommand(Loader plugin) {
         this.plugin = plugin;
         this.store = new ChestLockStore(plugin.getConfigManager());
+        this.shopStore = new org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore(plugin.getConfigManager());
     }
 
     @Override
@@ -77,6 +79,10 @@ public class ChestCommand extends BaseCommand {
             if (locs.isEmpty()) { sendError(sender, "対象はチェスト/樽のみです"); return true; }
             // create lock
             // check if already locked by someone else
+            // check if any targeted chest is a shop
+            for (Location loc : locs) {
+                try { if (shopStore.get(loc).isPresent()) { sendError(sender, "このチェストはショップとして登録されているためロックできません"); return true; } } catch (Exception ignored) {}
+            }
             for (Location loc : locs) {
                 Optional<ChestLock> exist = store.get(loc);
                 if (exist.isPresent() && !exist.get().getOwner().equals(p.getUniqueId().toString())) {
@@ -202,8 +208,8 @@ public class ChestCommand extends BaseCommand {
             List<Location> locs = ChestLockModule.getChestRelatedLocations(b);
             if (locs.isEmpty()) { sendError(sender, "対象はチェスト/樽のみです"); return true; }
             ChestLock lock = store.get(locs.get(0)).orElse(null);
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    ChestLockUI.openForPlayer(p, lock, locs.get(0), store);
+                 plugin.getServer().getScheduler().runTask(plugin, () -> {
+                     ChestLockUI.openForPlayer(p, lock, locs.get(0), store, shopStore);
                 });
             return true;
         }

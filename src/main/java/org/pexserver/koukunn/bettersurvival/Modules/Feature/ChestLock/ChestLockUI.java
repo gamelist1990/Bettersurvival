@@ -30,7 +30,7 @@ public class ChestLockUI {
     }
 
     @SuppressWarnings("deprecation")
-    public static void openForPlayer(Player p, ChestLock lock, Location loc, ChestLockStore store) {
+    public static void openForPlayer(Player p, ChestLock lock, Location loc, ChestLockStore store, org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore) {
         List<Player> nearby = new ArrayList<>();
         for (Player pl : Bukkit.getOnlinePlayers()) {
             if (!pl.getWorld().equals(p.getWorld()))
@@ -122,7 +122,7 @@ public class ChestLockUI {
         }
 
         if (FloodgateUtil.isBedrock(p)) {
-            boolean shown = openBedrockMainForm(p, nearby, lock, loc, store);
+            boolean shown = openBedrockMainForm(p, nearby, lock, loc, store, shopStore);
             if (shown)
                 return;
         }
@@ -135,8 +135,8 @@ public class ChestLockUI {
         openLocations.remove(p.getUniqueId());
     }
 
-    private static boolean openBedrockMainForm(Player p, List<Player> nearby, ChestLock lock, Location loc,
-            ChestLockStore store) {
+        private static boolean openBedrockMainForm(Player p, List<Player> nearby, ChestLock lock, Location loc,
+            ChestLockStore store, org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore) {
         List<String> buttons = new ArrayList<>();
         if (lock == null) {
             buttons.add("ロックする (自動名)");
@@ -160,11 +160,16 @@ public class ChestLockUI {
                     int action = idx;
                     if (lock == null) {
                         if (action == 0) {
+                            // prevent locking if chest (or related) is a shop
+                            List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
+                            for (Location r : related) {
+                                try { if (shopStore != null && shopStore.get(r).isPresent()) { p.sendMessage("§cこのチェストはショップに紐づいているためロックできません"); return; } } catch (Exception ignored) {}
+                            }
                             ChestLock newLock = new ChestLock(p.getUniqueId().toString(),
                                     "lock-" + UUID.randomUUID().toString().substring(0, 6));
                             for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock()))
                                 store.save(l, newLock);
-                            openForPlayer(p, newLock, loc, store);
+                            openForPlayer(p, newLock, loc, store, shopStore);
                             return;
                         }
                         // handle list button for unlocked view
@@ -186,7 +191,7 @@ public class ChestLockUI {
                             FormsUtil.openSimpleForm(p, "保護済みチェスト一覧", rows, ridx -> {
                                 if (ridx < 0) return;
                                 if (ridx == rows.size() - 1) {
-                                    openForPlayer(p, null, loc, store);
+                                    openForPlayer(p, null, loc, store, shopStore);
                                     return;
                                 }
                             });
@@ -214,7 +219,7 @@ public class ChestLockUI {
                         FormsUtil.openSimpleForm(p, "保護済みチェスト一覧", rows, ridx -> {
                             if (ridx < 0) return;
                             if (ridx == rows.size() - 1) {
-                                openForPlayer(p, lock, loc, store);
+                                openForPlayer(p, lock, loc, store, shopStore);
                                 return;
                             }
                             // nothing on selection
@@ -229,7 +234,7 @@ public class ChestLockUI {
                         if (action == base) {
                             for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock()))
                                 store.remove(l);
-                            openForPlayer(p, null, loc, store);
+                            openForPlayer(p, null, loc, store, shopStore);
                             return;
                         }
                         base++;
@@ -243,7 +248,7 @@ public class ChestLockUI {
                         FormsUtil.openSimpleForm(p, "メンバー管理 - " + lock.getName(), mm, midx -> {
                             if (midx < 0) return;
                             if (midx == 2) { // 戻る
-                                openForPlayer(p, lock, loc, store);
+                                openForPlayer(p, lock, loc, store, shopStore);
                                 return;
                             }
 
@@ -265,7 +270,7 @@ public class ChestLockUI {
                                 FormsUtil.openSimpleForm(p, "メンバー追加 - " + lock.getName(), addBtns, aidx -> {
                                     if (aidx < 0) return;
                                     if (aidx == addBtns.size() - 1) {
-                                        openForPlayer(p, lock, loc, store);
+                                        openForPlayer(p, lock, loc, store, shopStore);
                                         return;
                                     }
                                     Player target = candidates.get(aidx);
@@ -273,7 +278,7 @@ public class ChestLockUI {
                                     lock.addMember(uid);
                                     for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock())) store.save(l, lock);
                                     p.sendMessage("§aメンバーに追加しました: " + target.getName());
-                                    openForPlayer(p, lock, loc, store);
+                                    openForPlayer(p, lock, loc, store, shopStore);
                                 });
                                 return;
                             }
@@ -291,14 +296,14 @@ public class ChestLockUI {
                                 FormsUtil.openSimpleForm(p, "メンバー一覧 - " + lock.getName(), mbtns, remIdx -> {
                                     if (remIdx < 0) return;
                                     if (remIdx == mbtns.size() - 1) {
-                                        openForPlayer(p, lock, loc, store);
+                                        openForPlayer(p, lock, loc, store, shopStore);
                                         return;
                                     }
                                     String removeUuid = lock.getMembers().get(remIdx);
                                     lock.removeMember(removeUuid);
                                     for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock())) store.save(l, lock);
                                     p.sendMessage("§aメンバーから削除しました");
-                                    openForPlayer(p, lock, loc, store);
+                                    openForPlayer(p, lock, loc, store, shopStore);
                                 });
                                 return;
                             }
@@ -318,7 +323,7 @@ public class ChestLockUI {
                         }
                         for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock()))
                             store.save(l, lock);
-                        openForPlayer(p, lock, loc, store);
+                        openForPlayer(p, lock, loc, store, shopStore);
                         return;
                     }
                 });
