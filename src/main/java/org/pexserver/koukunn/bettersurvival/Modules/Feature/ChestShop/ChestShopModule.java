@@ -852,8 +852,16 @@ public class ChestShopModule implements Listener {
                             } else {
                                 im.setDisplayName(sl.getDisplayName());
                             }
-                            List<String> lore = im.hasLore() && im.getLore() != null ? new ArrayList<>(im.getLore()) : new ArrayList<>();
-                            // append editor lines (do not overwrite original lore)
+                            // start with existing lore but remove any editor-only lines to avoid duplication
+                            List<String> lore = new ArrayList<>();
+                            if (im.hasLore() && im.getLore() != null) {
+                                for (String L : im.getLore()) {
+                                    if (L == null) continue;
+                                    if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
+                                    lore.add(L);
+                                }
+                            }
+                            // append editor-only lines exactly once
                             lore.add("在庫: " + sl.getStock());
                             lore.add("価格: " + sl.getPrice());
                             if (sl.getDescription() != null && !sl.getDescription().isEmpty()) lore.add("説明: " + sl.getDescription());
