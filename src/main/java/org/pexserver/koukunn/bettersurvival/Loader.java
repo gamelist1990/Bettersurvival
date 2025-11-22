@@ -17,6 +17,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopM
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -111,6 +112,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new ToggleCommand(this));
         // Chest command (chest lock & member management)
         commandManager.register(new ChestCommand(this));
+        // Rename command: 手持ちアイテムの名前変更
+        commandManager.register(new RenameCommand());
         // 他のコマンドはここに追加できます
     }
 
