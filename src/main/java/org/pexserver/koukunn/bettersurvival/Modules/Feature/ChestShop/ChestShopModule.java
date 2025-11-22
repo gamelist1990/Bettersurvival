@@ -22,6 +22,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.event.inventory.InventoryAction;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
+import org.bukkit.Sound;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 
 import java.util.*;
@@ -338,7 +339,9 @@ public class ChestShopModule implements Listener {
         // If owner is sneaking (shift-clicking), open buyer UI instead of owner UI
         if (p.isSneaking() && p.getUniqueId().toString().equals(shop.getOwner())) {
             e.setCancelled(true);
-            ChestShopUI.openForPlayer(p, shop, loc, store);
+            // create a shallow copy with a different owner id so openForPlayer treats player as non-owner
+            ChestShop browseShop = new ChestShop("", shop.getOwnerName(), shop.getName(), shop.getCurrency());
+            ChestShopUI.openForPlayer(p, browseShop, loc, store);
         }
     }
 
@@ -512,7 +515,7 @@ public class ChestShopModule implements Listener {
             Location loc = rr.loc;
             org.bukkit.inventory.Inventory inv = e.getInventory();
             org.bukkit.inventory.ItemStack supply = inv.getItem(10);
-            if (supply != null) {
+                if (supply != null) {
                 Map<Integer, ShopListing> listings = store.getListings(loc);
                 boolean applied = false;
                 for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
@@ -524,8 +527,9 @@ public class ChestShopModule implements Listener {
                         break;
                     }
                 }
-                if (applied) {
+                        if (applied) {
                     p.sendMessage("§a仕入れを補充しました: " + supply.getType().toString() + " x" + supply.getAmount());
+                    p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                 } else {
                     p.sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
                 }
@@ -574,11 +578,13 @@ public class ChestShopModule implements Listener {
                         shop.setEarnings(0);
                         store.save(loc, shop);
                         p.sendMessage("§a収益を回収しました: " + give.getAmount() + " " + shop.getCurrency());
+                        p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                         // update UI
                         ChestShopUI.openForPlayer(p, shop, loc, store);
                     }
                 } else {
                     p.sendMessage("§c回収する収益がありません");
+                    p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                 }
                 e.setCancelled(true);
                 return;
@@ -608,6 +614,7 @@ public class ChestShopModule implements Listener {
                                 store.saveListings(locInner, listings);
                             invnow.setItem(10, null);
                             p.sendMessage("§a仕入れを補充しました: " + supplyNow.getType().toString() + " x" + supplyNow.getAmount());
+                            p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                             applied = true;
                             break;
                         }
@@ -680,6 +687,7 @@ public class ChestShopModule implements Listener {
                                         store.saveListings(locMove, listingsNow);
                                         top.setItem(10, null);
                                         ((Player)e.getWhoClicked()).sendMessage("§a仕入れを補充しました: " + supNow.getType().toString() + " x" + supNow.getAmount());
+                                        ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                                         applied2 = true;
                                         break;
                                     }
@@ -691,6 +699,7 @@ public class ChestShopModule implements Listener {
                                         Map<Integer, ItemStack> ret = ((Player)e.getWhoClicked()).getInventory().addItem(source);
                                         if (!ret.isEmpty()) for (ItemStack r : ret.values()) if (r != null) ((Player)e.getWhoClicked()).getWorld().dropItemNaturally(((Player)e.getWhoClicked()).getLocation(), r);
                                         ((Player)e.getWhoClicked()).sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
+                                        ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                                     } catch (Exception ignored) {}
                                 }
                                 // Update owner info in real-time
@@ -716,6 +725,7 @@ public class ChestShopModule implements Listener {
                         if (ok) {
                             rrMove.shop.setCurrency(curMat);
                             ((Player)e.getWhoClicked()).sendMessage("§a通貨を設定しました: " + curMat);
+                            ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         }
                         e.setCancelled(true);
                         return;
@@ -742,12 +752,14 @@ public class ChestShopModule implements Listener {
                     if (ok) {
                         shopInner.setCurrency(curMat);
                         p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat));
+                        p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         // if owner UI is open, reflect change immediately
                         try {
                             InventoryView now = p.getOpenInventory();
                             if (now != null && now.getTitle() != null && now.getTitle().startsWith(ChestShopUI.OWNER_TITLE_PREFIX)) {
                                 org.bukkit.inventory.Inventory top = now.getTopInventory();
                                 if (top != null) top.setItem(12, cur == null ? null : cur);
+                                if (p != null) p.playSound(p.getLocation(), cur == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                             }
                         } catch (Exception ignored) {}
                     } else {
@@ -808,11 +820,13 @@ public class ChestShopModule implements Listener {
                     } catch (Exception ignored) {}
                     // manual save removed — rely on autosave
                     p.openInventory(editor);
+                    p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
                     return;
                 }
                 if (d.contains("閉じる")) {
                     ChestShopUI.closeForPlayer(p);
                     p.closeInventory();
+                    p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
                     return;
                 }
             }
@@ -862,7 +876,14 @@ public class ChestShopModule implements Listener {
                         // add to earnings
                         shop.setEarnings(shop.getEarnings() + price);
                         store.save(loc, shop);
-                        p.sendMessage("§a購入しました: " + sl.getDisplayName() + " for " + price + " " + shop.getCurrency());
+                        String dispName = sl.getDisplayName();
+                        if (dispName == null || dispName.isEmpty()) {
+                            Material mm = Material.matchMaterial(sl.getMaterial());
+                            dispName = mm == null ? sl.getMaterial() : mm.name();
+                        }
+                        dispName = dispName.replaceAll("\\{[^}]*\\}", "").trim();
+                        p.sendMessage("§a購入しました: " + dispName + " for " + price + " " + shop.getCurrency());
+                        p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
                         // update owner info if owner online
                         try {
                             Player owner = Bukkit.getPlayer(UUID.fromString(shop.getOwner()));
@@ -872,6 +893,7 @@ public class ChestShopModule implements Listener {
                         } catch (Exception ignored) {}
                     } else {
                         p.sendMessage("§c通貨が不足しています");
+                        p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                     }
                 }
             }
@@ -944,7 +966,7 @@ public class ChestShopModule implements Listener {
                                     sl.setStock(sl.getStock() + supplyNow.getAmount());
                                     store.saveListings(loc, listings);
                                     invnow.setItem(10, null);
-                                    if (p != null) p.sendMessage("§a仕入れを補充しました: " + supplyNow.getType().toString() + " x" + supplyNow.getAmount());
+                                    if (p != null) { p.sendMessage("§a仕入れを補充しました: " + supplyNow.getType().toString() + " x" + supplyNow.getAmount()); p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f); }
                                     applied = true;
                                     break;
                                 }
@@ -956,6 +978,7 @@ public class ChestShopModule implements Listener {
                                     if (!rema.isEmpty()) for (ItemStack r : rema.values()) if (r != null) p.getWorld().dropItemNaturally(p.getLocation(), r);
                                 } catch (Exception ignored2) {}
                                 p.sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
+                                p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                             }
                         }
                     } catch (Exception ignored) {}
@@ -965,9 +988,9 @@ public class ChestShopModule implements Listener {
                         org.bukkit.inventory.ItemStack cur = invnow.getItem(12);
                         String curMat = cur == null ? null : cur.getType().name();
                         boolean ok = store.saveShopCurrency(loc, curMat);
-                        if (ok && rr.shop != null) {
+                            if (ok && rr.shop != null) {
                             rr.shop.setCurrency(curMat);
-                            if (p != null) p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat));
+                            if (p != null) { p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat)); p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f); }
                         }
                     } catch (Exception ignored) {}
 
