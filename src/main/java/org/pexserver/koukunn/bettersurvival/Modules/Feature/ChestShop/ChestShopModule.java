@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.SignChangeEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -323,6 +324,25 @@ public class ChestShopModule implements Listener {
     }
 
     @EventHandler
+    public void onPlayerInteract(PlayerInteractEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        if (e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
+        if (e.getClickedBlock() == null) return;
+        if (!(e.getClickedBlock().getType() == Material.CHEST || e.getClickedBlock().getType() == Material.TRAPPED_CHEST || e.getClickedBlock().getType() == Material.BARREL)) return;
+        if (!(e.getPlayer() instanceof Player)) return;
+        Player p = (Player) e.getPlayer();
+        Location loc = e.getClickedBlock().getLocation();
+        Optional<ChestShop> opt = store.get(loc);
+        if (!opt.isPresent()) return;
+        ChestShop shop = opt.get();
+        // If owner is sneaking (shift-clicking), open buyer UI instead of owner UI
+        if (p.isSneaking() && p.getUniqueId().toString().equals(shop.getOwner())) {
+            e.setCancelled(true);
+            ChestShopUI.openForPlayer(p, shop, loc, store);
+        }
+    }
+
+    @EventHandler
     public void onSignCreate(SignChangeEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
         if (e.getPlayer() == null) return;
@@ -381,7 +401,7 @@ public class ChestShopModule implements Listener {
             }
         }
 
-        ChestShop shop = new ChestShop(e.getPlayer().getUniqueId().toString(), shopName);
+        ChestShop shop = new ChestShop(e.getPlayer().getUniqueId().toString(), e.getPlayer().getName(), shopName);
         store.save(loc, shop);
         // update sign lines to show canonical shop tag (preserve provided name)
         try {
@@ -534,6 +554,35 @@ public class ChestShopModule implements Listener {
 
         // Owner main UI
         if (title.startsWith(ChestShopUI.OWNER_TITLE_PREFIX)) {
+            ResolveResult rr = resolveByTitle(title);
+            if (rr == null) return;
+            Location loc = rr.loc;
+            ChestShop shop = rr.shop;
+
+            // handle earnings collection
+            if (e.getRawSlot() == 15) {
+                if (shop.getEarnings() > 0) {
+                    Material curMat = Material.matchMaterial(shop.getCurrency());
+                    if (curMat != null) {
+                        ItemStack give = new ItemStack(curMat, shop.getEarnings());
+                        Map<Integer, ItemStack> leftover = p.getInventory().addItem(give);
+                        if (!leftover.isEmpty()) {
+                            for (ItemStack drop : leftover.values()) {
+                                p.getWorld().dropItemNaturally(p.getLocation(), drop);
+                            }
+                        }
+                        shop.setEarnings(0);
+                        store.save(loc, shop);
+                        p.sendMessage("§a収益を回収しました: " + give.getAmount() + " " + shop.getCurrency());
+                        // update UI
+                        ChestShopUI.openForPlayer(p, shop, loc, store);
+                    }
+                } else {
+                    p.sendMessage("§c回収する収益がありません");
+                }
+                e.setCancelled(true);
+                return;
+            }
             // allow supply/currency interaction (raw slot 10 and 12)
             if (e.getRawSlot() == 10) {
                 // allow placing and removing items into supply slot, then process restock shortly
@@ -543,10 +592,10 @@ public class ChestShopModule implements Listener {
                 if (plugin == null) return;
                 // schedule one tick later so the inventory reflects the player's placement
                 org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                    if (rr == null) return;
-                    Location loc = rr.loc;
-                    Map<Integer, ShopListing> listings = store.getListings(loc);
+                    ResolveResult rrInner = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
+                    if (rrInner == null) return;
+                    Location locInner = rrInner.loc;
+                    Map<Integer, ShopListing> listings = store.getListings(locInner);
                     org.bukkit.inventory.Inventory invnow = e.getInventory();
                     if (invnow == null) return;
                     org.bukkit.inventory.ItemStack supplyNow = invnow.getItem(10);
@@ -554,9 +603,9 @@ public class ChestShopModule implements Listener {
                     boolean applied = false;
                     for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
                         ShopListing sl = en.getValue();
-                        if (sl.getMaterial() != null && sl.getMaterial().equals(supplyNow.getType().name())) {
-                            sl.setStock(sl.getStock() + supplyNow.getAmount());
-                            store.saveListings(loc, listings);
+                            if (sl.getMaterial() != null && sl.getMaterial().equals(supplyNow.getType().name())) {
+                                sl.setStock(sl.getStock() + supplyNow.getAmount());
+                                store.saveListings(locInner, listings);
                             invnow.setItem(10, null);
                             p.sendMessage("§a仕入れを補充しました: " + supplyNow.getType().toString() + " x" + supplyNow.getAmount());
                             applied = true;
@@ -577,8 +626,8 @@ public class ChestShopModule implements Listener {
                     }
                     // Update owner info in real-time
                     try {
-                        if (rr.shop != null && rr.shop.getOwner() != null) {
-                            Player ownerPlayer = Bukkit.getPlayer(java.util.UUID.fromString(rr.shop.getOwner()));
+                        if (rrInner.shop != null && rrInner.shop.getOwner() != null) {
+                            Player ownerPlayer = Bukkit.getPlayer(java.util.UUID.fromString(rrInner.shop.getOwner()));
                             if (ownerPlayer != null) ChestShopUI.updateOwnerInfo(ownerPlayer, store);
                         }
                     } catch (Exception ignored) {}
@@ -597,10 +646,10 @@ public class ChestShopModule implements Listener {
                     return;
                 }
                 if (e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY && e.getRawSlot() >= topSize) {
-                    ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                    if (rr == null) return;
-                    Location loc = rr.loc;
-                    Map<Integer, ShopListing> listings = store.getListings(loc);
+                    ResolveResult rrMove = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
+                    if (rrMove == null) return;
+                    Location locMove = rrMove.loc;
+                    Map<Integer, ShopListing> listings = store.getListings(locMove);
                     ItemStack source = e.getCurrentItem();
                     if (source == null) return;
                     // try supply first
@@ -623,12 +672,12 @@ public class ChestShopModule implements Listener {
                                 org.bukkit.inventory.ItemStack supNow = top.getItem(10);
                                 if (supNow == null) return;
                                 boolean applied2 = false;
-                                Map<Integer, ShopListing> listingsNow = store.getListings(loc);
+                                Map<Integer, ShopListing> listingsNow = store.getListings(locMove);
                                 for (Map.Entry<Integer, ShopListing> en : listingsNow.entrySet()) {
                                     ShopListing sl = en.getValue();
                                     if (sl.getMaterial() != null && sl.getMaterial().equals(supNow.getType().name())) {
                                         sl.setStock(sl.getStock() + supNow.getAmount());
-                                        store.saveListings(loc, listingsNow);
+                                        store.saveListings(locMove, listingsNow);
                                         top.setItem(10, null);
                                         ((Player)e.getWhoClicked()).sendMessage("§a仕入れを補充しました: " + supNow.getType().toString() + " x" + supNow.getAmount());
                                         applied2 = true;
@@ -663,9 +712,9 @@ public class ChestShopModule implements Listener {
                         try { ((Player)e.getWhoClicked()).getInventory().setItem(e.getSlot(), null); } catch (Exception ignored) {}
                         // save currency
                         String curMat = source.getType().name();
-                        boolean ok = store.saveShopCurrency(loc, curMat);
+                        boolean ok = store.saveShopCurrency(locMove, curMat);
                         if (ok) {
-                            rr.shop.setCurrency(curMat);
+                            rrMove.shop.setCurrency(curMat);
                             ((Player)e.getWhoClicked()).sendMessage("§a通貨を設定しました: " + curMat);
                         }
                         e.setCancelled(true);
@@ -681,17 +730,17 @@ public class ChestShopModule implements Listener {
                 if (plugin == null) return;
                 // schedule one tick later to let inventory update then process instantly
                 org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                    ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                    if (rr == null) return;
-                    Location loc = rr.loc;
-                    ChestShop shop = rr.shop;
+                    ResolveResult rrInner = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
+                    if (rrInner == null) return;
+                    Location locInner = rrInner.loc;
+                    ChestShop shopInner = rrInner.shop;
                     org.bukkit.inventory.Inventory nowInv = e.getInventory();
                     if (nowInv == null) return;
                     org.bukkit.inventory.ItemStack cur = nowInv.getItem(12);
                     String curMat = cur == null ? null : cur.getType().name();
-                    boolean ok = store.saveShopCurrency(loc, curMat);
+                    boolean ok = store.saveShopCurrency(locInner, curMat);
                     if (ok) {
-                        shop.setCurrency(curMat);
+                        shopInner.setCurrency(curMat);
                         p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat));
                         // if owner UI is open, reflect change immediately
                         try {
@@ -712,14 +761,14 @@ public class ChestShopModule implements Listener {
             if (clicked != null && clicked.hasItemMeta() && clicked.getItemMeta().hasDisplayName()) {
                 String d = clicked.getItemMeta().getDisplayName();
                 if (d.contains("編集ページを開く")) {
-                    ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
-                    if (rr == null) return;
-                    Location loc = rr.loc;
-                    ChestShop shop = rr.shop;
+                    ResolveResult rrEditor = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
+                    if (rrEditor == null) return;
+                    Location locEditor = rrEditor.loc;
+                    ChestShop shopEditor = rrEditor.shop;
                     if (!p.getUniqueId().toString().equals(shop.getOwner()) && !p.isOp()) { p.sendMessage("§cオーナーのみ編集できます"); return; }
                     // populate editor inventory
-                    org.bukkit.inventory.Inventory editor = org.bukkit.Bukkit.createInventory(null, 27, ChestShopUI.EDITOR_TITLE_PREFIX + shop.getName());
-                    Map<Integer, ShopListing> listings = store.getListings(loc);
+                    org.bukkit.inventory.Inventory editor = org.bukkit.Bukkit.createInventory(null, 27, ChestShopUI.EDITOR_TITLE_PREFIX + shopEditor.getName());
+                    Map<Integer, ShopListing> listings = store.getListings(locEditor);
                     for (int i = 0; i < 26; i++) {
                         ShopListing sl = listings.get(i);
                         if (sl == null) continue;
@@ -739,8 +788,8 @@ public class ChestShopModule implements Listener {
                         editor.setItem(i, it);
                     }
                     // ensure editor mapping exists so autosave/detection can find this shop
-                    ChestShopUI.registerOpen(p.getUniqueId(), shop, loc);
-                    Bukkit.getLogger().info("[ChestShop] Opening editor for player=" + p.getName() + " shop=" + shop.getName());
+                    ChestShopUI.registerOpen(p.getUniqueId(), shopEditor, locEditor);
+                    Bukkit.getLogger().info("[ChestShop] Opening editor for player=" + p.getName() + " shop=" + shopEditor.getName());
                     // initialize snapshot so periodic tick doesn't write unnecessarily
                     try {
                         StringBuilder sbinit = new StringBuilder();
@@ -779,8 +828,56 @@ public class ChestShopModule implements Listener {
             return;
         }
 
-        // Buyer UI: prevent altering the UI (clicking items to buy will be implemented separately)
-        e.setCancelled(true);
+        // Buyer UI: handle buying items
+        if (title.startsWith(ChestShopUI.TITLE_PREFIX)) {
+            ResolveResult rr = resolveByTitle(title);
+            if (rr == null) return;
+            Location loc = rr.loc;
+            ChestShop shop = rr.shop;
+            if (shop == null || shop.getCurrency() == null) return;
+            Map<Integer, ShopListing> listings = store.getListings(loc);
+            ShopListing sl = listings.get(e.getRawSlot());
+            if (sl != null && sl.getStock() > 0) {
+                int price = sl.getPrice();
+                Material curMat = Material.matchMaterial(shop.getCurrency());
+                if (curMat != null) {
+                    int has = countItems(p.getInventory(), curMat);
+                    if (has >= price) {
+                        // remove currency
+                        removeItems(p.getInventory(), curMat, price);
+                        // give item
+                        Material itemMat = Material.matchMaterial(sl.getMaterial());
+                        if (itemMat != null) {
+                            ItemStack give = new ItemStack(itemMat, 1);
+                            Map<Integer, ItemStack> leftover = p.getInventory().addItem(give);
+                            if (!leftover.isEmpty()) {
+                                for (ItemStack drop : leftover.values()) {
+                                    p.getWorld().dropItemNaturally(p.getLocation(), drop);
+                                }
+                            }
+                        }
+                        // decrease stock
+                        sl.setStock(sl.getStock() - 1);
+                        store.saveListings(loc, listings);
+                        // add to earnings
+                        shop.setEarnings(shop.getEarnings() + price);
+                        store.save(loc, shop);
+                        p.sendMessage("§a購入しました: " + sl.getDisplayName() + " for " + price + " " + shop.getCurrency());
+                        // update owner info if owner online
+                        try {
+                            Player owner = Bukkit.getPlayer(UUID.fromString(shop.getOwner()));
+                            if (owner != null) {
+                                ChestShopUI.updateOwnerInfo(owner, store);
+                            }
+                        } catch (Exception ignored) {}
+                    } else {
+                        p.sendMessage("§c通貨が不足しています");
+                    }
+                }
+            }
+            e.setCancelled(true);
+            return;
+        }
     }
 
     @SuppressWarnings("null")
@@ -896,5 +993,30 @@ public class ChestShopModule implements Listener {
     }
 
     public ChestShopStore getStore() { return store; }
+
+    private int countItems(org.bukkit.inventory.PlayerInventory inv, Material mat) {
+        int count = 0;
+        for (ItemStack item : inv.getContents()) {
+            if (item != null && item.getType() == mat) {
+                count += item.getAmount();
+            }
+        }
+        return count;
+    }
+
+    private void removeItems(org.bukkit.inventory.PlayerInventory inv, Material mat, int amount) {
+        for (int i = 0; i < inv.getSize(); i++) {
+            ItemStack item = inv.getItem(i);
+            if (item != null && item.getType() == mat) {
+                int remove = Math.min(amount, item.getAmount());
+                item.setAmount(item.getAmount() - remove);
+                amount -= remove;
+                if (item.getAmount() <= 0) {
+                    inv.setItem(i, null);
+                }
+                if (amount <= 0) break;
+            }
+        }
+    }
 
 }

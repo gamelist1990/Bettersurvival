@@ -103,13 +103,28 @@ public class ChestShopUI {
             }
             inv.setItem(19, info);
 
+            // slot 15: earnings display
+            if (shop != null) {
+                ItemStack earningsItem = new ItemStack(Material.GOLD_INGOT);
+                ItemMeta em2 = earningsItem.getItemMeta();
+                if (em2 != null) {
+                    String currencyName = shop.getCurrency() != null ? shop.getCurrency() : "未設定";
+                    em2.setDisplayName("§6収益: " + shop.getEarnings() + " " + currencyName);
+                    List<String> lore = new ArrayList<>();
+                    lore.add("§aクリックで収益を回収");
+                    em2.setLore(lore);
+                    earningsItem.setItemMeta(em2);
+                }
+                inv.setItem(15, earningsItem);
+            }
+
             // fill unused owner slots with barriers to prevent interaction
             org.bukkit.inventory.ItemStack barrier = new org.bukkit.inventory.ItemStack(Material.BARRIER);
             org.bukkit.inventory.meta.ItemMeta bm = barrier.getItemMeta();
             if (bm != null) { bm.setDisplayName("§c使用不可"); barrier.setItemMeta(bm); }
             for (int i = 0; i < inv.getSize(); i++) {
-                // allowed interactive slots for owner: 0 (editor), 10 (supply), 12 (currency), 19 (info), last slot (close)
-                if (i == 0 || i == 10 || i == 12 || i == 19 || i == inv.getSize()-1) continue;
+                // allowed interactive slots for owner: 0 (editor), 10 (supply), 12 (currency), 15 (earnings), 19 (info), last slot (close)
+                if (i == 0 || i == 10 || i == 12 || i == 15 || i == 19 || i == inv.getSize()-1) continue;
                 if (inv.getItem(i) == null) inv.setItem(i, barrier);
             }
         }
@@ -142,6 +157,8 @@ public class ChestShopUI {
                 if (im2 != null) {
                     String disp = sl.getDisplayName();
                     if (disp == null || disp.isEmpty()) disp = mat.name();
+                    // Remove {} and their contents from display name
+                    disp = disp.replaceAll("\\{[^}]*\\}", "");
                     im2.setDisplayName(disp);
                     List<String> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
@@ -149,7 +166,7 @@ public class ChestShopUI {
                     } else if (sl.getPrice() > 64) {
                         lore2.add("§c価格が最大を超えています (販売不可)");
                     } else {
-                        lore2.add("§a販売中 - 価格: " + sl.getPrice());
+                        lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + shop.getCurrency());
                     }
                     lore2.add("在庫: " + sl.getStock());
                     if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {

@@ -45,7 +45,9 @@ public class ChestShopStore {
         Object obj = pc.get(canonical);
         if (obj instanceof Map) {
             Map<String,Object> map = (Map<String,Object>) obj;
-            ChestShop shop = new ChestShop((String) map.get("owner"), (String) map.get("name"), (String) map.get("currency"));
+            ChestShop shop = new ChestShop((String) map.get("owner"), (String) map.get("ownerName"), (String) map.get("name"), (String) map.get("currency"));
+            int earnings = map.get("earnings") instanceof Number ? ((Number) map.get("earnings")).intValue() : 0;
+            shop.setEarnings(earnings);
             return Optional.of(shop);
         }
         return Optional.empty();
@@ -79,8 +81,10 @@ public class ChestShopStore {
         Map<String, Object> entry = new LinkedHashMap<>();
         if (existing instanceof Map) entry = (Map<String,Object>) existing;
         entry.put("owner", shop.getOwner());
+        entry.put("ownerName", shop.getOwnerName());
         entry.put("name", shop.getName());
         if (shop.getCurrency() != null) entry.put("currency", shop.getCurrency()); else entry.remove("currency");
+        entry.put("earnings", shop.getEarnings());
         pc.put(canonical, entry);
         // remove legacy per-block keys inside the same set to avoid duplicates
         List<Location> related = org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock());
@@ -141,7 +145,9 @@ public class ChestShopStore {
             Object obj = e.getValue();
             if (!(obj instanceof Map)) continue;
             Map<String, Object> map = (Map<String, Object>) obj;
-            ChestShop shop = new ChestShop((String) map.get("owner"), (String) map.get("name"), (String) map.get("currency"));
+            ChestShop shop = new ChestShop((String) map.get("owner"), (String) map.get("ownerName"), (String) map.get("name"), (String) map.get("currency"));
+            int earnings = map.get("earnings") instanceof Number ? ((Number) map.get("earnings")).intValue() : 0;
+            shop.setEarnings(earnings);
             out.put(e.getKey(), shop);
         }
         return out;
