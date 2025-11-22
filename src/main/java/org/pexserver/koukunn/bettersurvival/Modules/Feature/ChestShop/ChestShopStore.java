@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
 
 import org.bukkit.Location;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 
 import java.util.LinkedHashMap;
@@ -20,7 +21,7 @@ public class ChestShopStore {
 
     private String keyFor(Location loc) {
         // use smallest canonical location among adjacent chest blocks
-        List<Location> related = org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock());
+        List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
         if (related == null || related.isEmpty()) {
             return loc.getWorld().getName() + ":" + loc.getBlockX() + ":" + loc.getBlockY() + ":" + loc.getBlockZ();
         }
@@ -87,7 +88,7 @@ public class ChestShopStore {
         entry.put("earnings", shop.getEarnings());
         pc.put(canonical, entry);
         // remove legacy per-block keys inside the same set to avoid duplicates
-        List<Location> related = org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock());
+        List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
         for (Location l : related) {
             String k = l.getWorld().getName() + ":" + l.getBlockX() + ":" + l.getBlockY() + ":" + l.getBlockZ();
             if (!k.equals(canonical)) pc.getData().remove(k);
@@ -133,7 +134,7 @@ public class ChestShopStore {
         PEXConfig pc = cfg.loadConfig(path).orElseGet(PEXConfig::new);
         String canonical = keyFor(loc);
         pc.getData().remove(canonical);
-        List<Location> related = org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule.getChestRelatedLocations(loc.getBlock());
+        List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
         for (Location l : related) pc.getData().remove(l.getWorld().getName() + ":" + l.getBlockX() + ":" + l.getBlockY() + ":" + l.getBlockZ());
         return cfg.saveConfig(path, pc);
     }

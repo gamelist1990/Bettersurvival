@@ -7,6 +7,9 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Material;
 
 import java.util.*;
@@ -56,7 +59,7 @@ public class ChestShopUI {
         for (Player pl : nearby) {
             if (slot >= inv.getSize()) break;
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-            org.bukkit.inventory.meta.SkullMeta meta = (org.bukkit.inventory.meta.SkullMeta) head.getItemMeta();
+            SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
                 meta.setOwningPlayer(pl);
                 meta.setDisplayName(pl.getName());
@@ -69,8 +72,8 @@ public class ChestShopUI {
 
         if (isOwner) {
             // Owner main UI: slot 0 = open editor button
-            org.bukkit.inventory.ItemStack edit = new org.bukkit.inventory.ItemStack(Material.WRITABLE_BOOK);
-            org.bukkit.inventory.meta.ItemMeta em = edit.getItemMeta();
+            ItemStack edit = new ItemStack(Material.WRITABLE_BOOK);
+            ItemMeta em = edit.getItemMeta();
             if (em != null) { em.setDisplayName("§a編集ページを開く"); List<String> lore = new ArrayList<>(); lore.add("クリックで出品アイテム編集画面を開きます"); em.setLore(lore); edit.setItemMeta(em); }
             inv.setItem(0, edit);
             // leave the supply slot (10) and currency slot (12) empty so owner can place items there
@@ -78,12 +81,12 @@ public class ChestShopUI {
             if (shop != null && shop.getCurrency() != null && !shop.getCurrency().isEmpty()) {
                 Material curMat = Material.matchMaterial(shop.getCurrency());
                 if (curMat != null) {
-                    org.bukkit.inventory.ItemStack curItem = new org.bukkit.inventory.ItemStack(curMat, 1);
+                    ItemStack curItem = new ItemStack(curMat, 1);
                     inv.setItem(12, curItem);
                 }
             }
-            org.bukkit.inventory.ItemStack info = new org.bukkit.inventory.ItemStack(Material.PAPER);
-            org.bukkit.inventory.meta.ItemMeta im = info.getItemMeta();
+            ItemStack info = new ItemStack(Material.PAPER);
+            ItemMeta im = info.getItemMeta();
             if (im != null) {
                 im.setDisplayName("§6在庫と売切れ表示");
                 // populate summary using store listings
@@ -119,8 +122,8 @@ public class ChestShopUI {
             }
 
             // fill unused owner slots with barriers to prevent interaction
-            org.bukkit.inventory.ItemStack barrier = new org.bukkit.inventory.ItemStack(Material.BARRIER);
-            org.bukkit.inventory.meta.ItemMeta bm = barrier.getItemMeta();
+            ItemStack barrier = new ItemStack(Material.BARRIER);
+            ItemMeta bm = barrier.getItemMeta();
             if (bm != null) { bm.setDisplayName("§c使用不可"); barrier.setItemMeta(bm); }
             for (int i = 0; i < inv.getSize(); i++) {
                 // allowed interactive slots for owner: 0 (editor), 10 (supply), 12 (currency), 15 (earnings), 19 (info), last slot (close)
@@ -147,21 +150,21 @@ public class ChestShopUI {
                 if (sl == null) continue;
                 Material mat = Material.matchMaterial(sl.getMaterial());
                 if (mat == null) mat = Material.PAPER;
-                org.bukkit.inventory.ItemStack it = null;
+                ItemStack it = null;
                 // prefer serialized item data (preserves enchantments / NBT)
                 if (sl.getItemData() != null) {
-                    try { it = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { it = null; }
+                    try { it = ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { it = null; }
                 }
-                if (it == null) it = new org.bukkit.inventory.ItemStack(mat);
+                if (it == null) it = new ItemStack(mat);
                 it.setAmount(1);
-                org.bukkit.inventory.meta.ItemMeta im2 = it.getItemMeta();
+                ItemMeta im2 = it.getItemMeta();
                 if (im2 != null) {
                     // apply stored enchant map if the serialized item didn't include them
                     try {
                         if ((im2.getEnchants() == null || im2.getEnchants().isEmpty()) && sl.getEnchants() != null && !sl.getEnchants().isEmpty()) {
                             for (Map.Entry<String,Integer> en : sl.getEnchants().entrySet()) {
                                 try {
-                                    org.bukkit.enchantments.Enchantment ec = org.bukkit.enchantments.Enchantment.getByKey(org.bukkit.NamespacedKey.minecraft(en.getKey()));
+                                    Enchantment ec = Enchantment.getByKey(NamespacedKey.minecraft(en.getKey()));
                                     if (ec != null && en.getValue() != null) im2.addEnchant(ec, en.getValue(), true);
                                 } catch (Exception ignored) {}
                             }
@@ -197,8 +200,8 @@ public class ChestShopUI {
                 inv.setItem(i, it);
             }
             // fill unused buyer slots (0..25) with barrier
-            org.bukkit.inventory.ItemStack barrierB = new org.bukkit.inventory.ItemStack(Material.BARRIER);
-            org.bukkit.inventory.meta.ItemMeta bmB = barrierB.getItemMeta();
+            ItemStack barrierB = new ItemStack(Material.BARRIER);
+            ItemMeta bmB = barrierB.getItemMeta();
             if (bmB != null) { bmB.setDisplayName("§c使用不可"); barrierB.setItemMeta(bmB); }
             for (int i = 0; i < 26; i++) {
                 if (inv.getItem(i) == null) inv.setItem(i, barrierB);

@@ -25,11 +25,22 @@ import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.bukkit.Sound;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.bukkit.event.block.BlockPistonExtendEvent;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
+import org.bukkit.World;
+import org.bukkit.block.Sign;
+import org.bukkit.block.Container;
+import org.bukkit.event.block.Action;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.NamespacedKey;
+import org.bukkit.enchantments.Enchantment;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,7 +61,7 @@ public class ChestShopModule implements Listener {
                 if (plugin != null) {
                 Bukkit.getLogger().info("[ChestShop] scheduling editor autosave tick task for plugin=" + plugin.getName());
                 Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-                    for (org.bukkit.entity.Player p : Bukkit.getOnlinePlayers()) {
+                    for (Player p : Bukkit.getOnlinePlayers()) {
                         try {
                             if (p == null) continue;
                             InventoryView view = null;
@@ -62,12 +73,12 @@ public class ChestShopModule implements Listener {
                             if (rr == null) continue;
                             Location loc = rr.loc;
                             ChestShop shop = rr.shop;
-                            org.bukkit.inventory.Inventory invEditor = view.getTopInventory();
+                            Inventory invEditor = view.getTopInventory();
                             if (invEditor == null) continue;
                             // compute snapshot hash to detect changes and avoid saving every tick
                             StringBuilder sb = new StringBuilder();
                             for (int i = 0; i < 26; i++) {
-                                org.bukkit.inventory.ItemStack it = invEditor.getItem(i);
+                                ItemStack it = invEditor.getItem(i);
                                 if (it == null) { sb.append("-"); continue; }
                                 String disp = null;
                                 if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) disp = it.getItemMeta().getDisplayName();
@@ -94,7 +105,7 @@ public class ChestShopModule implements Listener {
                             Map<Integer, ShopListing> old = store.getListings(loc);
                             Map<Integer, ShopListing> updated = new LinkedHashMap<>();
                             for (int i = 0; i < 26; i++) {
-                                org.bukkit.inventory.ItemStack it = invEditor.getItem(i);
+                                ItemStack it = invEditor.getItem(i);
                                 if (it == null) continue;
                                 String rawDisplay = null;
                                 if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) rawDisplay = it.getItemMeta().getDisplayName();
@@ -114,16 +125,16 @@ public class ChestShopModule implements Listener {
                                     if (removed == null) continue;
                                     if (wasRemovalRecentlyHandled(p, loc, idx)) continue;
                                     try {
-                                        org.bukkit.inventory.ItemStack giveBack = null;
+                                        ItemStack giveBack = null;
                                         if (removed.getItemData() != null) {
-                                            try { giveBack = org.bukkit.inventory.ItemStack.deserialize(removed.getItemData()); } catch (Exception ignored) { giveBack = null; }
+                                            try { giveBack = ItemStack.deserialize(removed.getItemData()); } catch (Exception ignored) { giveBack = null; }
                                         }
                                         if (giveBack == null) {
-                                            org.bukkit.Material m = org.bukkit.Material.matchMaterial(removed.getMaterial());
-                                            giveBack = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                                            Material m = Material.matchMaterial(removed.getMaterial());
+                                            giveBack = new ItemStack(m == null ? Material.PAPER : m);
                                         }
                                         // sanitize meta
-                                        org.bukkit.inventory.meta.ItemMeta gm = giveBack.getItemMeta();
+                                        ItemMeta gm = giveBack.getItemMeta();
                                         if (gm != null) {
                                             if (gm.hasLore() && gm.getLore() != null) {
                                                 List<String> newl = new ArrayList<>();
@@ -146,7 +157,7 @@ public class ChestShopModule implements Listener {
                                         int amountToGive = Math.max(1, 1 + Math.max(0, removed.getStock()));
                                         // avoid duplicating if player already has similar items
                                         giveBack = sanitizeReturnedItem(giveBack);
-                                        org.bukkit.inventory.ItemStack proto = giveBack.clone(); proto.setAmount(1);
+                                        ItemStack proto = giveBack.clone(); proto.setAmount(1);
                                         int existing = countSimilarInPlayer(p, proto);
                                         int toGive = Math.max(0, amountToGive - existing);
                                         if (toGive > 0) {
@@ -183,7 +194,7 @@ public class ChestShopModule implements Listener {
                                                             String key = en.getKey();
                                                             String[] parts = key.split(":" );
                                                             if (parts.length == 4) {
-                                                                org.bukkit.World w = Bukkit.getWorld(parts[0]);
+                                                                World w = Bukkit.getWorld(parts[0]);
                                                                 if (w != null) {
                                                                     try {
                                                                         int x = Integer.parseInt(parts[1]);
@@ -201,10 +212,10 @@ public class ChestShopModule implements Listener {
                                             } catch (Exception ignore) {}
                                         }
                                         if (loc == null || shop == null) continue;
-                                        org.bukkit.inventory.Inventory invOwner = view.getTopInventory();
+                                        Inventory invOwner = view.getTopInventory();
                                         if (invOwner == null) continue;
                                         // only watch currency slot (12) for changes
-                                        org.bukkit.inventory.ItemStack cur = invOwner.getItem(12);
+                                        ItemStack cur = invOwner.getItem(12);
                                         String curMat = cur == null ? null : cur.getType().name();
                                         String prevCur = shop.getCurrency();
                                         if (!Objects.equals(curMat, prevCur)) {
@@ -250,7 +261,7 @@ public class ChestShopModule implements Listener {
             String key = en.getKey();
             String[] parts = key.split(":");
             if (parts.length != 4) continue;
-            org.bukkit.World w = Bukkit.getWorld(parts[0]);
+            World w = Bukkit.getWorld(parts[0]);
             if (w == null) continue;
             try {
                 int x = Integer.parseInt(parts[1]);
@@ -267,18 +278,18 @@ public class ChestShopModule implements Listener {
     // prevent duplicate-return races: track recent removals (player+loc+slot)
     private final Map<String, Long> recentRemovalTimestamps = new ConcurrentHashMap<>();
 
-    private String makeRemovalKey(org.bukkit.entity.Player p, Location loc, int slot) {
+    private String makeRemovalKey(Player p, Location loc, int slot) {
         if (p == null || loc == null) return null;
         return p.getUniqueId().toString() + ":" + loc.getWorld().getName() + ":" + loc.getBlockX() + ":" + loc.getBlockY() + ":" + loc.getBlockZ() + ":" + slot;
     }
 
-    private void markRemovalHandled(org.bukkit.entity.Player p, Location loc, int slot) {
+    private void markRemovalHandled(Player p, Location loc, int slot) {
         String k = makeRemovalKey(p, loc, slot);
         if (k == null) return;
         recentRemovalTimestamps.put(k, System.currentTimeMillis());
     }
 
-    private boolean wasRemovalRecentlyHandled(org.bukkit.entity.Player p, Location loc, int slot) {
+    private boolean wasRemovalRecentlyHandled(Player p, Location loc, int slot) {
         String k = makeRemovalKey(p, loc, slot);
         if (k == null) return false;
         Long t = recentRemovalTimestamps.get(k);
@@ -288,7 +299,7 @@ public class ChestShopModule implements Listener {
         return false;
     }
 
-    private ShopListing parseRawToListing(org.bukkit.inventory.ItemStack it, String raw, ShopListing prev) {
+    private ShopListing parseRawToListing(ItemStack it, String raw, ShopListing prev) {
         int prevStock = prev != null ? prev.getStock() : 0;
         int prevPrice = prev != null ? prev.getPrice() : 0;
         String prevDesc = prev != null && prev.getDescription() != null ? prev.getDescription() : "";
@@ -354,19 +365,19 @@ public class ChestShopModule implements Listener {
         Map<String,Integer> enchMap = new LinkedHashMap<>();
         int damage = 0;
         try {
-            if (it.hasItemMeta()) {
-                org.bukkit.inventory.meta.ItemMeta im = it.getItemMeta();
+                if (it.hasItemMeta()) {
+                ItemMeta im = it.getItemMeta();
                 if (im != null) {
                     if (im.hasEnchants()) {
-                        for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> en : im.getEnchants().entrySet()) {
+                        for (Map.Entry<Enchantment, Integer> en : im.getEnchants().entrySet()) {
                             try {
                                 String k = en.getKey().getKey().getKey();
                                 enchMap.put(k, en.getValue());
                             } catch (Exception ignored) {}
                         }
                     }
-                    if (im instanceof org.bukkit.inventory.meta.Damageable) {
-                        damage = ((org.bukkit.inventory.meta.Damageable) im).getDamage();
+                    if (im instanceof Damageable) {
+                        damage = ((Damageable) im).getDamage();
                     }
                 }
             }
@@ -378,9 +389,9 @@ public class ChestShopModule implements Listener {
         Map<String,Object> itemData = null;
         try {
             if (it != null) {
-                org.bukkit.inventory.ItemStack copy = it.clone();
+                ItemStack copy = it.clone();
                 try {
-                    org.bukkit.inventory.meta.ItemMeta cim = copy.getItemMeta();
+                    ItemMeta cim = copy.getItemMeta();
                     if (cim != null && cim.hasLore()) {
                         List<String> newLore = new ArrayList<>();
                         for (String L : cim.getLore()) {
@@ -407,7 +418,7 @@ public class ChestShopModule implements Listener {
                 if ((itemData == null || itemData.isEmpty()) && prevItemData != null) itemData = new LinkedHashMap<>(prevItemData);
             }
         } catch (Exception ignored) {}
-        String matName = it == null ? org.bukkit.Material.PAPER.name() : it.getType().name();
+        String matName = it == null ? Material.PAPER.name() : it.getType().name();
         // if description blank, keep previous description
         if ((desc == null || desc.isEmpty()) && prevDesc != null && !prevDesc.isEmpty()) desc = prevDesc;
         if (damage == 0 && prevDamage > 0) damage = prevDamage;
@@ -416,14 +427,14 @@ public class ChestShopModule implements Listener {
     }
 
     @EventHandler
-    public void onBlockBreak(org.bukkit.event.block.BlockBreakEvent e) {
+    public void onBlockBreak(BlockBreakEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
-        org.bukkit.block.Block b = e.getBlock();
+        Block b = e.getBlock();
         if (b == null) return;
         if (!(b.getType() == Material.CHEST || b.getType() == Material.TRAPPED_CHEST || b.getType() == Material.BARREL)) {
             // if this is a sign attached to a shop chest, prevent non-owner/OP from breaking it
             try {
-                if (b.getState() instanceof org.bukkit.block.Sign) {
+                if (b.getState() instanceof Sign) {
                     List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
                     for (BlockFace f : faces) {
                         Block nb = b.getRelative(f);
@@ -466,22 +477,22 @@ public class ChestShopModule implements Listener {
                     for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
                         ShopListing sl = en.getValue();
                         if (sl == null) continue;
-                        org.bukkit.inventory.ItemStack toDrop = null;
+                        ItemStack toDrop = null;
                         if (sl.getItemData() != null) {
-                            try { toDrop = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { toDrop = null; }
+                            try { toDrop = ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { toDrop = null; }
                         }
                         if (toDrop == null) {
-                            org.bukkit.Material m = org.bukkit.Material.matchMaterial(sl.getMaterial());
-                            toDrop = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                            Material m = Material.matchMaterial(sl.getMaterial());
+                            toDrop = new ItemStack(m == null ? Material.PAPER : m);
                         }
                         // apply stored enchants if serialized data didn't include them
                         try {
                             if ((toDrop.getItemMeta() == null || toDrop.getItemMeta().getEnchants().isEmpty()) && sl.getEnchants() != null && !sl.getEnchants().isEmpty()) {
-                                org.bukkit.inventory.meta.ItemMeta im = toDrop.getItemMeta();
+                                ItemMeta im = toDrop.getItemMeta();
                                 if (im != null) {
                                     for (Map.Entry<String,Integer> en2 : sl.getEnchants().entrySet()) {
                                         try {
-                                            org.bukkit.enchantments.Enchantment ec = org.bukkit.enchantments.Enchantment.getByKey(org.bukkit.NamespacedKey.minecraft(en2.getKey()));
+                                            Enchantment ec = Enchantment.getByKey(NamespacedKey.minecraft(en2.getKey()));
                                             if (ec != null && en2.getValue() != null) im.addEnchant(ec, en2.getValue(), true);
                                         } catch (Exception ignored) {}
                                     }
@@ -528,9 +539,9 @@ public class ChestShopModule implements Listener {
                     // skip locked
                     if (chestLock != null && chestLock.getLock(loc).isPresent()) continue;
                     // check empty
-                    org.bukkit.block.BlockState st = b.getState();
-                    if (st instanceof org.bukkit.block.Container) {
-                        org.bukkit.inventory.Inventory inv = ((org.bukkit.block.Container) st).getSnapshotInventory();
+                    BlockState st = b.getState();
+                    if (st instanceof Container) {
+                        Inventory inv = ((Container) st).getSnapshotInventory();
                         if (inv != null && !inv.isEmpty()) continue;
                     }
                     double dist = start.getLocation().distance(loc);
@@ -544,12 +555,12 @@ public class ChestShopModule implements Listener {
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
-        if (e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
+        if (e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         if (e.getClickedBlock() == null) return;
         // protect interacting with shop signs
         try {
             Block clicked = e.getClickedBlock();
-            if (clicked.getState() instanceof org.bukkit.block.Sign) {
+            if (clicked.getState() instanceof Sign) {
                 List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
                 for (BlockFace f : faces) {
                     Block nb = clicked.getRelative(f);
@@ -640,9 +651,9 @@ public class ChestShopModule implements Listener {
         }
 
         // Ensure chest is empty
-        org.bukkit.block.BlockState st = chestBlock.get().getState();
-        if (st instanceof org.bukkit.block.Container) {
-            org.bukkit.inventory.Inventory inv = ((org.bukkit.block.Container) st).getSnapshotInventory();
+        BlockState st = chestBlock.get().getState();
+        if (st instanceof Container) {
+            Inventory inv = ((Container) st).getSnapshotInventory();
             if (inv != null && !inv.isEmpty()) {
                 e.getPlayer().sendMessage("§cショップを作成するには空のチェストが必要です (近くに空チェストがありません)");
                 return;
@@ -684,8 +695,8 @@ public class ChestShopModule implements Listener {
             if (t.startsWith(ChestShopUI.TITLE_PREFIX) || t.startsWith(ChestShopUI.OWNER_TITLE_PREFIX) || t.startsWith(ChestShopUI.EDITOR_TITLE_PREFIX)) return;
         }
         if (!toggle.getGlobal("chestshop")) return;
-        if (e.getInventory() == null) return;
-        if (e.getInventory().getType() != InventoryType.CHEST && e.getInventory().getType() != InventoryType.BARREL) return;
+            if (e.getInventory() == null) return;
+            if (e.getInventory().getType() != InventoryType.CHEST && e.getInventory().getType() != InventoryType.BARREL) return;
         if (!(e.getPlayer() instanceof Player)) return;
         Player p = (Player) e.getPlayer();
 
@@ -727,11 +738,11 @@ public class ChestShopModule implements Listener {
             if (rr == null) return;
             Location loc = rr.loc;
             ChestShop shop = rr.shop;
-            org.bukkit.inventory.Inventory inv = e.getInventory();
+            Inventory inv = e.getInventory();
             Map<Integer, ShopListing> old = store.getListings(loc);
             Map<Integer, ShopListing> updated = new LinkedHashMap<>();
             for (int i = 0; i < 26; i++) {
-                org.bukkit.inventory.ItemStack it = inv.getItem(i);
+                ItemStack it = inv.getItem(i);
                 if (it == null) continue;
                 String raw = null;
                 if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) raw = it.getItemMeta().getDisplayName();
@@ -746,7 +757,7 @@ public class ChestShopModule implements Listener {
             store.saveListings(loc, updated);
             p.sendMessage("§a出品データを保存しました (" + updated.size() + " 件)");
             // return to owner main UI - schedule next tick to avoid re-entrant inventory events
-            org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
+            Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
             if (plugin != null) {
                 // mark player as suppressed to avoid immediate re-entrant close handling
                 suppressCloseHandling.add(p.getUniqueId());
@@ -774,8 +785,8 @@ public class ChestShopModule implements Listener {
             ResolveResult rr = resolveByTitle(title);
             if (rr == null) return;
             Location loc = rr.loc;
-            org.bukkit.inventory.Inventory inv = e.getInventory();
-            org.bukkit.inventory.ItemStack supply = inv.getItem(10);
+            Inventory inv = e.getInventory();
+            ItemStack supply = inv.getItem(10);
                 if (supply != null) {
                 Map<Integer, ShopListing> listings = store.getListings(loc);
                 boolean applied = false;
@@ -860,7 +871,7 @@ public class ChestShopModule implements Listener {
                 // allow placing and removing items into supply slot, then process restock shortly
                 // explicitly allow default inventory behavior (do not cancel this event)
                 try { e.setCancelled(false); } catch (Exception ignored) {}
-                org.bukkit.plugin.Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
+                Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
                 if (plugin == null) return;
                 // schedule one tick later so the inventory reflects the player's placement
                 org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -868,9 +879,9 @@ public class ChestShopModule implements Listener {
                     if (rrInner == null) return;
                     Location locInner = rrInner.loc;
                     Map<Integer, ShopListing> listings = store.getListings(locInner);
-                    org.bukkit.inventory.Inventory invnow = e.getInventory();
+                    Inventory invnow = e.getInventory();
                     if (invnow == null) return;
-                    org.bukkit.inventory.ItemStack supplyNow = invnow.getItem(10);
+                    ItemStack supplyNow = invnow.getItem(10);
                     if (supplyNow == null) return;
                     boolean applied = false;
                     for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
@@ -926,9 +937,9 @@ public class ChestShopModule implements Listener {
                     ItemStack source = e.getCurrentItem();
                     if (source == null) return;
                     // try supply first
-                    org.bukkit.inventory.Inventory top = viewNow.getTopInventory();
+                    Inventory top = viewNow.getTopInventory();
                     if (top == null) return;
-                    org.bukkit.inventory.ItemStack existingSupply = top.getItem(10);
+                    ItemStack existingSupply = top.getItem(10);
                     boolean matchesListing = false;
                     for (ShopListing sl : listings.values()) if (sl != null && listingMatchesItem(source, sl)) { matchesListing = true; break; }
                     if ((existingSupply == null && matchesListing) || (existingSupply != null && (existingSupply.getType() == source.getType() || existingSupply.isSimilar(source)))) {
@@ -941,7 +952,7 @@ public class ChestShopModule implements Listener {
                         if (plugin2 == null) return;
                         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin2, () -> {
                             try {
-                                org.bukkit.inventory.ItemStack supNow = top.getItem(10);
+                                ItemStack supNow = top.getItem(10);
                                 if (supNow == null) return;
                                 boolean applied2 = false;
                                 Map<Integer, ShopListing> listingsNow = store.getListings(locMove);
@@ -980,7 +991,7 @@ public class ChestShopModule implements Listener {
                         return;
                     }
                     // otherwise, if currency slot empty, place into slot 12 to set currency
-                    org.bukkit.inventory.ItemStack cur12 = top.getItem(12);
+                    ItemStack cur12 = top.getItem(12);
                     if (cur12 == null) {
                         top.setItem(12, source.clone());
                         try { ((Player)e.getWhoClicked()).getInventory().setItem(e.getSlot(), null); } catch (Exception ignored) {}
@@ -1001,7 +1012,7 @@ public class ChestShopModule implements Listener {
                 // currency slot — schedule saving the chosen currency material (or clearing if removed)
                 // explicitly allow default inventory behavior (do not cancel this event)
                 try { e.setCancelled(false); } catch (Exception ignored) {}
-                org.bukkit.plugin.Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
+                Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
                 if (plugin == null) return;
                 // schedule one tick later to let inventory update then process instantly
                 org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -1009,9 +1020,9 @@ public class ChestShopModule implements Listener {
                     if (rrInner == null) return;
                     Location locInner = rrInner.loc;
                     ChestShop shopInner = rrInner.shop;
-                    org.bukkit.inventory.Inventory nowInv = e.getInventory();
+                    Inventory nowInv = e.getInventory();
                     if (nowInv == null) return;
-                    org.bukkit.inventory.ItemStack cur = nowInv.getItem(12);
+                    ItemStack cur = nowInv.getItem(12);
                     String curMat = cur == null ? null : cur.getType().name();
                     boolean ok = store.saveShopCurrency(locInner, curMat);
                     if (ok) {
@@ -1044,26 +1055,26 @@ public class ChestShopModule implements Listener {
                     ChestShop shopEditor = rrEditor.shop;
                     if (!p.getUniqueId().toString().equals(shop.getOwner()) && !p.isOp()) { p.sendMessage("§cオーナーのみ編集できます"); return; }
                     // populate editor inventory
-                    org.bukkit.inventory.Inventory editor = org.bukkit.Bukkit.createInventory(null, 27, ChestShopUI.EDITOR_TITLE_PREFIX + shopEditor.getName());
+                    Inventory editor = Bukkit.createInventory(null, 27, ChestShopUI.EDITOR_TITLE_PREFIX + shopEditor.getName());
                     Map<Integer, ShopListing> listings = store.getListings(locEditor);
                     for (int i = 0; i < 26; i++) {
                         ShopListing sl = listings.get(i);
                         if (sl == null) continue;
                         Material mat = Material.matchMaterial(sl.getMaterial());
                         if (mat == null) mat = Material.PAPER;
-                        org.bukkit.inventory.ItemStack it = null;
+                        ItemStack it = null;
                         // reconstruct original item if serialized data available to preserve enchants/NBT
                         if (sl.getItemData() != null) {
                             try {
-                                it = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData());
-                                if (it == null) it = new org.bukkit.inventory.ItemStack(mat, 1);
-                            } catch (Exception ignored) { it = new org.bukkit.inventory.ItemStack(mat, 1); }
+                                it = ItemStack.deserialize(sl.getItemData());
+                                if (it == null) it = new ItemStack(mat, 1);
+                            } catch (Exception ignored) { it = new ItemStack(mat, 1); }
                         } else {
-                            it = new org.bukkit.inventory.ItemStack(mat, 1);
+                            it = new ItemStack(mat, 1);
                         }
                         // ensure editor shows a single sample item but append editor-only lore
                         it.setAmount(1);
-                        org.bukkit.inventory.meta.ItemMeta im = it.getItemMeta();
+                        ItemMeta im = it.getItemMeta();
                         if (im != null) {
                             // prefer existing display name, otherwise use stored displayName
                             if ((im.hasDisplayName() && im.getDisplayName() != null) || sl.getDisplayName() == null) {
@@ -1096,7 +1107,7 @@ public class ChestShopModule implements Listener {
                     try {
                         StringBuilder sbinit = new StringBuilder();
                         for (int i = 0; i < 26; i++) {
-                            org.bukkit.inventory.ItemStack it2 = editor.getItem(i);
+                            ItemStack it2 = editor.getItem(i);
                             if (it2 == null) { sbinit.append("-"); continue; }
                             String disp = null;
                             if (it2.hasItemMeta() && it2.getItemMeta().hasDisplayName()) disp = it2.getItemMeta().getDisplayName();
@@ -1141,17 +1152,17 @@ public class ChestShopModule implements Listener {
                     // build a prototype and count player's existing similar items so we can
                     // only add the missing amount on the next tick (avoids duplication)
                     try { e.setCancelled(true); } catch (Exception ignored) {}
-                    org.bukkit.inventory.ItemStack proto = null;
+                    ItemStack proto = null;
                     if (sl.getItemData() != null) {
-                        try { proto = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { proto = null; }
+                        try { proto = ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { proto = null; }
                     }
                     if (proto == null) {
-                        org.bukkit.Material m = org.bukkit.Material.matchMaterial(sl.getMaterial());
-                        proto = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                        Material m = Material.matchMaterial(sl.getMaterial());
+                        proto = new ItemStack(m == null ? Material.PAPER : m);
                     }
                     // sanitize proto meta
                     try {
-                        org.bukkit.inventory.meta.ItemMeta pm = proto.getItemMeta();
+                        ItemMeta pm = proto.getItemMeta();
                         if (pm != null) {
                             if (pm.hasLore() && pm.getLore() != null) {
                                 List<String> nl = new ArrayList<>();
@@ -1172,9 +1183,9 @@ public class ChestShopModule implements Listener {
                         }
                     } catch (Exception ignored) {}
                     proto.setAmount(1);
-                    final org.bukkit.inventory.ItemStack protoForCount = proto.clone();
+                    final ItemStack protoForCount = proto.clone();
                     final int beforeCount = countSimilarInPlayer(p, protoForCount);
-                    org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
+                    Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
                     if (plugin == null) return;
                     final int clickedSlot = e.getRawSlot();
                     org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -1185,15 +1196,15 @@ public class ChestShopModule implements Listener {
                             Map<Integer, ShopListing> listingsLater = store.getListings(locLater);
                             ShopListing slLater = listingsLater.get(clickedSlot);
                             if (slLater == null) return;
-                            org.bukkit.inventory.ItemStack give = null;
+                            ItemStack give = null;
                             if (slLater.getItemData() != null) {
-                                try { give = org.bukkit.inventory.ItemStack.deserialize(slLater.getItemData()); } catch (Exception ignored) { give = null; }
+                                try { give = ItemStack.deserialize(slLater.getItemData()); } catch (Exception ignored) { give = null; }
                             }
                             if (give == null) {
-                                org.bukkit.Material m = org.bukkit.Material.matchMaterial(slLater.getMaterial());
-                                give = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                                Material m = Material.matchMaterial(slLater.getMaterial());
+                                give = new ItemStack(m == null ? Material.PAPER : m);
                             }
-                            org.bukkit.inventory.meta.ItemMeta gm = give.getItemMeta();
+                                ItemMeta gm = give.getItemMeta();
                             if (gm != null) {
                                 if (gm.hasLore() && gm.getLore() != null) {
                                     List<String> newl = new ArrayList<>();
@@ -1240,7 +1251,7 @@ public class ChestShopModule implements Listener {
                 // and may have been moved to the player's inventory. If the editor slot is
                 // found empty next tick, treat it as a removal and return stock and clean lore.
                 if (e.getClickedInventory() != null && e.getClickedInventory() == viewNow.getTopInventory() && e.getRawSlot() < topSize) {
-                    org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
+                    Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
                     if (plugin != null) {
                         final int clickedSlot = e.getRawSlot();
                         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -1249,24 +1260,24 @@ public class ChestShopModule implements Listener {
                                 if (rrLater == null) return;
                                 Location locLater = rrLater.loc;
                                 Map<Integer, ShopListing> listingsLater = store.getListings(locLater);
-                                org.bukkit.inventory.Inventory topInv = viewNow.getTopInventory();
+                                Inventory topInv = viewNow.getTopInventory();
                                 if (topInv == null) return;
-                                org.bukkit.inventory.ItemStack nowTopItem = topInv.getItem(clickedSlot);
+                                ItemStack nowTopItem = topInv.getItem(clickedSlot);
                                 // if the editor slot is empty now but the listing still exists, treat as removal
                                 if (nowTopItem == null && listingsLater.containsKey(clickedSlot)) {
                                     ShopListing removed = listingsLater.get(clickedSlot);
                                     if (removed == null) return;
                                     // build return item (preserve NBT if possible)
-                                    org.bukkit.inventory.ItemStack giveBack = null;
+                                    ItemStack giveBack = null;
                                     if (removed.getItemData() != null) {
-                                        try { giveBack = org.bukkit.inventory.ItemStack.deserialize(removed.getItemData()); } catch (Exception ignored) { giveBack = null; }
+                                        try { giveBack = ItemStack.deserialize(removed.getItemData()); } catch (Exception ignored) { giveBack = null; }
                                     }
                                     if (giveBack == null) {
-                                        org.bukkit.Material m = org.bukkit.Material.matchMaterial(removed.getMaterial());
-                                        giveBack = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                                        Material m = Material.matchMaterial(removed.getMaterial());
+                                        giveBack = new ItemStack(m == null ? Material.PAPER : m);
                                     }
                                     // clean editor-only lore and display name
-                                    org.bukkit.inventory.meta.ItemMeta gm = giveBack.getItemMeta();
+                                    ItemMeta gm = giveBack.getItemMeta();
                                     if (gm != null) {
                                         if (gm.hasLore() && gm.getLore() != null) {
                                             List<String> newl = new ArrayList<>();
@@ -1290,7 +1301,7 @@ public class ChestShopModule implements Listener {
                                     Player clicker = (Player) e.getWhoClicked();
                                     if (!wasRemovalRecentlyHandled(clicker, locLater, clickedSlot)) {
                                         giveBack = sanitizeReturnedItem(giveBack);
-                                        org.bukkit.inventory.ItemStack proto2 = giveBack.clone(); proto2.setAmount(1);
+                                        ItemStack proto2 = giveBack.clone(); proto2.setAmount(1);
                                         int existing2 = countSimilarInPlayer(clicker, proto2);
                                         int toGive2 = Math.max(0, amountToGive - existing2);
                                         if (toGive2 > 0) {
@@ -1353,11 +1364,11 @@ public class ChestShopModule implements Listener {
                         // give item (preserve enchantments)
                         Material itemMat = Material.matchMaterial(sl.getMaterial());
                             if (itemMat != null) {
-                                org.bukkit.inventory.ItemStack give = null;
+                                ItemStack give = null;
                                 if (sl.getItemData() != null) {
-                                    try { give = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { give = null; }
+                                    try { give = ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { give = null; }
                                 }
-                                if (give == null) give = new org.bukkit.inventory.ItemStack(itemMat, 1);
+                                if (give == null) give = new ItemStack(itemMat, 1);
                             Map<Integer, ItemStack> leftover = p.getInventory().addItem(give);
                             if (!leftover.isEmpty()) {
                                 for (ItemStack drop : leftover.values()) {
@@ -1412,7 +1423,7 @@ public class ChestShopModule implements Listener {
             if (title.startsWith(ChestShopUI.OWNER_TITLE_PREFIX)) {
                 if (!(e.getWhoClicked() instanceof Player)) return;
                 Player p = (Player) e.getWhoClicked();
-                org.bukkit.plugin.Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
+                Plugin plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Bettersurvival");
                 if (plugin == null) return;
                 Bukkit.getLogger().info("[ChestShop] scheduling owner drag-save task for player=" + p.getName());
                 // Only allow drag updates that include top slots 10 or 12 and sanitize those placements
@@ -1433,7 +1444,7 @@ public class ChestShopModule implements Listener {
                                 // preserve enchantments / meta while removing editor-only lore only
                                 ItemStack sanitized = v.clone();
                                 sanitized.setAmount(v.getAmount());
-                                org.bukkit.inventory.meta.ItemMeta im = sanitized.getItemMeta();
+                                ItemMeta im = sanitized.getItemMeta();
                                 if (im != null) {
                                     if (v.hasItemMeta() && v.getItemMeta().hasDisplayName()) {
                                         // sanitize display name by stripping inline JSON
@@ -1468,11 +1479,11 @@ public class ChestShopModule implements Listener {
                     if (rr == null) return;
                     Location loc = rr.loc;
                     Map<Integer, ShopListing> listings = store.getListings(loc);
-                    org.bukkit.inventory.Inventory invnow = e.getInventory();
+                    Inventory invnow = e.getInventory();
                     if (invnow == null) return;
                     // handle supply slot 10
                     try {
-                        org.bukkit.inventory.ItemStack supplyNow = invnow.getItem(10);
+                        ItemStack supplyNow = invnow.getItem(10);
                         if (supplyNow != null) {
                             boolean applied = false;
                             for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
@@ -1500,7 +1511,7 @@ public class ChestShopModule implements Listener {
 
                     // handle currency slot 12
                     try {
-                        org.bukkit.inventory.ItemStack cur = invnow.getItem(12);
+                        ItemStack cur = invnow.getItem(12);
                         String curMat = cur == null ? null : cur.getType().name();
                         boolean ok = store.saveShopCurrency(loc, curMat);
                             if (ok && rr.shop != null) {
@@ -1533,20 +1544,20 @@ public class ChestShopModule implements Listener {
     public ChestShopStore getStore() { return store; }
 
     // Attempt to merge or overwrite a matching item in player's cursor/inventory before adding new.
-    private void giveOrMergeToPlayer(org.bukkit.entity.Player p, org.bukkit.inventory.ItemStack prototype) {
+    private void giveOrMergeToPlayer(Player p, ItemStack prototype) {
         if (p == null || prototype == null) return;
         // sanitize prototype first to ensure returned items don't carry editor-only lore
-        final org.bukkit.inventory.ItemStack protoSan = sanitizeReturnedItem(prototype.clone());
+        final ItemStack protoSan = sanitizeReturnedItem(prototype.clone());
         try {
-            org.bukkit.inventory.PlayerInventory inv = p.getInventory();
+            PlayerInventory inv = p.getInventory();
             int amountToGive = prototype.getAmount();
             // helper to compare ignoring amount
-            java.util.function.Predicate<org.bukkit.inventory.ItemStack> similar = (it) -> {
+            java.util.function.Predicate<ItemStack> similar = (it) -> {
                 if (it == null) return false;
                 // require same material first
                 if (it.getType() != protoSan.getType()) return false;
-                org.bukkit.inventory.ItemStack a = it.clone(); a.setAmount(1);
-                org.bukkit.inventory.ItemStack b = protoSan.clone(); b.setAmount(1);
+                ItemStack a = it.clone(); a.setAmount(1);
+                ItemStack b = protoSan.clone(); b.setAmount(1);
                 if (a.isSimilar(b)) return true;
                 // fallback: compare cleaned display names (strip inline JSON blocks)
                 try {
@@ -1560,11 +1571,11 @@ public class ChestShopModule implements Listener {
 
             // If player has the item on cursor, merge/overwrite there
             try {
-                org.bukkit.inventory.ItemStack cursor = p.getItemOnCursor();
+                ItemStack cursor = p.getItemOnCursor();
                 if (cursor != null && similar.test(cursor)) {
-                    org.bukkit.inventory.ItemStack merged = cursor;
-                    org.bukkit.inventory.meta.ItemMeta pm = prototype.getItemMeta();
-                    org.bukkit.inventory.meta.ItemMeta cm = merged.getItemMeta();
+                    ItemStack merged = cursor;
+                    ItemMeta pm = prototype.getItemMeta();
+                    ItemMeta cm = merged.getItemMeta();
                     if (cm != null) {
                         if (pm != null) {
                             try { cm.setDisplayName(pm.getDisplayName()); } catch (Exception ignored) {}
@@ -1599,12 +1610,12 @@ public class ChestShopModule implements Listener {
 
                 // search inventory for similar item and merge/overwrite
             for (int i = 0; i < inv.getSize(); i++) {
-                org.bukkit.inventory.ItemStack it = inv.getItem(i);
+                    ItemStack it = inv.getItem(i);
                 if (it == null) continue;
                 if (!similar.test(it)) continue;
                 // overwrite meta (displayName/lore) then add amount
-                    org.bukkit.inventory.meta.ItemMeta pm = prototype.getItemMeta();
-                    org.bukkit.inventory.meta.ItemMeta im = it.getItemMeta();
+                    ItemMeta pm = prototype.getItemMeta();
+                    ItemMeta im = it.getItemMeta();
                     if (im != null) {
                         if (pm != null) {
                             try { im.setDisplayName(pm.getDisplayName()); } catch (Exception ignored) {}
@@ -1637,9 +1648,9 @@ public class ChestShopModule implements Listener {
             }
 
             // no matching existing stack found, add and drop leftovers
-            Map<Integer, org.bukkit.inventory.ItemStack> leftover = inv.addItem(prototype);
+            Map<Integer, ItemStack> leftover = inv.addItem(prototype);
             if (!leftover.isEmpty()) {
-                for (org.bukkit.inventory.ItemStack r : leftover.values()) if (r != null) p.getWorld().dropItemNaturally(p.getLocation(), r);
+                for (ItemStack r : leftover.values()) if (r != null) p.getWorld().dropItemNaturally(p.getLocation(), r);
             }
         } catch (Exception ignored) {}
     }
@@ -1649,7 +1660,7 @@ public class ChestShopModule implements Listener {
     public void onPistonExtend(BlockPistonExtendEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
         if (e.getBlocks() == null || e.getBlocks().isEmpty()) return;
-        for (org.bukkit.block.Block b : e.getBlocks()) {
+        for (Block b : e.getBlocks()) {
             if (b == null) continue;
             Location loc = b.getLocation();
             if (store.get(loc).isPresent()) {
@@ -1657,7 +1668,7 @@ public class ChestShopModule implements Listener {
                 return;
             }
             try {
-                if (b.getState() instanceof org.bukkit.block.Sign) {
+                if (b.getState() instanceof Sign) {
                     List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
                     for (BlockFace f : faces) {
                         Block nb = b.getRelative(f);
@@ -1673,17 +1684,17 @@ public class ChestShopModule implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
-        org.bukkit.block.Block b = e.getBlock();
+        Block b = e.getBlock();
         if (b == null) return;
         // retract may move the attached block if sticky; check affected block
-        for (org.bukkit.block.Block moved : e.getBlocks()) {
+        for (Block moved : e.getBlocks()) {
             if (moved == null) continue;
             if (store.get(moved.getLocation()).isPresent()) {
                 e.setCancelled(true);
                 return;
             }
             try {
-                if (moved.getState() instanceof org.bukkit.block.Sign) {
+                    if (moved.getState() instanceof Sign) {
                     List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
                     for (BlockFace f : faces) {
                         Block nb = moved.getRelative(f);
@@ -1707,7 +1718,7 @@ public class ChestShopModule implements Listener {
                 return store.get(b.getLocation()).isPresent();
             }
             try {
-                if (b.getState() instanceof org.bukkit.block.Sign) {
+                if (b.getState() instanceof Sign) {
                     // if this sign is adjacent to a shop chest, prevent it from being exploded
                     List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
                     for (BlockFace f : faces) {
@@ -1732,7 +1743,7 @@ public class ChestShopModule implements Listener {
                 return store.get(b.getLocation()).isPresent();
             }
             try {
-                if (b.getState() instanceof org.bukkit.block.Sign) {
+                if (b.getState() instanceof Sign) {
                     List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
                     for (BlockFace f : faces) {
                         Block nb = b.getRelative(f);
@@ -1751,8 +1762,8 @@ public class ChestShopModule implements Listener {
     public void onInventoryMove(InventoryMoveItemEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
         try {
-            org.bukkit.inventory.Inventory src = e.getSource();
-            org.bukkit.inventory.Inventory dst = e.getDestination();
+            Inventory src = e.getSource();
+            Inventory dst = e.getDestination();
             if (src != null && src.getHolder() instanceof BlockState) {
                 BlockState st = (BlockState) src.getHolder();
                 if (st != null && store.get(st.getLocation()).isPresent()) { e.setCancelled(true); return; }
@@ -1768,7 +1779,7 @@ public class ChestShopModule implements Listener {
     public void onInventoryPickup(InventoryPickupItemEvent e) {
         if (!toggle.getGlobal("chestshop")) return;
         try {
-            org.bukkit.inventory.Inventory inv = e.getInventory();
+            Inventory inv = e.getInventory();
             if (inv != null && inv.getHolder() instanceof BlockState) {
                 BlockState st = (BlockState) inv.getHolder();
                 if (st != null && store.get(st.getLocation()).isPresent()) { e.setCancelled(true); return; }
@@ -1777,15 +1788,15 @@ public class ChestShopModule implements Listener {
     }
 
     // Count items in player's inventory and cursor that match the prototype (ignoring amount)
-    private int countSimilarInPlayer(org.bukkit.entity.Player p, org.bukkit.inventory.ItemStack prototype) {
+    private int countSimilarInPlayer(Player p, ItemStack prototype) {
         if (p == null || prototype == null) return 0;
         int total = 0;
         try {
-            java.util.function.Predicate<org.bukkit.inventory.ItemStack> similar = (it) -> {
+            java.util.function.Predicate<ItemStack> similar = (it) -> {
                 if (it == null) return false;
                 if (it.getType() != prototype.getType()) return false;
-                org.bukkit.inventory.ItemStack a = it.clone(); a.setAmount(1);
-                org.bukkit.inventory.ItemStack b = prototype.clone(); b.setAmount(1);
+                ItemStack a = it.clone(); a.setAmount(1);
+                ItemStack b = prototype.clone(); b.setAmount(1);
                 if (a.isSimilar(b)) return true;
                 try {
                     String an = null, bn = null;
@@ -1797,12 +1808,12 @@ public class ChestShopModule implements Listener {
             };
 
             // cursor
-            org.bukkit.inventory.ItemStack cursor = p.getItemOnCursor();
+            ItemStack cursor = p.getItemOnCursor();
             if (cursor != null && similar.test(cursor)) total += cursor.getAmount();
 
             // inventory
-            org.bukkit.inventory.PlayerInventory inv = p.getInventory();
-            for (org.bukkit.inventory.ItemStack it : inv.getContents()) {
+            PlayerInventory inv = p.getInventory();
+            for (ItemStack it : inv.getContents()) {
                 if (it == null) continue;
                 if (similar.test(it)) total += it.getAmount();
             }
@@ -1812,11 +1823,11 @@ public class ChestShopModule implements Listener {
 
     // sanitize returned/returned-prototype items: strip inline JSON blocks from display name and lore,
     // remove any editor-only lore lines (在庫:, 価格:, 説明:) and return a cloned sanitized ItemStack.
-    private org.bukkit.inventory.ItemStack sanitizeReturnedItem(org.bukkit.inventory.ItemStack src) {
+    private ItemStack sanitizeReturnedItem(ItemStack src) {
         if (src == null) return null;
         try {
-            org.bukkit.inventory.ItemStack copy = src.clone();
-            org.bukkit.inventory.meta.ItemMeta im = copy.getItemMeta();
+            ItemStack copy = src.clone();
+            ItemMeta im = copy.getItemMeta();
             if (im == null) return copy;
             // sanitize display name
             try {
@@ -1845,7 +1856,7 @@ public class ChestShopModule implements Listener {
         } catch (Exception ignored) { return src; }
     }
 
-    private int countItems(org.bukkit.inventory.PlayerInventory inv, Material mat) {
+    private int countItems(PlayerInventory inv, Material mat) {
         int count = 0;
         for (ItemStack item : inv.getContents()) {
             if (item != null && item.getType() == mat) {
@@ -1855,7 +1866,7 @@ public class ChestShopModule implements Listener {
         return count;
     }
 
-    private void removeItems(org.bukkit.inventory.PlayerInventory inv, Material mat, int amount) {
+    private void removeItems(PlayerInventory inv, Material mat, int amount) {
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack item = inv.getItem(i);
             if (item != null && item.getType() == mat) {
@@ -1871,27 +1882,27 @@ public class ChestShopModule implements Listener {
     }
 
             // Check if a supplied ItemStack matches the listing exactly (respecting saved NBT / enchants when available)
-            private boolean listingMatchesItem(org.bukkit.inventory.ItemStack supply, ShopListing sl) {
+            private boolean listingMatchesItem(ItemStack supply, ShopListing sl) {
                 if (supply == null || sl == null) return false;
                 // if listing has serialized item data, use that as prototype and compare via isSimilar (ignores amount)
                 if (sl.getItemData() != null) {
                     try {
-                        org.bukkit.inventory.ItemStack proto = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData());
+                        ItemStack proto = ItemStack.deserialize(sl.getItemData());
                         if (proto == null) return false;
                         proto.setAmount(1);
-                        org.bukkit.inventory.ItemStack cmp = supply.clone(); cmp.setAmount(1);
+                        ItemStack cmp = supply.clone(); cmp.setAmount(1);
                         // exact match (including name, enchantments, NBT)
                         if (cmp.isSimilar(proto)) return true;
                         // fallback: if types match, allow matching by enchantments subset
                         if (cmp.getType() == proto.getType()) {
                             try {
-                                org.bukkit.inventory.meta.ItemMeta pm = proto.getItemMeta();
-                                org.bukkit.inventory.meta.ItemMeta cm = cmp.getItemMeta();
+                                ItemMeta pm = proto.getItemMeta();
+                                ItemMeta cm = cmp.getItemMeta();
                                 if (pm != null && pm.hasEnchants()) {
                                     if (cm == null || !cm.hasEnchants()) return false;
-                                    Map<org.bukkit.enchantments.Enchantment,Integer> req = pm.getEnchants();
-                                    Map<org.bukkit.enchantments.Enchantment,Integer> have = cm.getEnchants();
-                                    for (Map.Entry<org.bukkit.enchantments.Enchantment,Integer> en : req.entrySet()) {
+                                    Map<Enchantment,Integer> req = pm.getEnchants();
+                                    Map<Enchantment,Integer> have = cm.getEnchants();
+                                    for (Map.Entry<Enchantment,Integer> en : req.entrySet()) {
                                         Integer hv = have.get(en.getKey());
                                         if (hv == null || hv < en.getValue()) return false;
                                     }
