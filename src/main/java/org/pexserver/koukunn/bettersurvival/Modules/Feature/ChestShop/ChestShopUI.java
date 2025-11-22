@@ -112,7 +112,7 @@ public class ChestShopUI {
                 ItemStack earningsItem = new ItemStack(Material.GOLD_INGOT);
                 ItemMeta em2 = earningsItem.getItemMeta();
                 if (em2 != null) {
-                    String currencyName = displayNameForMaterial(shop.getCurrency());
+                    String currencyName = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
                     em2.setDisplayName("§6収益: " + shop.getEarnings() + " " + currencyName);
                     List<String> lore = new ArrayList<>();
                     lore.add("§aクリックで収益を回収");
@@ -182,7 +182,7 @@ public class ChestShopUI {
                     } else if ((long)sl.getPrice() > 64L) {
                         lore2.add("§c価格が最大を超えています (販売不可)");
                     } else {
-                        String curDisplay = displayNameForMaterial(shop.getCurrency());
+                        String curDisplay = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
                         lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
                     }
                     if (sl.getStock() <= 0) {
@@ -230,6 +230,20 @@ public class ChestShopUI {
         p.openInventory(inv);
     }
 
+    
+    /**
+     * Get display name for material, with optional custom currency name override.
+     * If customCurrencyName is provided and non-empty, it will be used instead of the material name.
+     */
+    public static String displayNameForMaterial(String matName, String customCurrencyName) {
+        // If custom currency name is provided, use it
+        if (customCurrencyName != null && !customCurrencyName.trim().isEmpty()) {
+            return customCurrencyName;
+        }
+        // Otherwise fall back to default material display name
+        return displayNameForMaterial(matName);
+    }
+
     public static String displayNameForMaterial(String matName) {
         if (matName == null || matName.isEmpty()) return "未設定";
         Material m = Material.matchMaterial(matName);
@@ -247,12 +261,31 @@ public class ChestShopUI {
             }
         } catch (Throwable ignored) {}
 
-        // Fallback: some common translations for nicer display
+        // Fallback: common translations for items often used as currency
         switch (m) {
             case EMERALD: return "エメラルド";
+            case EMERALD_BLOCK: return "エメラルドブロック";
             case DIAMOND: return "ダイヤモンド";
+            case DIAMOND_BLOCK: return "ダイヤブロック";
+            case NETHERITE_INGOT: return "ネザライト";
             case GOLD_INGOT: return "金の延べ棒";
+            case GOLD_NUGGET: return "金の欠片";
+            case GOLD_BLOCK: return "金ブロック";
             case IRON_INGOT: return "鉄の延べ棒";
+            case IRON_NUGGET: return "鉄の欠片";
+            case IRON_BLOCK: return "鉄ブロック";
+            case COPPER_INGOT: return "銅の延べ棒";
+            case COPPER_BLOCK: return "銅ブロック";
+            case COAL: return "石炭";
+            case CHARCOAL: return "木炭";
+            case REDSTONE: return "レッドストーン";
+            case LAPIS_LAZULI: return "ラピスラズリ";
+            case ENDER_PEARL: return "エンダーパール";
+            case BLAZE_ROD: return "ブレイズロッド";
+            case SLIME_BALL: return "スライムボール";
+            case BONE: return "骨";
+            case NETHER_STAR: return "ネザースター";
+            case AXOLOTL_BUCKET: return "ウーパールーパー入りバケツ";
             case PAPER: return "紙";
             default:
                 String s = m.name().toLowerCase().replace('_', ' ');

@@ -49,6 +49,9 @@ public class ChestShopStore {
                     ChestShop shop = new ChestShop((String) map.get("owner"), (String) map.get("ownerName"), (String) map.get("name"), (String) map.get("currency"));
             int earnings = map.get("earnings") instanceof Number ? ((Number) map.get("earnings")).intValue() : 0;
             shop.setEarnings(earnings);
+            // Load custom currency name if present
+            String customCurrencyName = (String) map.get("customCurrencyName");
+            if (customCurrencyName != null) shop.setCustomCurrencyName(customCurrencyName);
             return Optional.of(shop);
         }
         return Optional.empty();
@@ -97,6 +100,7 @@ public class ChestShopStore {
         entry.put("ownerName", shop.getOwnerName());
         entry.put("name", shop.getName());
         if (shop.getCurrency() != null) entry.put("currency", shop.getCurrency()); else entry.remove("currency");
+        if (shop.getCustomCurrencyName() != null) entry.put("customCurrencyName", shop.getCustomCurrencyName()); else entry.remove("customCurrencyName");
         entry.put("earnings", shop.getEarnings());
         pc.put(canonical, entry);
         // remove legacy per-block keys inside the same set to avoid duplicates
@@ -136,6 +140,18 @@ public class ChestShopStore {
         return cfg.saveConfig(path, pc);
     }
 
+    public boolean saveShopCurrency(Location loc, String currency, String customCurrencyName) {
+        PEXConfig pc = cfg.loadConfig(path).orElseGet(PEXConfig::new);
+        String canonical = keyFor(loc);
+        Object obj = pc.get(canonical);
+        Map<String,Object> entry;
+        if (obj instanceof Map) entry = (Map<String,Object>) obj; else entry = new LinkedHashMap<>();
+        if (currency == null) entry.remove("currency"); else entry.put("currency", currency);
+        if (customCurrencyName == null) entry.remove("customCurrencyName"); else entry.put("customCurrencyName", customCurrencyName);
+        pc.put(canonical, entry);
+        return cfg.saveConfig(path, pc);
+    }
+
     public boolean updateStock(Location loc, int slot, int newStock) {
         Map<Integer, ShopListing> listings = getListings(loc);
         ShopListing s = listings.get(slot);
@@ -163,6 +179,9 @@ public class ChestShopStore {
                     ChestShop shop = new ChestShop((String) map.get("owner"), (String) map.get("ownerName"), (String) map.get("name"), (String) map.get("currency"));
             int earnings = map.get("earnings") instanceof Number ? ((Number) map.get("earnings")).intValue() : 0;
             shop.setEarnings(earnings);
+            // Load custom currency name if present
+            String customCurrencyName = (String) map.get("customCurrencyName");
+            if (customCurrencyName != null) shop.setCustomCurrencyName(customCurrencyName);
             out.put(e.getKey(), shop);
         }
         return out;

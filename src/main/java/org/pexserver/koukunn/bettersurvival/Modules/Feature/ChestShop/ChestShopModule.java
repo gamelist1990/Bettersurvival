@@ -896,7 +896,7 @@ public class ChestShopModule implements Listener {
                         }
                         shop.setEarnings(0);
                         store.save(loc, shop);
-                        String curDisplayName = ChestShopUI.displayNameForMaterial(shop.getCurrency());
+                        String curDisplayName = ChestShopUI.displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
                         p.sendMessage("§a収益を回収しました: " + give.getAmount() + " " + curDisplayName);
                         p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                         // update UI
@@ -1050,9 +1050,10 @@ public class ChestShopModule implements Listener {
                                     } catch (NoSuchMethodError | AbstractMethodError ignored) {}
                             }
                         } catch (Exception ignored) {}
-                        boolean ok = store.saveShopCurrency(locMove, curMat);
+                        boolean ok = store.saveShopCurrency(locMove, curMat, curDisplay);
                             if (ok) {
                             rrMove.shop.setCurrency(curMat);
+                            rrMove.shop.setCustomCurrencyName(curDisplay);
                             ((Player)e.getWhoClicked()).sendMessage("§a通貨を設定しました: " + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat)));
                             ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         }
@@ -1087,9 +1088,10 @@ public class ChestShopModule implements Listener {
                             } catch (NoSuchMethodError | AbstractMethodError ignored) {}
                         }
                     } catch (Exception ignored) {}
-                    boolean ok = store.saveShopCurrency(locInner, curMat);
+                    boolean ok = store.saveShopCurrency(locInner, curMat, curDisplay);
                     if (ok) {
                         shopInner.setCurrency(curMat);
+                        shopInner.setCustomCurrencyName(curDisplay);
                         p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat))));
                         p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         // if owner UI is open, reflect change immediately
@@ -1571,7 +1573,7 @@ public class ChestShopModule implements Listener {
                             dispName = mm == null ? sl.getMaterial() : mm.name();
                         }
                         dispName = dispName.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
-                        String currencyDisplay = ChestShopUI.displayNameForMaterial(shop.getCurrency());
+                        String currencyDisplay = ChestShopUI.displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
                         p.sendMessage("§a購入しました: " + dispName + " で " + cost + " " + currencyDisplay);
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
                         // update owner info if owner online
@@ -1707,9 +1709,10 @@ public class ChestShopModule implements Listener {
                                 } catch (NoSuchMethodError | AbstractMethodError ignored) {}
                             }
                         } catch (Exception ignored) {}
-                        boolean ok = store.saveShopCurrency(loc, curMat);
+                        boolean ok = store.saveShopCurrency(loc, curMat, curDisplay);
                             if (ok && rr.shop != null) {
                             rr.shop.setCurrency(curMat);
+                            rr.shop.setCustomCurrencyName(curDisplay);
                             if (p != null) { p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat)))); p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f); }
                         }
                     } catch (Exception ignored) {}

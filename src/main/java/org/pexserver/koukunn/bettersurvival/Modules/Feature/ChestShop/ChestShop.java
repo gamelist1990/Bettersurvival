@@ -6,6 +6,7 @@ public class ChestShop {
     private String ownerName;
     private String name;
     private String currency; // Material name for currency item (nullable)
+    private String customCurrencyName; // Custom display name for currency item (nullable)
     private int earnings; // accumulated earnings from sales
 
     public ChestShop() {}
@@ -38,6 +39,9 @@ public class ChestShop {
 
     public String getCurrency() { return currency; }
     public void setCurrency(String currency) { this.currency = currency; }
+
+    public String getCustomCurrencyName() { return customCurrencyName; }
+    public void setCustomCurrencyName(String customCurrencyName) { this.customCurrencyName = customCurrencyName; }
 
     
 
