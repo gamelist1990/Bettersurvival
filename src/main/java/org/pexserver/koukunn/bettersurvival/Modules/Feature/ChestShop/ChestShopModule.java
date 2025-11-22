@@ -24,6 +24,12 @@ import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.bukkit.Sound;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
+import org.bukkit.event.block.BlockPistonExtendEvent;
+import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -414,7 +420,31 @@ public class ChestShopModule implements Listener {
         if (!toggle.getGlobal("chestshop")) return;
         org.bukkit.block.Block b = e.getBlock();
         if (b == null) return;
-        if (!(b.getType() == Material.CHEST || b.getType() == Material.TRAPPED_CHEST || b.getType() == Material.BARREL)) return;
+        if (!(b.getType() == Material.CHEST || b.getType() == Material.TRAPPED_CHEST || b.getType() == Material.BARREL)) {
+            // if this is a sign attached to a shop chest, prevent non-owner/OP from breaking it
+            try {
+                if (b.getState() instanceof org.bukkit.block.Sign) {
+                    List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+                    for (BlockFace f : faces) {
+                        Block nb = b.getRelative(f);
+                        if (nb == null) continue;
+                        if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                        Optional<ChestShop> optSign = store.get(nb.getLocation());
+                        if (!optSign.isPresent()) continue;
+                        ChestShop shopSign = optSign.get();
+                        Player pBreak = e.getPlayer();
+                        if (pBreak != null && (pBreak.isOp() || (shopSign.getOwner() != null && shopSign.getOwner().equals(pBreak.getUniqueId().toString())))) {
+                            // owner/op can break sign
+                            return;
+                        }
+                        e.setCancelled(true);
+                        if (pBreak != null) pBreak.sendMessage("§cこの看板はショップに紐づいているため破壊できません");
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {}
+            return;
+        }
         Location loc = b.getLocation();
         Optional<ChestShop> opt = store.get(loc);
         if (!opt.isPresent()) return;
@@ -516,6 +546,29 @@ public class ChestShopModule implements Listener {
         if (!toggle.getGlobal("chestshop")) return;
         if (e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
         if (e.getClickedBlock() == null) return;
+        // protect interacting with shop signs
+        try {
+            Block clicked = e.getClickedBlock();
+            if (clicked.getState() instanceof org.bukkit.block.Sign) {
+                List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+                for (BlockFace f : faces) {
+                    Block nb = clicked.getRelative(f);
+                    if (nb == null) continue;
+                    if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                    Optional<ChestShop> maybeShop = store.get(nb.getLocation());
+                    if (!maybeShop.isPresent()) continue;
+                    ChestShop cs = maybeShop.get();
+                    Player pl = (Player) e.getPlayer();
+                    if (pl != null && (pl.isOp() || (cs.getOwner() != null && cs.getOwner().equals(pl.getUniqueId().toString())))) {
+                        // owner/op allowed to interact
+                        break;
+                    }
+                    e.setCancelled(true);
+                    if (pl != null) pl.sendMessage("§cこのショップの看板は操作できません");
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
         if (!(e.getClickedBlock().getType() == Material.CHEST || e.getClickedBlock().getType() == Material.TRAPPED_CHEST || e.getClickedBlock().getType() == Material.BARREL)) return;
         if (!(e.getPlayer() instanceof Player)) return;
         Player p = (Player) e.getPlayer();
@@ -547,6 +600,28 @@ public class ChestShopModule implements Listener {
         String shopName = rest.isEmpty() ? "shop-" + UUID.randomUUID().toString().substring(0,6) : rest;
 
         Block signBlock = e.getBlock();
+        // protect existing shop signs from being modified/broken by non-owner
+        try {
+            // check adjacent chest blocks for an existing shop
+            List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+            for (BlockFace f : faces) {
+                Block nb = signBlock.getRelative(f);
+                if (nb == null) continue;
+                if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                Optional<ChestShop> maybe = store.get(nb.getLocation());
+                if (maybe.isPresent()) {
+                    Player pl = e.getPlayer();
+                    ChestShop cs = maybe.get();
+                    if (pl != null && (pl.isOp() || (cs.getOwner() != null && cs.getOwner().equals(pl.getUniqueId().toString())))) {
+                        // allow owner/op to proceed
+                    } else {
+                        if (pl != null) pl.sendMessage("§cこの看板はショップに紐づいているため編集できません");
+                        e.setCancelled(true);
+                        return;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
         // Try to find the nearest suitable chest (empty + not locked) within a small radius first
         Optional<Block> chestBlock = findNearestAvailableChest(signBlock, 3);
         // Fallback to immediate adjacent chest if none found by radius search
@@ -1565,6 +1640,138 @@ public class ChestShopModule implements Listener {
             Map<Integer, org.bukkit.inventory.ItemStack> leftover = inv.addItem(prototype);
             if (!leftover.isEmpty()) {
                 for (org.bukkit.inventory.ItemStack r : leftover.values()) if (r != null) p.getWorld().dropItemNaturally(p.getLocation(), r);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    // Protect shop containers from pistons moving them
+    @EventHandler(ignoreCancelled = true)
+    public void onPistonExtend(BlockPistonExtendEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        if (e.getBlocks() == null || e.getBlocks().isEmpty()) return;
+        for (org.bukkit.block.Block b : e.getBlocks()) {
+            if (b == null) continue;
+            Location loc = b.getLocation();
+            if (store.get(loc).isPresent()) {
+                e.setCancelled(true);
+                return;
+            }
+            try {
+                if (b.getState() instanceof org.bukkit.block.Sign) {
+                    List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+                    for (BlockFace f : faces) {
+                        Block nb = b.getRelative(f);
+                        if (nb == null) continue;
+                        if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                        if (store.get(nb.getLocation()).isPresent()) { e.setCancelled(true); return; }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPistonRetract(BlockPistonRetractEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        org.bukkit.block.Block b = e.getBlock();
+        if (b == null) return;
+        // retract may move the attached block if sticky; check affected block
+        for (org.bukkit.block.Block moved : e.getBlocks()) {
+            if (moved == null) continue;
+            if (store.get(moved.getLocation()).isPresent()) {
+                e.setCancelled(true);
+                return;
+            }
+            try {
+                if (moved.getState() instanceof org.bukkit.block.Sign) {
+                    List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+                    for (BlockFace f : faces) {
+                        Block nb = moved.getRelative(f);
+                        if (nb == null) continue;
+                        if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                        if (store.get(nb.getLocation()).isPresent()) { e.setCancelled(true); return; }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    // Protect shop containers from explosions by removing them from block lists
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        if (e.blockList() == null || e.blockList().isEmpty()) return;
+        e.blockList().removeIf(b -> {
+            if (b == null) return false;
+            if (b.getType() == Material.CHEST || b.getType() == Material.TRAPPED_CHEST || b.getType() == Material.BARREL) {
+                return store.get(b.getLocation()).isPresent();
+            }
+            try {
+                if (b.getState() instanceof org.bukkit.block.Sign) {
+                    // if this sign is adjacent to a shop chest, prevent it from being exploded
+                    List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+                    for (BlockFace f : faces) {
+                        Block nb = b.getRelative(f);
+                        if (nb == null) continue;
+                        if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                        if (store.get(nb.getLocation()).isPresent()) return true;
+                    }
+                }
+            } catch (Exception ignored) {}
+            return false;
+        });
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        if (e.blockList() == null || e.blockList().isEmpty()) return;
+        e.blockList().removeIf(b -> {
+            if (b == null) return false;
+            if (b.getType() == Material.CHEST || b.getType() == Material.TRAPPED_CHEST || b.getType() == Material.BARREL) {
+                return store.get(b.getLocation()).isPresent();
+            }
+            try {
+                if (b.getState() instanceof org.bukkit.block.Sign) {
+                    List<BlockFace> faces = Arrays.asList(BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP);
+                    for (BlockFace f : faces) {
+                        Block nb = b.getRelative(f);
+                        if (nb == null) continue;
+                        if (!(nb.getType() == Material.CHEST || nb.getType() == Material.TRAPPED_CHEST || nb.getType() == Material.BARREL)) continue;
+                        if (store.get(nb.getLocation()).isPresent()) return true;
+                    }
+                }
+            } catch (Exception ignored) {}
+            return false;
+        });
+    }
+
+    // Disable hopper / inventory automated moves interacting with shop containers
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryMove(InventoryMoveItemEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        try {
+            org.bukkit.inventory.Inventory src = e.getSource();
+            org.bukkit.inventory.Inventory dst = e.getDestination();
+            if (src != null && src.getHolder() instanceof BlockState) {
+                BlockState st = (BlockState) src.getHolder();
+                if (st != null && store.get(st.getLocation()).isPresent()) { e.setCancelled(true); return; }
+            }
+            if (dst != null && dst.getHolder() instanceof BlockState) {
+                BlockState st = (BlockState) dst.getHolder();
+                if (st != null && store.get(st.getLocation()).isPresent()) { e.setCancelled(true); return; }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryPickup(InventoryPickupItemEvent e) {
+        if (!toggle.getGlobal("chestshop")) return;
+        try {
+            org.bukkit.inventory.Inventory inv = e.getInventory();
+            if (inv != null && inv.getHolder() instanceof BlockState) {
+                BlockState st = (BlockState) inv.getHolder();
+                if (st != null && store.get(st.getLocation()).isPresent()) { e.setCancelled(true); return; }
             }
         } catch (Exception ignored) {}
     }
