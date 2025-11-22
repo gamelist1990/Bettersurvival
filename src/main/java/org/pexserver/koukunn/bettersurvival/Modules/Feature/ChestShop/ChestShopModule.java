@@ -309,11 +309,8 @@ public class ChestShopModule implements Listener {
         Map<String,Integer> prevEnchants = prev != null ? prev.getEnchants() : null;
         int prevDamage = prev != null ? prev.getDamage() : 0;
         if (raw == null) raw = it.getType().name();
-        try { Bukkit.getLogger().info("[ChestShop] parseRawToListing raw_before_clean='"+raw+"' type="+it.getType().name()); } catch (Exception ignored) {}
-        // Clean incoming raw displayName to remove any lingering {} blocks before processing
-        // Handle all bracket combinations: {}, ｛｝, {｝, ｛}
-        raw = raw.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
-        try { Bukkit.getLogger().info("[ChestShop] parseRawToListing raw_after_clean='"+raw+"' type="+it.getType().name()); } catch (Exception ignored) {}
+        try { Bukkit.getLogger().info("[ChestShop] parseRawToListing raw_input='"+raw+"' type="+it.getType().name()); } catch (Exception ignored) {}
+        // DO NOT clean {} here - we need them for JSON parsing
         String desc = "";
         String left = raw.trim();
         int price = 0;
@@ -387,7 +384,8 @@ public class ChestShopModule implements Listener {
 
         // normalize display name: strip embedded JSON blocks {..} which were used as inline metadata
         // remove inline ASCII/fullwidth metadata blocks from display names
-        String display = raw == null ? null : raw.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
+        String display = raw == null ? null : raw.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
+        try { Bukkit.getLogger().info("[ChestShop] parseRawToListing display='"+display+"' price="+price+" count="+count+" desc='"+desc+"'"); } catch (Exception ignored) {}
         Map<String,Integer> enchMap = new LinkedHashMap<>();
         int damage = 0;
         try {
@@ -465,6 +463,8 @@ public class ChestShopModule implements Listener {
         if (count <= 0) count = prevCount;
         count = Math.max(1, Math.min(64, count));
         ShopListing sl = new ShopListing(matName, display, price, desc, prevStock, count, enchMap, damage, itemData);
+        // Store raw display name (with metadata) separately from cleaned display name
+        sl.setRawDisplayName(raw);
         return sl;
     }
 
@@ -1509,13 +1509,15 @@ public class ChestShopModule implements Listener {
                 Material curMat = Material.matchMaterial(shop.getCurrency());
                 if (curMat != null) {
                     int has = countItems(p.getInventory(), curMat);
-                    if ((long)price * (long)count > 64L) {
-                        p.sendMessage("§c合計価格が最大を超えています (販売不可)");
+                    // price is treated as the total cost per sale unit (セット価格)
+                    if ((long)price > 64L) {
+                        p.sendMessage("§c価格が最大を超えています (販売不可)");
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                         e.setCancelled(true);
                         return;
                     }
-                    int cost = price * count;
+                    // charge the buyer the set price (price is for the whole 'count' bundle)
+                    int cost = price;
                     if (has >= cost) {
                         // remove currency
                         removeItems(p.getInventory(), curMat, cost);

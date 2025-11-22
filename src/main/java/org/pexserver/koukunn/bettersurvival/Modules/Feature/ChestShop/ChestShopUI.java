@@ -95,7 +95,8 @@ public class ChestShopUI {
                 List<String> soldOut = new ArrayList<>();
                 for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
                     ShopListing sl = e.getValue();
-                    total += 1 * (1 + Math.max(0, sl.getStock()));
+                    // 備考: editor/buyer UI の "サンプル" アイテム分 (1) は在庫カウントに含めない
+                    total += Math.max(0, sl.getStock());
                     if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
                 }
                 List<String> lore = new ArrayList<>();
@@ -173,14 +174,13 @@ public class ChestShopUI {
 
                     String disp = sl.getDisplayName();
                     if (disp == null || disp.isEmpty()) disp = mat.name();
-                    // Remove {} and their contents from display name (supports both ASCII and fullwidth braces and mixed)
-                    disp = disp.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
+                    // displayName is already cleaned by setDisplayName()
                     im2.setDisplayName(disp);
                     List<String> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
                         lore2.add("§c通貨未設定 (販売不可)");
-                    } else if ((long)sl.getPrice() * (long)sl.getCount() > 64L) {
-                        lore2.add("§c合計価格が最大を超えています (販売不可)");
+                    } else if ((long)sl.getPrice() > 64L) {
+                        lore2.add("§c価格が最大を超えています (販売不可)");
                     } else {
                         lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + shop.getCurrency());
                     }
@@ -193,7 +193,11 @@ public class ChestShopUI {
                     if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
                         String desc = sl.getDescription().replace("<br>", "\n");
                         String[] lines = desc.split("\\n");
-                        for (String L : lines) lore2.add(L);
+                        // 一行目のみ "説明: " プレフィックスを付け、複数行は続けて表示する
+                        if (lines.length > 0) {
+                            lore2.add("説明: " + lines[0]);
+                            for (int j = 1; j < lines.length; j++) lore2.add(lines[j]);
+                        }
                     }
                     im2.setLore(lore2);
                     it.setItemMeta(im2);
@@ -246,7 +250,8 @@ public class ChestShopUI {
             List<String> soldOut = new ArrayList<>();
             for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
                 ShopListing sl = e.getValue();
-                total += 1 * (1 + Math.max(0, sl.getStock()));
+                // サンプル本体の個数を含めず、実際の在庫のみ合計する
+                total += Math.max(0, sl.getStock());
                 if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
             }
             List<String> lore = new ArrayList<>();

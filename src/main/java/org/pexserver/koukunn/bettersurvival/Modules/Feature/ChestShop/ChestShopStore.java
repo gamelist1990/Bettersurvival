@@ -117,16 +117,7 @@ public class ChestShopStore {
         Map<String,Object> lm = new LinkedHashMap<>();
         for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
             Map<String,Object> slMap = e.getValue().toMap();
-            // Clean displayName before saving to JSON to remove any {} blocks (mixed ASCII/fullwidth)
-            if (slMap.containsKey("displayName")) {
-                Object dispObj = slMap.get("displayName");
-                if (dispObj instanceof String) {
-                    String display = (String) dispObj;
-                    String cleaned = display.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
-                    if (cleaned.isEmpty()) cleaned = null;
-                    slMap.put("displayName", cleaned);
-                }
-            }
+            // rawDisplayName and displayName are now both stored in toMap()
             lm.put(String.valueOf(e.getKey()), slMap);
         }
         entry.put("listings", lm);

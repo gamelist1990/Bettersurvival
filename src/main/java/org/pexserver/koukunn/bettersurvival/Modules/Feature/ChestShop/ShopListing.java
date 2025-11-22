@@ -5,7 +5,8 @@ import java.util.Map;
 
 public class ShopListing {
     private String material; // Material name
-    private String displayName; // original display name (may include price/desc markers)
+    private String rawDisplayName; // raw display name with metadata (e.g., "パン{cost:10,count:5,docs:焼きたて｝")
+    private String displayName; // cleaned display name (e.g., "パン")
     private int price; // price in units of currency item
     private String description; // seller provided description (with <br> for newlines)
     private int stock; // current stock
@@ -73,15 +74,22 @@ public class ShopListing {
     public String getMaterial() { return material; }
     public void setMaterial(String material) { this.material = material; }
 
+    public String getRawDisplayName() { return rawDisplayName; }
+    public void setRawDisplayName(String rawDisplayName) { this.rawDisplayName = rawDisplayName; }
+
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) {
+        // Store raw display name (with metadata)
+        this.rawDisplayName = displayName;
         // Remove {} and their contents from display name (supports both ASCII and fullwidth braces and mixed)
         // Handles: {}, ｛｝, {｝, ｛}
         if (displayName != null) {
-            displayName = displayName.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
-            if (displayName.isEmpty()) displayName = null;
+            String cleaned = displayName.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
+            if (cleaned.isEmpty()) cleaned = null;
+            this.displayName = cleaned;
+        } else {
+            this.displayName = null;
         }
-        this.displayName = displayName;
     }
 
     public int getPrice() { return price; }
@@ -105,6 +113,8 @@ public class ShopListing {
     public Map<String,Object> toMap() {
         Map<String,Object> m = new LinkedHashMap<>();
         m.put("material", material);
+        // Store both raw (with metadata) and cleaned display names
+        m.put("rawDisplayName", rawDisplayName);
         m.put("displayName", displayName);
         m.put("price", price);
         m.put("description", description);
@@ -122,7 +132,9 @@ public class ShopListing {
         if (!(obj instanceof Map)) return null;
         Map<String,Object> map = (Map<String,Object>) obj;
         String material = (String) map.get("material");
-        String displayName = (String) map.get("displayName");
+        // Try to load rawDisplayName first, fall back to displayName for backward compatibility
+        String rawDisplayName = (String) map.get("rawDisplayName");
+        if (rawDisplayName == null) rawDisplayName = (String) map.get("displayName");
         int price = map.get("price") instanceof Number ? ((Number) map.get("price")).intValue() : 0;
         String description = (String) map.get("description");
         int stock = map.get("stock") instanceof Number ? ((Number) map.get("stock")).intValue() : 0;
@@ -142,10 +154,10 @@ public class ShopListing {
         Map<String,Object> itemData = null;
         Object iobj = map.get("item");
         if (iobj instanceof Map) itemData = (Map<String,Object>) iobj;
-        ShopListing sl = new ShopListing(material, displayName, price, description, stock, count, ench, damage, itemData);
+        ShopListing sl = new ShopListing(material, rawDisplayName, price, description, stock, count, ench, damage, itemData);
         sl.setOriginalCount(originalCount);
-        // Re-save with cleaned displayName to ensure old data gets cleaned up
-        sl.setDisplayName(displayName);
+        // setDisplayName will handle splitting rawDisplayName into both fields
+        sl.setDisplayName(rawDisplayName);
         return sl;
     }
 
