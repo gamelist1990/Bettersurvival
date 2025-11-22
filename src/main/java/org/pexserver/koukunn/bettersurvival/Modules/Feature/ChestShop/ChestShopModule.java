@@ -217,11 +217,23 @@ public class ChestShopModule implements Listener {
                                         // only watch currency slot (12) for changes
                                         ItemStack cur = invOwner.getItem(12);
                                         String curMat = cur == null ? null : cur.getType().name();
+                                        String curDisplay = null;
+                                        try {
+                                            if (cur != null && cur.hasItemMeta() && cur.getItemMeta().hasDisplayName()) curDisplay = cur.getItemMeta().getDisplayName();
+                                            else if (cur != null && cur.getItemMeta() != null) {
+                                                try {
+                                                    java.lang.reflect.Method mloc = cur.getItemMeta().getClass().getMethod("getLocalizedName");
+                                                    Object v = mloc.invoke(cur.getItemMeta());
+                                                    if (v instanceof String) curDisplay = (String) v;
+                                                } catch (Exception ignored) {}
+                                            }
+                                        } catch (Exception ignored) {}
                                         String prevCur = shop.getCurrency();
                                         if (!Objects.equals(curMat, prevCur)) {
-                                            boolean saved = store.saveShopCurrency(loc, curMat);
+                                            boolean saved = store.saveShopCurrency(loc, curMat, curDisplay);
                                             if (saved) {
                                                 shop.setCurrency(curMat);
+                                                shop.setCurrencyName(curDisplay);
                                                 editorSnapshotHash.put(uid, snap);
                                                 editorLastSavedTick.put(uid, now);
                                                 Bukkit.getLogger().info("[ChestShop] Auto-saved owner currency for player="+p.getName()+" shop="+shop.getName()+" currency="+curMat);
@@ -896,7 +908,8 @@ public class ChestShopModule implements Listener {
                         }
                         shop.setEarnings(0);
                         store.save(loc, shop);
-                        p.sendMessage("§a収益を回収しました: " + give.getAmount() + " " + shop.getCurrency());
+                        String curDisplayName = shop.getCurrencyName() != null && !shop.getCurrencyName().isEmpty() ? shop.getCurrencyName() : ChestShopUI.displayNameForMaterial(shop.getCurrency());
+                        p.sendMessage("§a収益を回収しました: " + give.getAmount() + " " + curDisplayName);
                         p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                         // update UI
                         ChestShopUI.openForPlayer(p, shop, loc, store);
@@ -1039,10 +1052,18 @@ public class ChestShopModule implements Listener {
                         try { ((Player)e.getWhoClicked()).getInventory().setItem(e.getSlot(), null); } catch (Exception ignored) {}
                         // save currency
                         String curMat = source.getType().name();
-                        boolean ok = store.saveShopCurrency(locMove, curMat);
-                        if (ok) {
+                        String curDisplay = null;
+                        try {
+                            if (source != null && source.hasItemMeta() && source.getItemMeta().hasDisplayName()) curDisplay = source.getItemMeta().getDisplayName();
+                            else if (source != null && source.getItemMeta() != null) {
+                                try { java.lang.reflect.Method mloc = source.getItemMeta().getClass().getMethod("getLocalizedName"); Object v = mloc.invoke(source.getItemMeta()); if (v instanceof String) curDisplay = (String) v; } catch (Exception ignored) {}
+                            }
+                        } catch (Exception ignored) {}
+                        boolean ok = store.saveShopCurrency(locMove, curMat, curDisplay);
+                            if (ok) {
                             rrMove.shop.setCurrency(curMat);
-                            ((Player)e.getWhoClicked()).sendMessage("§a通貨を設定しました: " + curMat);
+                            rrMove.shop.setCurrencyName(curDisplay);
+                            ((Player)e.getWhoClicked()).sendMessage("§a通貨を設定しました: " + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat)));
                             ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         }
                         e.setCancelled(true);
@@ -1066,10 +1087,18 @@ public class ChestShopModule implements Listener {
                     if (nowInv == null) return;
                     ItemStack cur = nowInv.getItem(12);
                     String curMat = cur == null ? null : cur.getType().name();
-                    boolean ok = store.saveShopCurrency(locInner, curMat);
+                    String curDisplay = null;
+                    try {
+                        if (cur != null && cur.hasItemMeta() && cur.getItemMeta().hasDisplayName()) curDisplay = cur.getItemMeta().getDisplayName();
+                        else if (cur != null && cur.getItemMeta() != null) {
+                            try { java.lang.reflect.Method mloc = cur.getItemMeta().getClass().getMethod("getLocalizedName"); Object v = mloc.invoke(cur.getItemMeta()); if (v instanceof String) curDisplay = (String) v; } catch (Exception ignored) {}
+                        }
+                    } catch (Exception ignored) {}
+                    boolean ok = store.saveShopCurrency(locInner, curMat, curDisplay);
                     if (ok) {
                         shopInner.setCurrency(curMat);
-                        p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat));
+                        shopInner.setCurrencyName(curDisplay);
+                        p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat))));
                         p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         // if owner UI is open, reflect change immediately
                         try {
@@ -1550,7 +1579,8 @@ public class ChestShopModule implements Listener {
                             dispName = mm == null ? sl.getMaterial() : mm.name();
                         }
                         dispName = dispName.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
-                        p.sendMessage("§a購入しました: " + dispName + " for " + cost + " " + shop.getCurrency());
+                        String currencyDisplay = shop.getCurrencyName() != null && !shop.getCurrencyName().isEmpty() ? shop.getCurrencyName() : ChestShopUI.displayNameForMaterial(shop.getCurrency());
+                        p.sendMessage("§a購入しました: " + dispName + " で " + cost + " " + currencyDisplay);
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
                         // update owner info if owner online
                         try {
@@ -1675,10 +1705,18 @@ public class ChestShopModule implements Listener {
                     try {
                         ItemStack cur = invnow.getItem(12);
                         String curMat = cur == null ? null : cur.getType().name();
-                        boolean ok = store.saveShopCurrency(loc, curMat);
+                        String curDisplay = null;
+                        try {
+                            if (cur != null && cur.hasItemMeta() && cur.getItemMeta().hasDisplayName()) curDisplay = cur.getItemMeta().getDisplayName();
+                            else if (cur != null && cur.getItemMeta() != null) {
+                                try { java.lang.reflect.Method mloc = cur.getItemMeta().getClass().getMethod("getLocalizedName"); Object v = mloc.invoke(cur.getItemMeta()); if (v instanceof String) curDisplay = (String) v; } catch (Exception ignored) {}
+                            }
+                        } catch (Exception ignored) {}
+                        boolean ok = store.saveShopCurrency(loc, curMat, curDisplay);
                             if (ok && rr.shop != null) {
                             rr.shop.setCurrency(curMat);
-                            if (p != null) { p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat)); p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f); }
+                            rr.shop.setCurrencyName(curDisplay);
+                            if (p != null) { p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat)))); p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f); }
                         }
                     } catch (Exception ignored) {}
 

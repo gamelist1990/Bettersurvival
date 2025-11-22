@@ -112,7 +112,7 @@ public class ChestShopUI {
                 ItemStack earningsItem = new ItemStack(Material.GOLD_INGOT);
                 ItemMeta em2 = earningsItem.getItemMeta();
                 if (em2 != null) {
-                    String currencyName = shop.getCurrency() != null ? shop.getCurrency() : "未設定";
+                    String currencyName = (shop != null && shop.getCurrencyName() != null && !shop.getCurrencyName().isEmpty()) ? shop.getCurrencyName() : displayNameForMaterial(shop.getCurrency());
                     em2.setDisplayName("§6収益: " + shop.getEarnings() + " " + currencyName);
                     List<String> lore = new ArrayList<>();
                     lore.add("§aクリックで収益を回収");
@@ -182,7 +182,8 @@ public class ChestShopUI {
                     } else if ((long)sl.getPrice() > 64L) {
                         lore2.add("§c価格が最大を超えています (販売不可)");
                     } else {
-                        lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + shop.getCurrency());
+                        String curDisplay = (shop != null && shop.getCurrencyName() != null && !shop.getCurrencyName().isEmpty()) ? shop.getCurrencyName() : displayNameForMaterial(shop.getCurrency());
+                        lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
                     }
                     if (sl.getStock() <= 0) {
                         lore2.add("§c品切れ中");
@@ -211,9 +212,44 @@ public class ChestShopUI {
             for (int i = 0; i < 26; i++) {
                 if (inv.getItem(i) == null) inv.setItem(i, barrierB);
             }
+            // slot 26: 購入方法の説明（ヘルプ）
+            ItemStack help = new ItemStack(Material.BOOK);
+            ItemMeta hm = help.getItemMeta();
+            if (hm != null) {
+                hm.setDisplayName("§b購入方法");
+                List<String> hl = new ArrayList<>();
+                hl.add("価格はセット価格です (例: 個数5, 価格10 => 10で購入)");
+                hl.add("出品をクリックすると1セットを購入します");
+                hl.add("在庫が0になると品切れになります");
+                hm.setLore(hl);
+                help.setItemMeta(hm);
+            }
+            inv.setItem(26, help);
         }
 
         p.openInventory(inv);
+    }
+
+    public static String displayNameForMaterial(String matName) {
+        if (matName == null || matName.isEmpty()) return "未設定";
+        Material m = Material.matchMaterial(matName);
+        if (m == null) return matName;
+        switch (m) {
+            case EMERALD: return "エメラルド";
+            case DIAMOND: return "ダイヤモンド";
+            case GOLD_INGOT: return "金の延べ棒";
+            case IRON_INGOT: return "鉄の延べ棒";
+            case PAPER: return "紙";
+            default:
+                String s = m.name().toLowerCase().replace('_', ' ');
+                String[] parts = s.split(" ");
+                StringBuilder sb = new StringBuilder();
+                for (String p : parts) {
+                    if (p == null || p.isEmpty()) continue;
+                    sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1)).append(' ');
+                }
+                return sb.toString().trim();
+        }
     }
 
     // open a dedicated delete page where owner can view and delete items from inventory
