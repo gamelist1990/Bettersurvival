@@ -95,7 +95,7 @@ public class ChestShopUI {
                 List<String> soldOut = new ArrayList<>();
                 for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
                     ShopListing sl = e.getValue();
-                    total += sl.getCount() * (1 + Math.max(0, sl.getStock()));
+                    total += 1 * (1 + Math.max(0, sl.getStock()));
                     if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
                 }
                 List<String> lore = new ArrayList<>();
@@ -173,8 +173,8 @@ public class ChestShopUI {
 
                     String disp = sl.getDisplayName();
                     if (disp == null || disp.isEmpty()) disp = mat.name();
-                    // Remove {} and their contents from display name (supports fullwidth braces)
-                    disp = disp.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                    // Remove {} and their contents from display name (supports both ASCII and fullwidth braces and mixed)
+                    disp = disp.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
                     im2.setDisplayName(disp);
                     List<String> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
@@ -246,7 +246,7 @@ public class ChestShopUI {
             List<String> soldOut = new ArrayList<>();
             for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
                 ShopListing sl = e.getValue();
-                total += sl.getCount() * (1 + Math.max(0, sl.getStock()));
+                total += 1 * (1 + Math.max(0, sl.getStock()));
                 if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
             }
             List<String> lore = new ArrayList<>();

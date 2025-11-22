@@ -10,6 +10,7 @@ public class ShopListing {
     private String description; // seller provided description (with <br> for newlines)
     private int stock; // current stock
     private int count; // quantity sold per purchase (1..64)
+    private int originalCount; // original count when first registered (used for returns to avoid duplication)
     private Map<String,Integer> enchants; // stored enchantments (name -> level)
     private int damage; // stored damage value (0 == undamaged)
     // Serialized item data (ConfigurationSerializable output from ItemStack.serialize())
@@ -19,22 +20,24 @@ public class ShopListing {
 
     public ShopListing(String material, String displayName, int price, String description, int stock) {
         this.material = material;
-        this.displayName = displayName;
+        setDisplayName(displayName); // clean display name
         this.price = price;
         this.description = description;
         this.stock = stock;
         this.count = 1;
+        this.originalCount = 1;
         this.enchants = new LinkedHashMap<>();
         this.damage = 0;
     }
 
     public ShopListing(String material, String displayName, int price, String description, int stock, Map<String,Integer> enchants, int damage) {
         this.material = material;
-        this.displayName = displayName;
+        setDisplayName(displayName); // clean display name
         this.price = price;
         this.description = description;
         this.stock = stock;
         this.count = 1;
+        this.originalCount = 1;
         this.enchants = enchants == null ? new LinkedHashMap<>() : enchants;
         this.damage = damage;
         this.itemData = null;
@@ -42,11 +45,12 @@ public class ShopListing {
 
     public ShopListing(String material, String displayName, int price, String description, int stock, Map<String,Integer> enchants, int damage, Map<String,Object> itemData) {
         this.material = material;
-        this.displayName = displayName;
+        setDisplayName(displayName); // clean display name
         this.price = price;
         this.description = description;
         this.stock = stock;
         this.count = 1;
+        this.originalCount = 1;
         this.enchants = enchants == null ? new LinkedHashMap<>() : enchants;
         this.damage = damage;
         this.itemData = itemData;
@@ -54,12 +58,13 @@ public class ShopListing {
 
     public ShopListing(String material, String displayName, int price, String description, int stock, int count, Map<String,Integer> enchants, int damage, Map<String,Object> itemData) {
         this.material = material;
-        this.displayName = displayName;
+        setDisplayName(displayName); // clean display name
         this.price = price;
         this.description = description;
         this.stock = stock;
         // ensure count in [1,64]
         this.count = Math.max(1, Math.min(64, count));
+        this.originalCount = this.count; // ← originalCountを初期化（登録時の個数を記録）
         this.enchants = enchants == null ? new LinkedHashMap<>() : enchants;
         this.damage = damage;
         this.itemData = itemData;
@@ -69,7 +74,15 @@ public class ShopListing {
     public void setMaterial(String material) { this.material = material; }
 
     public String getDisplayName() { return displayName; }
-    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public void setDisplayName(String displayName) {
+        // Remove {} and their contents from display name (supports both ASCII and fullwidth braces and mixed)
+        // Handles: {}, ｛｝, {｝, ｛}
+        if (displayName != null) {
+            displayName = displayName.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
+            if (displayName.isEmpty()) displayName = null;
+        }
+        this.displayName = displayName;
+    }
 
     public int getPrice() { return price; }
     public void setPrice(int price) { this.price = price; }
@@ -97,6 +110,7 @@ public class ShopListing {
         m.put("description", description);
         m.put("stock", stock);
         m.put("count", count);
+        m.put("originalCount", originalCount);
         if (enchants != null && !enchants.isEmpty()) m.put("enchants", enchants);
         m.put("damage", damage);
         if (itemData != null && !itemData.isEmpty()) m.put("item", itemData);
@@ -113,6 +127,7 @@ public class ShopListing {
         String description = (String) map.get("description");
         int stock = map.get("stock") instanceof Number ? ((Number) map.get("stock")).intValue() : 0;
         int count = map.get("count") instanceof Number ? ((Number) map.get("count")).intValue() : 1;
+        int originalCount = map.get("originalCount") instanceof Number ? ((Number) map.get("originalCount")).intValue() : count;
         Map<String,Integer> ench = new LinkedHashMap<>();
         Object eobj = map.get("enchants");
         if (eobj instanceof Map) {
@@ -127,9 +142,15 @@ public class ShopListing {
         Map<String,Object> itemData = null;
         Object iobj = map.get("item");
         if (iobj instanceof Map) itemData = (Map<String,Object>) iobj;
-        return new ShopListing(material, displayName, price, description, stock, count, ench, damage, itemData);
+        ShopListing sl = new ShopListing(material, displayName, price, description, stock, count, ench, damage, itemData);
+        sl.setOriginalCount(originalCount);
+        // Re-save with cleaned displayName to ensure old data gets cleaned up
+        sl.setDisplayName(displayName);
+        return sl;
     }
 
     public int getCount() { return count; }
     public void setCount(int count) { this.count = Math.max(1, Math.min(64, count)); }
-}
+
+    public int getOriginalCount() { return originalCount; }
+    public void setOriginalCount(int originalCount) { this.originalCount = Math.max(1, Math.min(64, originalCount)); }}

@@ -65,12 +65,24 @@ public class ChestShopStore {
         Object listings = map.get("listings");
         if (!(listings instanceof Map)) return out;
         Map<String,Object> lm = (Map<String,Object>) listings;
+        boolean needsResave = false; // Track if we need to re-save due to cleaning
         for (Map.Entry<String,Object> e : lm.entrySet()) {
             try {
                 int slot = Integer.parseInt(e.getKey());
                 ShopListing sl = ShopListing.fromMap(e.getValue());
-                if (sl != null) out.put(slot, sl);
+                if (sl != null) {
+                    out.put(slot, sl);
+                    // If displayName was cleaned, mark for re-save
+                    Object oldDisplayName = ((Map<String,Object>) e.getValue()).get("displayName");
+                    if (oldDisplayName != null && !oldDisplayName.equals(sl.getDisplayName())) {
+                        needsResave = true;
+                    }
+                }
             } catch (Exception ignore) {}
+        }
+        // Auto-save if any displayName was cleaned
+        if (needsResave) {
+            saveListings(loc, out);
         }
         return out;
     }
@@ -104,7 +116,18 @@ public class ChestShopStore {
         if (obj instanceof Map) entry = (Map<String,Object>) obj; else entry = new LinkedHashMap<>();
         Map<String,Object> lm = new LinkedHashMap<>();
         for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
-            lm.put(String.valueOf(e.getKey()), e.getValue().toMap());
+            Map<String,Object> slMap = e.getValue().toMap();
+            // Clean displayName before saving to JSON to remove any {} blocks (mixed ASCII/fullwidth)
+            if (slMap.containsKey("displayName")) {
+                Object dispObj = slMap.get("displayName");
+                if (dispObj instanceof String) {
+                    String display = (String) dispObj;
+                    String cleaned = display.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
+                    if (cleaned.isEmpty()) cleaned = null;
+                    slMap.put("displayName", cleaned);
+                }
+            }
+            lm.put(String.valueOf(e.getKey()), slMap);
         }
         entry.put("listings", lm);
         pc.put(canonical, entry);
