@@ -137,11 +137,6 @@ public class ChestShopUI {
             ItemMeta m = closeBtn.getItemMeta();
             if (m != null) { m.setDisplayName("§e閉じる"); closeBtn.setItemMeta(m); }
             inv.setItem(btnSlot, closeBtn);
-        } else {
-            ItemStack buyHint = new ItemStack(Material.GREEN_STAINED_GLASS_PANE);
-            ItemMeta m = buyHint.getItemMeta();
-            if (m != null) { m.setDisplayName("§a購入方法: チェストに対価を入れてください"); buyHint.setItemMeta(m); }
-            inv.setItem(btnSlot, buyHint);
         }
 
         // populate buyer listing view when not owner
@@ -152,13 +147,31 @@ public class ChestShopUI {
                 if (sl == null) continue;
                 Material mat = Material.matchMaterial(sl.getMaterial());
                 if (mat == null) mat = Material.PAPER;
-                org.bukkit.inventory.ItemStack it = new org.bukkit.inventory.ItemStack(mat);
+                org.bukkit.inventory.ItemStack it = null;
+                // prefer serialized item data (preserves enchantments / NBT)
+                if (sl.getItemData() != null) {
+                    try { it = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { it = null; }
+                }
+                if (it == null) it = new org.bukkit.inventory.ItemStack(mat);
+                it.setAmount(1);
                 org.bukkit.inventory.meta.ItemMeta im2 = it.getItemMeta();
                 if (im2 != null) {
+                    // apply stored enchant map if the serialized item didn't include them
+                    try {
+                        if ((im2.getEnchants() == null || im2.getEnchants().isEmpty()) && sl.getEnchants() != null && !sl.getEnchants().isEmpty()) {
+                            for (Map.Entry<String,Integer> en : sl.getEnchants().entrySet()) {
+                                try {
+                                    org.bukkit.enchantments.Enchantment ec = org.bukkit.enchantments.Enchantment.getByKey(org.bukkit.NamespacedKey.minecraft(en.getKey()));
+                                    if (ec != null && en.getValue() != null) im2.addEnchant(ec, en.getValue(), true);
+                                } catch (Exception ignored) {}
+                            }
+                        }
+                    } catch (Exception ignored) {}
+
                     String disp = sl.getDisplayName();
                     if (disp == null || disp.isEmpty()) disp = mat.name();
                     // Remove {} and their contents from display name
-                    disp = disp.replaceAll("\\{[^}]*\\}", "");
+                    disp = disp.replaceAll("\\{[^}]*\\}", "").trim();
                     im2.setDisplayName(disp);
                     List<String> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
@@ -168,7 +181,11 @@ public class ChestShopUI {
                     } else {
                         lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + shop.getCurrency());
                     }
-                    lore2.add("在庫: " + sl.getStock());
+                    if (sl.getStock() <= 0) {
+                        lore2.add("§c品切れ中");
+                    } else {
+                        lore2.add("在庫: " + sl.getStock());
+                    }
                     if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
                         String desc = sl.getDescription().replace("<br>", "\n");
                         String[] lines = desc.split("\\n");
