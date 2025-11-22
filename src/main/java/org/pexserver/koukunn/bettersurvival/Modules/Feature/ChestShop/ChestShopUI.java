@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.Material;
@@ -73,6 +74,14 @@ public class ChestShopUI {
             if (em != null) { em.setDisplayName("§a編集ページを開く"); List<String> lore = new ArrayList<>(); lore.add("クリックで出品アイテム編集画面を開きます"); em.setLore(lore); edit.setItemMeta(em); }
             inv.setItem(0, edit);
             // leave the supply slot (10) and currency slot (12) empty so owner can place items there
+            // but populate currency slot (12) with current currency if set
+            if (shop != null && shop.getCurrency() != null && !shop.getCurrency().isEmpty()) {
+                Material curMat = Material.matchMaterial(shop.getCurrency());
+                if (curMat != null) {
+                    org.bukkit.inventory.ItemStack curItem = new org.bukkit.inventory.ItemStack(curMat, 1);
+                    inv.setItem(12, curItem);
+                }
+            }
             org.bukkit.inventory.ItemStack info = new org.bukkit.inventory.ItemStack(Material.PAPER);
             org.bukkit.inventory.meta.ItemMeta im = info.getItemMeta();
             if (im != null) {
@@ -175,6 +184,40 @@ public class ChestShopUI {
     public static void closeForPlayer(Player p) {
         openShops.remove(p.getUniqueId());
         openLocations.remove(p.getUniqueId());
+    }
+
+    // Update the owner info item in real-time when stock changes
+    public static void updateOwnerInfo(Player p, ChestShopStore store) {
+        if (p == null || store == null) return;
+        ChestShop shop = getOpenShop(p.getUniqueId());
+        Location loc = getOpenLocation(p.getUniqueId());
+        if (shop == null || loc == null) return;
+        // Check if owner UI is open
+        InventoryView view = p.getOpenInventory();
+        if (view == null || view.getTitle() == null || !view.getTitle().startsWith(OWNER_TITLE_PREFIX)) return;
+        Inventory inv = view.getTopInventory();
+        if (inv == null) return;
+        // Create info item
+        ItemStack info = new ItemStack(Material.PAPER);
+        ItemMeta im = info.getItemMeta();
+        if (im != null) {
+            im.setDisplayName("§6在庫と売切れ表示");
+            // populate summary using store listings
+            Map<Integer, ShopListing> listings = store.getListings(loc);
+            int total = 0;
+            List<String> soldOut = new ArrayList<>();
+            for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
+                ShopListing sl = e.getValue();
+                total += sl.getStock();
+                if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
+            }
+            List<String> lore = new ArrayList<>();
+            lore.add("総在庫: " + total);
+            lore.add("売切れ: " + (soldOut.isEmpty() ? "なし" : String.join(", ", soldOut)));
+            im.setLore(lore);
+            info.setItemMeta(im);
+        }
+        inv.setItem(19, info);
     }
 
 }

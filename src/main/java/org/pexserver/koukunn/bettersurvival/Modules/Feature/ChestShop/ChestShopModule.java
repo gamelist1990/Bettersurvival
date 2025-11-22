@@ -575,14 +575,27 @@ public class ChestShopModule implements Listener {
                         } catch (Exception ignored) {}
                         p.sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
                     }
+                    // Update owner info in real-time
+                    try {
+                        if (rr.shop != null && rr.shop.getOwner() != null) {
+                            Player ownerPlayer = Bukkit.getPlayer(java.util.UUID.fromString(rr.shop.getOwner()));
+                            if (ownerPlayer != null) ChestShopUI.updateOwnerInfo(ownerPlayer, store);
+                        }
+                    } catch (Exception ignored) {}
                 }, 1L);
                 return;
             }
 
+            // allow normal clicks in the player's own inventory (bottom) — only let SHIFT-clicks fall through
             // support SHIFT-click from player inventory -> move to slot 10 (supply) or slot 12 (currency) when appropriate
             try {
                 InventoryView viewNow = p.getOpenInventory();
                 int topSize = viewNow == null || viewNow.getTopInventory() == null ? 0 : viewNow.getTopInventory().getSize();
+                if (e.getRawSlot() >= topSize && e.getAction() != InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                    // regular bottom-inventory clicks should be allowed
+                    try { e.setCancelled(false); } catch (Exception ignored) {}
+                    return;
+                }
                 if (e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY && e.getRawSlot() >= topSize) {
                     ResolveResult rr = resolveByTitle(p.getOpenInventory() == null ? null : p.getOpenInventory().getTitle());
                     if (rr == null) return;
@@ -631,6 +644,13 @@ public class ChestShopModule implements Listener {
                                         ((Player)e.getWhoClicked()).sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
                                     } catch (Exception ignored) {}
                                 }
+                                // Update owner info in real-time
+                                try {
+                                    if (rr.shop != null && rr.shop.getOwner() != null) {
+                                        Player ownerPlayer = Bukkit.getPlayer(java.util.UUID.fromString(rr.shop.getOwner()));
+                                        if (ownerPlayer != null) ChestShopUI.updateOwnerInfo(ownerPlayer, store);
+                                    }
+                                } catch (Exception ignored) {}
                             } catch (Exception ignored) {}
                         }, 1L);
                         e.setCancelled(true);
@@ -851,6 +871,14 @@ public class ChestShopModule implements Listener {
                         if (ok && rr.shop != null) {
                             rr.shop.setCurrency(curMat);
                             if (p != null) p.sendMessage(curMat == null ? "§e通貨設定を解除しました" : ("§a通貨を設定しました: " + curMat));
+                        }
+                    } catch (Exception ignored) {}
+
+                    // Update owner info in real-time after supply/currency changes
+                    try {
+                        if (rr.shop != null && rr.shop.getOwner() != null) {
+                            Player ownerPlayer = Bukkit.getPlayer(java.util.UUID.fromString(rr.shop.getOwner()));
+                            if (ownerPlayer != null) ChestShopUI.updateOwnerInfo(ownerPlayer, store);
                         }
                     } catch (Exception ignored) {}
 
