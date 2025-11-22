@@ -257,7 +257,49 @@ public class ChestShopModule implements Listener {
         }
 
         String display = raw;
-        ShopListing sl = new ShopListing(it.getType().name(), display, price, desc, prevStock);
+        Map<String,Integer> enchMap = new LinkedHashMap<>();
+        int damage = 0;
+        try {
+            if (it.hasItemMeta()) {
+                org.bukkit.inventory.meta.ItemMeta im = it.getItemMeta();
+                if (im != null) {
+                    if (im.hasEnchants()) {
+                        for (Map.Entry<org.bukkit.enchantments.Enchantment, Integer> en : im.getEnchants().entrySet()) {
+                            try {
+                                String k = en.getKey().getKey().getKey();
+                                enchMap.put(k, en.getValue());
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                    if (im instanceof org.bukkit.inventory.meta.Damageable) {
+                        damage = ((org.bukkit.inventory.meta.Damageable) im).getDamage();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        Map<String,Object> itemData = null;
+        try {
+            if (it != null) {
+                org.bukkit.inventory.ItemStack copy = it.clone();
+                try {
+                    org.bukkit.inventory.meta.ItemMeta cim = copy.getItemMeta();
+                    if (cim != null && cim.hasLore()) {
+                        List<String> newLore = new ArrayList<>();
+                        for (String L : cim.getLore()) {
+                            if (L == null) continue;
+                            if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
+                            newLore.add(L);
+                        }
+                        cim.setLore(newLore.isEmpty() ? null : newLore);
+                    }
+                    copy.setItemMeta(cim);
+                } catch (Exception ignoredMeta) {}
+                itemData = copy.serialize();
+            }
+        } catch (Exception ignored) {}
+        String matName = it == null ? org.bukkit.Material.PAPER.name() : it.getType().name();
+        ShopListing sl = new ShopListing(matName, display, price, desc, prevStock, enchMap, damage, itemData);
         return sl;
     }
 
@@ -520,7 +562,7 @@ public class ChestShopModule implements Listener {
                 boolean applied = false;
                 for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
                     ShopListing sl = en.getValue();
-                    if (sl.getMaterial() != null && sl.getMaterial().equals(supply.getType().name())) {
+                    if (listingMatchesItem(supply, sl)) {
                         sl.setStock(sl.getStock() + supply.getAmount());
                         store.saveListings(loc, listings);
                         applied = true;
@@ -531,7 +573,12 @@ public class ChestShopModule implements Listener {
                     p.sendMessage("§a仕入れを補充しました: " + supply.getType().toString() + " x" + supply.getAmount());
                     p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                 } else {
-                    p.sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした");
+                            // return the supplied item back to player's inventory (or drop if full)
+                            try {
+                                Map<Integer, ItemStack> rema = p.getInventory().addItem(supply);
+                                if (!rema.isEmpty()) for (ItemStack r : rema.values()) if (r != null) p.getWorld().dropItemNaturally(p.getLocation(), r);
+                            } catch (Exception ignored) {}
+                            p.sendMessage("§cこの仕入れアイテムに対応する出品が見つかりませんでした — アイテムを返却しました");
                 }
             }
             // Always keep mapping for editor access, clear only when editor closes
@@ -609,7 +656,7 @@ public class ChestShopModule implements Listener {
                     boolean applied = false;
                     for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
                         ShopListing sl = en.getValue();
-                            if (sl.getMaterial() != null && sl.getMaterial().equals(supplyNow.getType().name())) {
+                            if (listingMatchesItem(supplyNow, sl)) {
                                 sl.setStock(sl.getStock() + supplyNow.getAmount());
                                 store.saveListings(locInner, listings);
                             invnow.setItem(10, null);
@@ -663,10 +710,9 @@ public class ChestShopModule implements Listener {
                     org.bukkit.inventory.Inventory top = viewNow.getTopInventory();
                     if (top == null) return;
                     org.bukkit.inventory.ItemStack existingSupply = top.getItem(10);
-                    String srcMat = source.getType().name();
                     boolean matchesListing = false;
-                    for (ShopListing sl : listings.values()) if (sl != null && srcMat.equals(sl.getMaterial())) { matchesListing = true; break; }
-                    if ((existingSupply == null && matchesListing) || (existingSupply != null && existingSupply.getType() == source.getType())) {
+                    for (ShopListing sl : listings.values()) if (sl != null && listingMatchesItem(source, sl)) { matchesListing = true; break; }
+                    if ((existingSupply == null && matchesListing) || (existingSupply != null && (existingSupply.getType() == source.getType() || existingSupply.isSimilar(source)))) {
                         // move whole stack into supply slot
                         top.setItem(10, source.clone());
                         // clear clicked bottom slot
@@ -682,7 +728,7 @@ public class ChestShopModule implements Listener {
                                 Map<Integer, ShopListing> listingsNow = store.getListings(locMove);
                                 for (Map.Entry<Integer, ShopListing> en : listingsNow.entrySet()) {
                                     ShopListing sl = en.getValue();
-                                    if (sl.getMaterial() != null && sl.getMaterial().equals(supNow.getType().name())) {
+                                    if (listingMatchesItem(supNow, sl)) {
                                         sl.setStock(sl.getStock() + supNow.getAmount());
                                         store.saveListings(locMove, listingsNow);
                                         top.setItem(10, null);
@@ -786,11 +832,28 @@ public class ChestShopModule implements Listener {
                         if (sl == null) continue;
                         Material mat = Material.matchMaterial(sl.getMaterial());
                         if (mat == null) mat = Material.PAPER;
-                        org.bukkit.inventory.ItemStack it = new org.bukkit.inventory.ItemStack(mat, 1);
+                        org.bukkit.inventory.ItemStack it = null;
+                        // reconstruct original item if serialized data available to preserve enchants/NBT
+                        if (sl.getItemData() != null) {
+                            try {
+                                it = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData());
+                                if (it == null) it = new org.bukkit.inventory.ItemStack(mat, 1);
+                            } catch (Exception ignored) { it = new org.bukkit.inventory.ItemStack(mat, 1); }
+                        } else {
+                            it = new org.bukkit.inventory.ItemStack(mat, 1);
+                        }
+                        // ensure editor shows a single sample item but append editor-only lore
+                        it.setAmount(1);
                         org.bukkit.inventory.meta.ItemMeta im = it.getItemMeta();
                         if (im != null) {
-                            im.setDisplayName(sl.getDisplayName());
-                            List<String> lore = new ArrayList<>();
+                            // prefer existing display name, otherwise use stored displayName
+                            if ((im.hasDisplayName() && im.getDisplayName() != null) || sl.getDisplayName() == null) {
+                                // keep existing
+                            } else {
+                                im.setDisplayName(sl.getDisplayName());
+                            }
+                            List<String> lore = im.hasLore() && im.getLore() != null ? new ArrayList<>(im.getLore()) : new ArrayList<>();
+                            // append editor lines (do not overwrite original lore)
                             lore.add("在庫: " + sl.getStock());
                             lore.add("価格: " + sl.getPrice());
                             if (sl.getDescription() != null && !sl.getDescription().isEmpty()) lore.add("説明: " + sl.getDescription());
@@ -835,10 +898,70 @@ public class ChestShopModule implements Listener {
             return;
         }
 
-        // Editor UI - シンプルなドラッグ&ドロップと基本クリックを許可
+        // Editor UI - handle moving an editor item into player inventory (shift-click)
         if (title.startsWith(ChestShopUI.EDITOR_TITLE_PREFIX)) {
-            // エディターはシンプルなクリックとドラッグ&ドロップのみ許可
-            // 自動保存に任せて、複雑な操作は避ける
+            try {
+                InventoryView viewNow = p.getOpenInventory();
+                int topSize = viewNow == null || viewNow.getTopInventory() == null ? 0 : viewNow.getTopInventory().getSize();
+                // handle shift-click from editor top -> player inventory
+                if (e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY && e.getRawSlot() < topSize) {
+                    ResolveResult rr = resolveByTitle(title);
+                    if (rr == null) return;
+                    Location loc = rr.loc;
+                    Map<Integer, ShopListing> listings = store.getListings(loc);
+                    ShopListing sl = listings.get(e.getRawSlot());
+                    if (sl == null) return;
+                    // build original item (preserve enchantments/NBT if available)
+                    org.bukkit.inventory.ItemStack give = null;
+                    if (sl.getItemData() != null) {
+                        try { give = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { give = null; }
+                    }
+                    if (give == null) {
+                        org.bukkit.Material m = org.bukkit.Material.matchMaterial(sl.getMaterial());
+                        give = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                    }
+                    // sanitize: remove editor-only lore lines and price/stock markers from display name
+                    org.bukkit.inventory.meta.ItemMeta gm = give.getItemMeta();
+                    if (gm != null) {
+                        if (gm.hasLore() && gm.getLore() != null) {
+                            List<String> newl = new ArrayList<>();
+                            for (String L : gm.getLore()) {
+                                if (L == null) continue;
+                                if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
+                                newl.add(L);
+                            }
+                            gm.setLore(newl.isEmpty() ? null : newl);
+                        }
+                        if (gm.hasDisplayName() && gm.getDisplayName() != null) {
+                            String name = gm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                            if (name.isEmpty()) gm.setDisplayName(null); else gm.setDisplayName(name);
+                        }
+                        give.setItemMeta(gm);
+                    }
+
+                    // return the physical items: editor shows one sample + stored stock
+                    int amountToGive = Math.max(1, 1 + Math.max(0, sl.getStock()));
+                    give.setAmount(amountToGive);
+
+                    Map<Integer, org.bukkit.inventory.ItemStack> leftover = ((Player)e.getWhoClicked()).getInventory().addItem(give);
+                    if (!leftover.isEmpty()) {
+                        for (org.bukkit.inventory.ItemStack r : leftover.values()) if (r != null) ((Player)e.getWhoClicked()).getWorld().dropItemNaturally(((Player)e.getWhoClicked()).getLocation(), r);
+                    }
+
+                    // remove the listing and save
+                    listings.remove(e.getRawSlot());
+                    store.saveListings(loc, listings);
+
+                    // clear the editor slot
+                    if (viewNow != null && viewNow.getTopInventory() != null) viewNow.getTopInventory().setItem(e.getRawSlot(), null);
+
+                    ((Player)e.getWhoClicked()).sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: " + give.getType().toString() + " x" + amountToGive);
+                    ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
+                    e.setCancelled(true);
+                    return;
+                }
+            } catch (Exception ignored) {}
+            // otherwise allow simple clicks and drag — auto-save handles state
             return;
         }
 
@@ -852,6 +975,20 @@ public class ChestShopModule implements Listener {
             Map<Integer, ShopListing> listings = store.getListings(loc);
             ShopListing sl = listings.get(e.getRawSlot());
             if (sl != null && sl.getStock() > 0) {
+                // guard: listing must have a valid price
+                if (sl.getPrice() <= 0) {
+                    p.sendMessage("§cこの出品は販売情報が不十分なため購入できません");
+                    p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                    e.setCancelled(true);
+                    return;
+                }
+                // guard: don't sell damaged items (non-max durability)
+                if (sl.getDamage() > 0) {
+                    p.sendMessage("§cこのアイテムは耐久が減っているため購入できません");
+                    p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                    e.setCancelled(true);
+                    return;
+                }
                 int price = sl.getPrice();
                 Material curMat = Material.matchMaterial(shop.getCurrency());
                 if (curMat != null) {
@@ -859,10 +996,14 @@ public class ChestShopModule implements Listener {
                     if (has >= price) {
                         // remove currency
                         removeItems(p.getInventory(), curMat, price);
-                        // give item
+                        // give item (preserve enchantments)
                         Material itemMat = Material.matchMaterial(sl.getMaterial());
-                        if (itemMat != null) {
-                            ItemStack give = new ItemStack(itemMat, 1);
+                            if (itemMat != null) {
+                                org.bukkit.inventory.ItemStack give = null;
+                                if (sl.getItemData() != null) {
+                                    try { give = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { give = null; }
+                                }
+                                if (give == null) give = new org.bukkit.inventory.ItemStack(itemMat, 1);
                             Map<Integer, ItemStack> leftover = p.getInventory().addItem(give);
                             if (!leftover.isEmpty()) {
                                 for (ItemStack drop : leftover.values()) {
@@ -962,7 +1103,7 @@ public class ChestShopModule implements Listener {
                             boolean applied = false;
                             for (Map.Entry<Integer, ShopListing> en : listings.entrySet()) {
                                 ShopListing sl = en.getValue();
-                                if (sl.getMaterial() != null && sl.getMaterial().equals(supplyNow.getType().name())) {
+                                if (listingMatchesItem(supplyNow, sl)) {
                                     sl.setStock(sl.getStock() + supplyNow.getAmount());
                                     store.saveListings(loc, listings);
                                     invnow.setItem(10, null);
@@ -1041,5 +1182,25 @@ public class ChestShopModule implements Listener {
             }
         }
     }
+
+            // Check if a supplied ItemStack matches the listing exactly (respecting saved NBT / enchants when available)
+            private boolean listingMatchesItem(org.bukkit.inventory.ItemStack supply, ShopListing sl) {
+                if (supply == null || sl == null) return false;
+                // if listing has serialized item data, use that as prototype and compare via isSimilar (ignores amount)
+                if (sl.getItemData() != null) {
+                    try {
+                        org.bukkit.inventory.ItemStack proto = org.bukkit.inventory.ItemStack.deserialize(sl.getItemData());
+                        if (proto == null) return false;
+                        proto.setAmount(1);
+                        org.bukkit.inventory.ItemStack cmp = supply.clone(); cmp.setAmount(1);
+                        return cmp.isSimilar(proto);
+                    } catch (Exception ignored) {}
+                }
+                // fallback to type-only compare
+                if (sl.getMaterial() != null) return supply.getType().name().equals(sl.getMaterial());
+                return false;
+            }
+
+    
 
 }
