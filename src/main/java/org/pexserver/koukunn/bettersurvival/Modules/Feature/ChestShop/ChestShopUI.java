@@ -112,7 +112,7 @@ public class ChestShopUI {
                 ItemStack earningsItem = new ItemStack(Material.GOLD_INGOT);
                 ItemMeta em2 = earningsItem.getItemMeta();
                 if (em2 != null) {
-                    String currencyName = (shop != null && shop.getCurrencyName() != null && !shop.getCurrencyName().isEmpty()) ? shop.getCurrencyName() : displayNameForMaterial(shop.getCurrency());
+                    String currencyName = displayNameForMaterial(shop.getCurrency());
                     em2.setDisplayName("§6収益: " + shop.getEarnings() + " " + currencyName);
                     List<String> lore = new ArrayList<>();
                     lore.add("§aクリックで収益を回収");
@@ -182,7 +182,7 @@ public class ChestShopUI {
                     } else if ((long)sl.getPrice() > 64L) {
                         lore2.add("§c価格が最大を超えています (販売不可)");
                     } else {
-                        String curDisplay = (shop != null && shop.getCurrencyName() != null && !shop.getCurrencyName().isEmpty()) ? shop.getCurrencyName() : displayNameForMaterial(shop.getCurrency());
+                        String curDisplay = displayNameForMaterial(shop.getCurrency());
                         lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
                     }
                     if (sl.getStock() <= 0) {
@@ -234,6 +234,20 @@ public class ChestShopUI {
         if (matName == null || matName.isEmpty()) return "未設定";
         Material m = Material.matchMaterial(matName);
         if (m == null) return matName;
+        // Try ItemMeta's display/localized name first (resource packs or server translations)
+        try {
+            ItemStack probe = new ItemStack(m, 1);
+            ItemMeta im = probe.getItemMeta();
+            if (im != null) {
+                if (im.hasDisplayName()) return im.getDisplayName();
+                try {
+                    String loc = im.getLocalizedName();
+                    if (loc != null && !loc.trim().isEmpty()) return loc;
+                } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+            }
+        } catch (Throwable ignored) {}
+
+        // Fallback: some common translations for nicer display
         switch (m) {
             case EMERALD: return "エメラルド";
             case DIAMOND: return "ダイヤモンド";
