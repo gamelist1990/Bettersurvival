@@ -29,6 +29,7 @@ public class ChestLockUI {
         return openLocations.get(uid);
     }
 
+    @SuppressWarnings("deprecation")
     public static void openForPlayer(Player p, ChestLock lock, Location loc, ChestLockStore store) {
         List<Player> nearby = new ArrayList<>();
         for (Player pl : Bukkit.getOnlinePlayers()) {
@@ -46,6 +47,7 @@ public class ChestLockUI {
         if (size == 0)
             size = 9;
         String name = (lock == null ? "(未ロック)" : lock.getName());
+        @SuppressWarnings("deprecation")
         Inventory inv = Bukkit.createInventory(null, Math.max(size, 9), TITLE_PREFIX + name);
 
         int slot = 0;
