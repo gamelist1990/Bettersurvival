@@ -118,7 +118,7 @@ public class ChestShopUI {
                     ShopListing sl = e.getValue();
                     // 備考: editor/buyer UI の "サンプル" アイテム分 (1) は在庫カウントに含めない
                     total += Math.max(0, sl.getStock());
-                    if (sl.getStock() <= 0)
+                    if (sl.getStock() < sl.getCount())
                         soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
                 }
                 List<String> lore = new ArrayList<>();
@@ -228,7 +228,7 @@ public class ChestShopUI {
                         String curDisplay = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
                         lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
                     }
-                    if (sl.getStock() <= 0) {
+                    if (sl.getStock() < sl.getCount()) {
                         lore2.add("§c品切れ中");
                     } else {
                         lore2.add("在庫: " + sl.getStock());
@@ -266,9 +266,15 @@ public class ChestShopUI {
             if (hm != null) {
                 hm.setDisplayName("§b購入方法");
                 List<String> hl = new ArrayList<>();
-                hl.add("価格はセット価格です (例: 個数5, 価格10 => 10で購入)");
-                hl.add("出品をクリックすると1セットを購入します");
-                hl.add("在庫が0になると品切れになります");
+                hl.add("§e価格の仕組み");
+                hl.add("§f表示価格は §f1セット(個数分) §fの値段です");
+                hl.add("§f例: 個数5, 価格10 の場合");
+                hl.add("§f10通貨支払って、5個入手します");
+                hl.add("");
+                hl.add("§e購入ルール");
+                hl.add("§fクリックで1セット購入します");
+                hl.add("§f在庫がセット個数より少なくなると");
+                hl.add("§f品切れとなり購入できません");
                 hm.setLore(hl);
                 help.setItemMeta(hm);
             }
@@ -435,7 +441,7 @@ public class ChestShopUI {
                 ShopListing sl = e.getValue();
                 // サンプル本体の個数を含めず、実際の在庫のみ合計する
                 total += Math.max(0, sl.getStock());
-                if (sl.getStock() <= 0)
+                if (sl.getStock() < sl.getCount())
                     soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
             }
             List<String> lore = new ArrayList<>();
@@ -445,6 +451,107 @@ public class ChestShopUI {
             info.setItemMeta(im);
         }
         inv.setItem(19, info);
+    }
+
+    // Update the buyer UI in real-time when items are purchased
+    public static void updateBuyerUI(Player p, ChestShopStore store) {
+        if (p == null || store == null)
+            return;
+        ChestShop shop = getOpenShop(p.getUniqueId());
+        Location loc = getOpenLocation(p.getUniqueId());
+        if (shop == null || loc == null)
+            return;
+        // Check if buyer UI is open
+        InventoryView view = p.getOpenInventory();
+        if (view == null || view.getTitle() == null || !view.getTitle().startsWith(TITLE_PREFIX))
+            return;
+        Inventory inv = view.getTopInventory();
+        if (inv == null)
+            return;
+
+        // Update all listing items (slots 0-25)
+        Map<Integer, ShopListing> listings = store.getListings(loc);
+        for (int i = 0; i < 26; i++) {
+            ShopListing sl = listings.get(i);
+            if (sl == null) {
+                // Clear slot if no listing
+                if (inv.getItem(i) != null && inv.getItem(i).getType() != Material.BARRIER) {
+                    ItemStack barrier = new ItemStack(Material.BARRIER);
+                    ItemMeta bm = barrier.getItemMeta();
+                    if (bm != null) {
+                        bm.setDisplayName("§c使用不可");
+                        barrier.setItemMeta(bm);
+                    }
+                    inv.setItem(i, barrier);
+                }
+                continue;
+            }
+            Material mat = Material.matchMaterial(sl.getMaterial());
+            if (mat == null)
+                mat = Material.PAPER;
+            ItemStack it = null;
+            // prefer serialized item data (preserves enchantments / NBT)
+            if (sl.getItemData() != null) {
+                try {
+                    it = ItemStack.deserialize(sl.getItemData());
+                } catch (Exception ignored) {
+                    it = null;
+                }
+            }
+            if (it == null)
+                it = new ItemStack(mat);
+            it.setAmount(Math.max(1, Math.min(64, sl.getCount())));
+            ItemMeta im = it.getItemMeta();
+            if (im != null) {
+                // apply stored enchant map if the serialized item didn't include them
+                try {
+                    if ((im.getEnchants() == null || im.getEnchants().isEmpty()) && sl.getEnchants() != null
+                            && !sl.getEnchants().isEmpty()) {
+                        for (Map.Entry<String, Integer> en : sl.getEnchants().entrySet()) {
+                            try {
+                                Enchantment ec = Enchantment.getByKey(NamespacedKey.minecraft(en.getKey()));
+                                if (ec != null && en.getValue() != null)
+                                    im.addEnchant(ec, en.getValue(), true);
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+
+                String disp = sl.getDisplayName();
+                if (disp == null || disp.isEmpty())
+                    disp = mat.name();
+                im.setDisplayName(disp);
+                List<String> lore = new ArrayList<>();
+                if (shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
+                    lore.add("§c通貨未設定 (販売不可)");
+                } else if ((long) sl.getPrice() > 64L) {
+                    lore.add("§c価格が最大を超えています (販売不可)");
+                } else {
+                    String curDisplay = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
+                    lore.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
+                }
+                if (sl.getStock() < sl.getCount()) {
+                    lore.add("§c品切れ中");
+                } else {
+                    lore.add("在庫: " + sl.getStock());
+                    lore.add("個数: " + sl.getCount());
+                }
+                if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
+                    String desc = sl.getDescription().replace("<br>", "\n");
+                    String[] lines = desc.split("\\\\n");
+                    if (lines.length > 0) {
+                        lore.add("説明: " + lines[0]);
+                        for (int j = 1; j < lines.length; j++)
+                            lore.add(lines[j]);
+                    }
+                }
+                im.setLore(lore);
+                it.setItemMeta(im);
+            }
+            inv.setItem(i, it);
+        }
     }
 
 }

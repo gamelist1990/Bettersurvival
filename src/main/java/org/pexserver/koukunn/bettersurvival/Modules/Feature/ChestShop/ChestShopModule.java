@@ -1441,6 +1441,8 @@ public class ChestShopModule implements Listener {
                             if (currencyChanging && rrMove.shop.getEarnings() == 0) {
                                 store.save(locMove, rrMove.shop);
                             }
+                            // Update openShops map with the updated shop object
+                            ChestShopUI.registerOpen(((Player) e.getWhoClicked()).getUniqueId(), rrMove.shop, locMove);
                             ((Player) e.getWhoClicked()).sendMessage("§a通貨を設定しました: "
                                     + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat)));
                             ((Player) e.getWhoClicked()).playSound(((Player) e.getWhoClicked()).getLocation(),
@@ -1525,6 +1527,8 @@ public class ChestShopModule implements Listener {
                         if (currencyChanging && shopInner.getEarnings() == 0) {
                             store.save(locInner, shopInner);
                         }
+                        // Update openShops map with the updated shop object
+                        ChestShopUI.registerOpen(p.getUniqueId(), shopInner, locInner);
                         p.sendMessage(curMat == null ? "§e通貨設定を解除しました"
                                 : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay
                                         : ChestShopUI.displayNameForMaterial(curMat))));
@@ -2049,7 +2053,7 @@ public class ChestShopModule implements Listener {
                 return;
             Map<Integer, ShopListing> listings = store.getListings(loc);
             ShopListing sl = listings.get(e.getRawSlot());
-            if (sl != null && sl.getStock() > 0) {
+            if (sl != null && sl.getStock() >= sl.getCount()) {
                 // guard: listing must have a valid price
                 if (sl.getPrice() <= 0) {
                     p.sendMessage("§cこの出品は販売情報が不十分なため購入できません");
@@ -2106,8 +2110,8 @@ public class ChestShopModule implements Listener {
                                 }
                             }
                         }
-                        // decrease stock (one sale unit)
-                        sl.setStock(sl.getStock() - 1);
+                        // decrease stock by the count (items sold in this transaction)
+                        sl.setStock(sl.getStock() - count);
                         store.saveListings(loc, listings);
                         // add to earnings
                         shop.setEarnings(shop.getEarnings() + cost);
@@ -2130,15 +2134,16 @@ public class ChestShopModule implements Listener {
                             }
                         } catch (Exception ignored) {
                         }
+                        // update buyer UI in real-time
+                        ChestShopUI.updateBuyerUI(p, store);
                     } else {
                         p.sendMessage("§c通貨が不足しています");
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                     }
                 }
-            } else if (sl != null && sl.getStock() <= 0) {
-                // Inform buyer when attempting to purchase a sold-out item and play an error
-                // sound.
-                p.sendMessage("§cそのアイテムは品切れです");
+            } else if (sl != null && sl.getStock() < sl.getCount()) {
+                // Inform buyer when attempting to purchase an item with insufficient stock
+                p.sendMessage("§cそのアイテムは品切れ、または在庫が不足しています (在庫: " + sl.getStock() + ", 必要: " + sl.getCount() + ")");
                 p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
             }
             e.setCancelled(true);
@@ -2297,6 +2302,8 @@ public class ChestShopModule implements Listener {
                             rr.shop.setCurrency(curMat);
                             rr.shop.setCustomCurrencyName(curDisplay);
                             if (p != null) {
+                                // Update openShops map with the updated shop object
+                                ChestShopUI.registerOpen(p.getUniqueId(), rr.shop, loc);
                                 p.sendMessage(curMat == null ? "§e通貨設定を解除しました"
                                         : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay
                                                 : ChestShopUI.displayNameForMaterial(curMat))));
