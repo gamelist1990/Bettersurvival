@@ -141,20 +141,20 @@ public class ChestShopModule implements Listener {
                                                 for (String L : gm.getLore()) {
                                                     if (L == null) continue;
                                                     if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                                                    String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                                    String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                                     if (cleaned.isEmpty()) continue;
                                                     newl.add(cleaned);
                                                 }
                                                 gm.setLore(newl.isEmpty() ? null : newl);
                                             }
                                             if (gm.hasDisplayName() && gm.getDisplayName() != null) {
-                                                String name = gm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                                String name = gm.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                                 if (name.isEmpty()) gm.setDisplayName(null); else gm.setDisplayName(name);
                                             }
                                             giveBack.setItemMeta(gm);
                                         }
 
-                                        int amountToGive = Math.max(1, 1 + Math.max(0, removed.getStock()));
+                                        int amountToGive = Math.max(1, removed.getCount() * (1 + Math.max(0, removed.getStock())));
                                         // avoid duplicating if player already has similar items
                                         giveBack = sanitizeReturnedItem(giveBack);
                                         ItemStack proto = giveBack.clone(); proto.setAmount(1);
@@ -301,6 +301,8 @@ public class ChestShopModule implements Listener {
 
     private ShopListing parseRawToListing(ItemStack it, String raw, ShopListing prev) {
         int prevStock = prev != null ? prev.getStock() : 0;
+        int prevCount = prev != null ? prev.getCount() : 1;
+        int count = prevCount;
         int prevPrice = prev != null ? prev.getPrice() : 0;
         String prevDesc = prev != null && prev.getDescription() != null ? prev.getDescription() : "";
         Map<String,Object> prevItemData = prev != null ? prev.getItemData() : null;
@@ -312,9 +314,21 @@ public class ChestShopModule implements Listener {
         String left = raw.trim();
         int price = 0;
 
-        // JSON-like block support: {cost:10,docs:説明}
-        int jstart = left.indexOf('{');
-        int jend = jstart >= 0 ? left.indexOf('}', jstart) : -1;
+        // JSON-like block support: tolerate ASCII and fullwidth braces {..} or ｛..｝
+        int jstartA = left.indexOf('{');
+        int jstartB = left.indexOf('｛');
+        int jstart = -1;
+        if (jstartA >= 0 && jstartB >= 0) jstart = Math.min(jstartA, jstartB);
+        else if (jstartA >= 0) jstart = jstartA;
+        else if (jstartB >= 0) jstart = jstartB;
+        int jend = -1;
+        if (jstart >= 0) {
+            int jendA = left.indexOf('}', jstart);
+            int jendB = left.indexOf('｝', jstart);
+            if (jendA >= 0 && jendB >= 0) jend = Math.min(jendA, jendB);
+            else if (jendA >= 0) jend = jendA;
+            else if (jendB >= 0) jend = jendB;
+        }
         if (jstart >= 0 && jend > jstart) {
             String json = left.substring(jstart + 1, jend).trim();
             left = (left.substring(0, jstart) + left.substring(jend + 1)).trim();
@@ -335,6 +349,13 @@ public class ChestShopModule implements Listener {
                         desc = desc.substring(1, desc.length()-1);
                     }
                     Bukkit.getLogger().info("[ChestShop] detected docs='"+desc+"' in json='"+json+"'");
+                }
+            } catch (Exception ignored) {}
+            // parse count/cont/qty and tolerate various separators
+            try {
+                java.util.regex.Matcher mCount = java.util.regex.Pattern.compile("(?i)\\b(?:count|cont|qty)\\s*:\\s*(\\d+)").matcher(json);
+                if (mCount.find()) {
+                    try { int parsedCount = Integer.parseInt(mCount.group(1)); count = Math.max(1, Math.min(64, parsedCount)); } catch (Exception ignored2) {}
                 }
             } catch (Exception ignored) {}
         }
@@ -361,7 +382,8 @@ public class ChestShopModule implements Listener {
         if (price == 0 && prevPrice > 0) price = prevPrice;
 
         // normalize display name: strip embedded JSON blocks {..} which were used as inline metadata
-        String display = raw == null ? null : raw.replaceAll("\\{[^}]*\\}", "").trim();
+        // remove inline ASCII/fullwidth metadata blocks from display names
+        String display = raw == null ? null : raw.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
         Map<String,Integer> enchMap = new LinkedHashMap<>();
         int damage = 0;
         try {
@@ -397,7 +419,7 @@ public class ChestShopModule implements Listener {
                         for (String L : cim.getLore()) {
                             if (L == null) continue;
                             if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                            String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                            String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                             if (cleaned.isEmpty()) continue;
                             newLore.add(cleaned);
                         }
@@ -406,7 +428,7 @@ public class ChestShopModule implements Listener {
                     // also sanitize display name in copied data to remove inline JSON blocks
                     try {
                         if (cim != null && cim.hasDisplayName() && cim.getDisplayName() != null) {
-                            String clean = cim.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                            String clean = cim.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                             if (clean.isEmpty()) clean = null;
                             cim.setDisplayName(clean);
                         }
@@ -422,7 +444,10 @@ public class ChestShopModule implements Listener {
         // if description blank, keep previous description
         if ((desc == null || desc.isEmpty()) && prevDesc != null && !prevDesc.isEmpty()) desc = prevDesc;
         if (damage == 0 && prevDamage > 0) damage = prevDamage;
-        ShopListing sl = new ShopListing(matName, display, price, desc, prevStock, enchMap, damage, itemData);
+        // ensure count bounded and preserve previous count when not specified
+        if (count <= 0) count = prevCount;
+        count = Math.max(1, Math.min(64, count));
+        ShopListing sl = new ShopListing(matName, display, price, desc, prevStock, count, enchMap, damage, itemData);
         return sl;
     }
 
@@ -501,7 +526,7 @@ public class ChestShopModule implements Listener {
                             }
                         } catch (Exception ignored) {}
 
-                        int amountToDrop = Math.max(1, 1 + Math.max(0, sl.getStock()));
+                        int amountToDrop = Math.max(1, sl.getCount() * (1 + Math.max(0, sl.getStock())));
                         toDrop.setAmount(amountToDrop);
                         // drop near the chest location
                         try {
@@ -1072,16 +1097,20 @@ public class ChestShopModule implements Listener {
                         } else {
                             it = new ItemStack(mat, 1);
                         }
-                        // ensure editor shows a single sample item but append editor-only lore
-                        it.setAmount(1);
+                        // ensure editor shows a sample amount equal to cont and append editor-only lore
+                        it.setAmount(Math.max(1, Math.min(64, sl.getCount())));
                         ItemMeta im = it.getItemMeta();
                         if (im != null) {
                             // prefer existing display name, otherwise use stored displayName
-                            if ((im.hasDisplayName() && im.getDisplayName() != null) || sl.getDisplayName() == null) {
-                                // keep existing
-                            } else {
-                                im.setDisplayName(sl.getDisplayName());
-                            }
+                            // sanitize display names (remove inline metadata blocks) and prefer existing when present
+                            try {
+                                if (im.hasDisplayName() && im.getDisplayName() != null) {
+                                    im.setDisplayName(im.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim());
+                                }
+                                if (!im.hasDisplayName() || im.getDisplayName() == null || im.getDisplayName().isEmpty()) {
+                                    if (sl.getDisplayName() != null) im.setDisplayName(sl.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim());
+                                }
+                            } catch (Exception ignored) {}
                             // start with existing lore but remove any editor-only lines to avoid duplication
                             List<String> lore = new ArrayList<>();
                             if (im.hasLore() && im.getLore() != null) {
@@ -1093,6 +1122,7 @@ public class ChestShopModule implements Listener {
                             }
                             // append editor-only lines exactly once
                             lore.add("在庫: " + sl.getStock());
+                            lore.add("個数: " + sl.getCount());
                             lore.add("価格: " + sl.getPrice());
                             if (sl.getDescription() != null && !sl.getDescription().isEmpty()) lore.add("説明: " + sl.getDescription());
                             im.setLore(lore);
@@ -1169,14 +1199,14 @@ public class ChestShopModule implements Listener {
                                 for (String L : pm.getLore()) {
                                     if (L == null) continue;
                                     if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                                    String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                    String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                     if (cleaned.isEmpty()) continue;
                                     nl.add(cleaned);
                                 }
                                 pm.setLore(nl.isEmpty() ? null : nl);
                             }
                             if (pm.hasDisplayName() && pm.getDisplayName() != null) {
-                                String name = pm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                String name = pm.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                 pm.setDisplayName(name.isEmpty() ? null : name);
                             }
                             proto.setItemMeta(pm);
@@ -1211,19 +1241,19 @@ public class ChestShopModule implements Listener {
                                     for (String L : gm.getLore()) {
                                         if (L == null) continue;
                                         if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                                        String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                        String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                         if (cleaned.isEmpty()) continue;
                                         newl.add(cleaned);
                                     }
                                     gm.setLore(newl.isEmpty() ? null : newl);
                                 }
                                 if (gm.hasDisplayName() && gm.getDisplayName() != null) {
-                                    String name = gm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                    String name = gm.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                     if (name.isEmpty()) gm.setDisplayName(null); else gm.setDisplayName(name);
                                 }
                                 give.setItemMeta(gm);
                             }
-                            int amountToGive = Math.max(1, 1 + Math.max(0, slLater.getStock()));
+                            int amountToGive = Math.max(1, slLater.getCount() * (1 + Math.max(0, slLater.getStock())));
                             Player receiver = (Player)e.getWhoClicked();
                             // compute how many similar items the player already received since beforeCount
                             int afterCount = countSimilarInPlayer(receiver, protoForCount);
@@ -1284,20 +1314,20 @@ public class ChestShopModule implements Listener {
                                             for (String L : gm.getLore()) {
                                                 if (L == null) continue;
                                                 if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                                                String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                                String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                                 if (cleaned.isEmpty()) continue;
                                                 newl.add(cleaned);
                                             }
                                             gm.setLore(newl.isEmpty() ? null : newl);
                                         }
                                         if (gm.hasDisplayName() && gm.getDisplayName() != null) {
-                                            String name = gm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                            String name = gm.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                             if (name.isEmpty()) gm.setDisplayName(null); else gm.setDisplayName(name);
                                         }
                                         giveBack.setItemMeta(gm);
                                     }
                                     // amount: one sample + stock
-                                    int amountToGive = Math.max(1, 1 + Math.max(0, removed.getStock()));
+                                    int amountToGive = Math.max(1, removed.getCount() * (1 + Math.max(0, removed.getStock())));
                                     Player clicker = (Player) e.getWhoClicked();
                                     if (!wasRemovalRecentlyHandled(clicker, locLater, clickedSlot)) {
                                         giveBack = sanitizeReturnedItem(giveBack);
@@ -1355,12 +1385,20 @@ public class ChestShopModule implements Listener {
                     return;
                 }
                 int price = sl.getPrice();
+                int count = sl.getCount();
                 Material curMat = Material.matchMaterial(shop.getCurrency());
                 if (curMat != null) {
                     int has = countItems(p.getInventory(), curMat);
-                    if (has >= price) {
+                    if ((long)price * (long)count > 64L) {
+                        p.sendMessage("§c合計価格が最大を超えています (販売不可)");
+                        p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                        e.setCancelled(true);
+                        return;
+                    }
+                    int cost = price * count;
+                    if (has >= cost) {
                         // remove currency
-                        removeItems(p.getInventory(), curMat, price);
+                        removeItems(p.getInventory(), curMat, cost);
                         // give item (preserve enchantments)
                         Material itemMat = Material.matchMaterial(sl.getMaterial());
                             if (itemMat != null) {
@@ -1368,7 +1406,9 @@ public class ChestShopModule implements Listener {
                                 if (sl.getItemData() != null) {
                                     try { give = ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { give = null; }
                                 }
-                                if (give == null) give = new ItemStack(itemMat, 1);
+                                if (give == null) give = new ItemStack(itemMat, Math.max(1, Math.min(64, count)));
+                                // ensure amount equals cont (cap 1..64)
+                                try { give.setAmount(Math.max(1, Math.min(64, count))); } catch (Exception ignored) {}
                             Map<Integer, ItemStack> leftover = p.getInventory().addItem(give);
                             if (!leftover.isEmpty()) {
                                 for (ItemStack drop : leftover.values()) {
@@ -1376,19 +1416,19 @@ public class ChestShopModule implements Listener {
                                 }
                             }
                         }
-                        // decrease stock
+                        // decrease stock (one sale unit)
                         sl.setStock(sl.getStock() - 1);
                         store.saveListings(loc, listings);
                         // add to earnings
-                        shop.setEarnings(shop.getEarnings() + price);
+                        shop.setEarnings(shop.getEarnings() + cost);
                         store.save(loc, shop);
                         String dispName = sl.getDisplayName();
                         if (dispName == null || dispName.isEmpty()) {
                             Material mm = Material.matchMaterial(sl.getMaterial());
                             dispName = mm == null ? sl.getMaterial() : mm.name();
                         }
-                        dispName = dispName.replaceAll("\\{[^}]*\\}", "").trim();
-                        p.sendMessage("§a購入しました: " + dispName + " for " + price + " " + shop.getCurrency());
+                        dispName = dispName.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                        p.sendMessage("§a購入しました: " + dispName + " for " + cost + " " + shop.getCurrency());
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
                         // update owner info if owner online
                         try {
@@ -1448,7 +1488,7 @@ public class ChestShopModule implements Listener {
                                 if (im != null) {
                                     if (v.hasItemMeta() && v.getItemMeta().hasDisplayName()) {
                                         // sanitize display name by stripping inline JSON
-                                        try { im.setDisplayName(v.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim()); } catch (Exception ignored) {}
+                                        try { im.setDisplayName(v.getItemMeta().getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim()); } catch (Exception ignored) {}
                                     }
                                     // keep enchantments, but remove editor-only lore lines
                                     if (im.hasLore() && im.getLore() != null) {
@@ -1456,7 +1496,7 @@ public class ChestShopModule implements Listener {
                                         for (String L : im.getLore()) {
                                             if (L == null) continue;
                                             if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                                            String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                            String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                             if (cleaned.isEmpty()) continue;
                                             newLore.add(cleaned);
                                         }
@@ -1562,8 +1602,8 @@ public class ChestShopModule implements Listener {
                 // fallback: compare cleaned display names (strip inline JSON blocks)
                 try {
                     String an = null, bn = null;
-                    if (a.hasItemMeta() && a.getItemMeta().hasDisplayName()) an = a.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
-                    if (b.hasItemMeta() && b.getItemMeta().hasDisplayName()) bn = b.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                    if (a.hasItemMeta() && a.getItemMeta().hasDisplayName()) an = a.getItemMeta().getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                    if (b.hasItemMeta() && b.getItemMeta().hasDisplayName()) bn = b.getItemMeta().getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                     if (an != null && bn != null && an.equals(bn)) return true;
                 } catch (Exception ignored) {}
                 return false;
@@ -1588,14 +1628,14 @@ public class ChestShopModule implements Listener {
                                     for (String L : cm.getLore()) {
                                         if (L == null) continue;
                                         if (L.contains("在庫:") || L.contains("価格:") || L.contains("説明:")) continue;
-                                        String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                        String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                         if (cleaned.isEmpty()) continue;
                                         newl.add(cleaned);
                                     }
                                     cm.setLore(newl.isEmpty() ? null : newl);
                                 }
                                 if (cm.hasDisplayName() && cm.getDisplayName() != null) {
-                                    String name = cm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                    String name = cm.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                     if (name.isEmpty()) cm.setDisplayName(null); else cm.setDisplayName(name);
                                 }
                             } catch (Exception ignored) {}
@@ -1628,14 +1668,14 @@ public class ChestShopModule implements Listener {
                                     for (String L : im.getLore()) {
                                         if (L == null) continue;
                                         if (L.contains("在庫:") || L.contains("価格:") || L.contains("説明:")) continue;
-                                        String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                        String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                         if (cleaned.isEmpty()) continue;
                                         newl.add(cleaned);
                                     }
                                     im.setLore(newl.isEmpty() ? null : newl);
                                 }
                                 if (im.hasDisplayName() && im.getDisplayName() != null) {
-                                    String name = im.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                    String name = im.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                                     if (name.isEmpty()) im.setDisplayName(null); else im.setDisplayName(name);
                                 }
                             } catch (Exception ignored) {}
@@ -1800,8 +1840,8 @@ public class ChestShopModule implements Listener {
                 if (a.isSimilar(b)) return true;
                 try {
                     String an = null, bn = null;
-                    if (a.hasItemMeta() && a.getItemMeta().hasDisplayName()) an = a.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
-                    if (b.hasItemMeta() && b.getItemMeta().hasDisplayName()) bn = b.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                    if (a.hasItemMeta() && a.getItemMeta().hasDisplayName()) an = a.getItemMeta().getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                    if (b.hasItemMeta() && b.getItemMeta().hasDisplayName()) bn = b.getItemMeta().getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                     if (an != null && bn != null && an.equals(bn)) return true;
                 } catch (Exception ignored) {}
                 return false;
@@ -1832,7 +1872,7 @@ public class ChestShopModule implements Listener {
             // sanitize display name
             try {
                 if (im.hasDisplayName() && im.getDisplayName() != null) {
-                    String cleaned = im.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                    String cleaned = im.getDisplayName().replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                     im.setDisplayName(cleaned.isEmpty() ? null : cleaned);
                 }
             } catch (Exception ignored) {}
@@ -1844,7 +1884,7 @@ public class ChestShopModule implements Listener {
                         if (L == null) continue;
                         // drop any line that looks like editor-only meta
                         if (L.contains("在庫:") || L.contains("価格:") || L.contains("説明:")) continue;
-                        String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                        String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                         if (cleaned.isEmpty()) continue;
                         newLore.add(cleaned);
                     }

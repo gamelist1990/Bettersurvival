@@ -9,6 +9,7 @@ public class ShopListing {
     private int price; // price in units of currency item
     private String description; // seller provided description (with <br> for newlines)
     private int stock; // current stock
+    private int count; // quantity sold per purchase (1..64)
     private Map<String,Integer> enchants; // stored enchantments (name -> level)
     private int damage; // stored damage value (0 == undamaged)
     // Serialized item data (ConfigurationSerializable output from ItemStack.serialize())
@@ -22,6 +23,7 @@ public class ShopListing {
         this.price = price;
         this.description = description;
         this.stock = stock;
+        this.count = 1;
         this.enchants = new LinkedHashMap<>();
         this.damage = 0;
     }
@@ -32,6 +34,7 @@ public class ShopListing {
         this.price = price;
         this.description = description;
         this.stock = stock;
+        this.count = 1;
         this.enchants = enchants == null ? new LinkedHashMap<>() : enchants;
         this.damage = damage;
         this.itemData = null;
@@ -43,6 +46,20 @@ public class ShopListing {
         this.price = price;
         this.description = description;
         this.stock = stock;
+        this.count = 1;
+        this.enchants = enchants == null ? new LinkedHashMap<>() : enchants;
+        this.damage = damage;
+        this.itemData = itemData;
+    }
+
+    public ShopListing(String material, String displayName, int price, String description, int stock, int count, Map<String,Integer> enchants, int damage, Map<String,Object> itemData) {
+        this.material = material;
+        this.displayName = displayName;
+        this.price = price;
+        this.description = description;
+        this.stock = stock;
+        // ensure count in [1,64]
+        this.count = Math.max(1, Math.min(64, count));
         this.enchants = enchants == null ? new LinkedHashMap<>() : enchants;
         this.damage = damage;
         this.itemData = itemData;
@@ -79,6 +96,7 @@ public class ShopListing {
         m.put("price", price);
         m.put("description", description);
         m.put("stock", stock);
+        m.put("count", count);
         if (enchants != null && !enchants.isEmpty()) m.put("enchants", enchants);
         m.put("damage", damage);
         if (itemData != null && !itemData.isEmpty()) m.put("item", itemData);
@@ -94,6 +112,7 @@ public class ShopListing {
         int price = map.get("price") instanceof Number ? ((Number) map.get("price")).intValue() : 0;
         String description = (String) map.get("description");
         int stock = map.get("stock") instanceof Number ? ((Number) map.get("stock")).intValue() : 0;
+        int count = map.get("count") instanceof Number ? ((Number) map.get("count")).intValue() : 1;
         Map<String,Integer> ench = new LinkedHashMap<>();
         Object eobj = map.get("enchants");
         if (eobj instanceof Map) {
@@ -108,6 +127,9 @@ public class ShopListing {
         Map<String,Object> itemData = null;
         Object iobj = map.get("item");
         if (iobj instanceof Map) itemData = (Map<String,Object>) iobj;
-        return new ShopListing(material, displayName, price, description, stock, ench, damage, itemData);
+        return new ShopListing(material, displayName, price, description, stock, count, ench, damage, itemData);
     }
+
+    public int getCount() { return count; }
+    public void setCount(int count) { this.count = Math.max(1, Math.min(64, count)); }
 }

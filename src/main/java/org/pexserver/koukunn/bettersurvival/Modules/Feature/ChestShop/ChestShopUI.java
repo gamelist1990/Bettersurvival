@@ -95,7 +95,7 @@ public class ChestShopUI {
                 List<String> soldOut = new ArrayList<>();
                 for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
                     ShopListing sl = e.getValue();
-                    total += sl.getStock();
+                    total += sl.getCount() * (1 + Math.max(0, sl.getStock()));
                     if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
                 }
                 List<String> lore = new ArrayList<>();
@@ -156,7 +156,7 @@ public class ChestShopUI {
                     try { it = ItemStack.deserialize(sl.getItemData()); } catch (Exception ignored) { it = null; }
                 }
                 if (it == null) it = new ItemStack(mat);
-                it.setAmount(1);
+                it.setAmount(Math.max(1, Math.min(64, sl.getCount())));
                 ItemMeta im2 = it.getItemMeta();
                 if (im2 != null) {
                     // apply stored enchant map if the serialized item didn't include them
@@ -173,14 +173,14 @@ public class ChestShopUI {
 
                     String disp = sl.getDisplayName();
                     if (disp == null || disp.isEmpty()) disp = mat.name();
-                    // Remove {} and their contents from display name
-                    disp = disp.replaceAll("\\{[^}]*\\}", "").trim();
+                    // Remove {} and their contents from display name (supports fullwidth braces)
+                    disp = disp.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
                     im2.setDisplayName(disp);
                     List<String> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
                         lore2.add("§c通貨未設定 (販売不可)");
-                    } else if (sl.getPrice() > 64) {
-                        lore2.add("§c価格が最大を超えています (販売不可)");
+                    } else if ((long)sl.getPrice() * (long)sl.getCount() > 64L) {
+                        lore2.add("§c合計価格が最大を超えています (販売不可)");
                     } else {
                         lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + shop.getCurrency());
                     }
@@ -188,6 +188,7 @@ public class ChestShopUI {
                         lore2.add("§c品切れ中");
                     } else {
                         lore2.add("在庫: " + sl.getStock());
+                        lore2.add("個数: " + sl.getCount());
                     }
                     if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
                         String desc = sl.getDescription().replace("<br>", "\n");
@@ -245,7 +246,7 @@ public class ChestShopUI {
             List<String> soldOut = new ArrayList<>();
             for (Map.Entry<Integer, ShopListing> e : listings.entrySet()) {
                 ShopListing sl = e.getValue();
-                total += sl.getStock();
+                total += sl.getCount() * (1 + Math.max(0, sl.getStock()));
                 if (sl.getStock() <= 0) soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
             }
             List<String> lore = new ArrayList<>();
