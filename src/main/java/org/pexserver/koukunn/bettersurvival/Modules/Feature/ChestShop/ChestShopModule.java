@@ -94,11 +94,59 @@ public class ChestShopModule implements Listener {
                                 if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) rawDisplay = it.getItemMeta().getDisplayName();
                                 if (rawDisplay == null) rawDisplay = it.getType().name();
                                 ShopListing prev = old.get(i);
-                                int prevStock = prev != null ? prev.getStock() : 0;
-                                ShopListing sl = parseRawToListing(it, rawDisplay, prevStock);
+                                ShopListing sl = parseRawToListing(it, rawDisplay, prev);
                                 if (prev != null) sl.setStock(prev.getStock());
                                 updated.put(i, sl);
                             }
+                            // detect any listings that were removed by the player (editor slot emptied)
+                            // and return their physical items + stock back to the player.
+                            if (old != null && !old.isEmpty()) {
+                                for (Map.Entry<Integer, ShopListing> enOld : old.entrySet()) {
+                                    int idx = enOld.getKey();
+                                    if (updated.containsKey(idx)) continue; // still present
+                                    ShopListing removed = enOld.getValue();
+                                    if (removed == null) continue;
+                                    if (wasRemovalRecentlyHandled(p, loc, idx)) continue;
+                                    try {
+                                        org.bukkit.inventory.ItemStack giveBack = null;
+                                        if (removed.getItemData() != null) {
+                                            try { giveBack = org.bukkit.inventory.ItemStack.deserialize(removed.getItemData()); } catch (Exception ignored) { giveBack = null; }
+                                        }
+                                        if (giveBack == null) {
+                                            org.bukkit.Material m = org.bukkit.Material.matchMaterial(removed.getMaterial());
+                                            giveBack = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                                        }
+                                        // sanitize meta
+                                        org.bukkit.inventory.meta.ItemMeta gm = giveBack.getItemMeta();
+                                        if (gm != null) {
+                                            if (gm.hasLore() && gm.getLore() != null) {
+                                                List<String> newl = new ArrayList<>();
+                                                for (String L : gm.getLore()) {
+                                                    if (L == null) continue;
+                                                    if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
+                                                    String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                                    if (cleaned.isEmpty()) continue;
+                                                    newl.add(cleaned);
+                                                }
+                                                gm.setLore(newl.isEmpty() ? null : newl);
+                                            }
+                                            if (gm.hasDisplayName() && gm.getDisplayName() != null) {
+                                                String name = gm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                                if (name.isEmpty()) gm.setDisplayName(null); else gm.setDisplayName(name);
+                                            }
+                                            giveBack.setItemMeta(gm);
+                                        }
+
+                                        int amountToGive = Math.max(1, 1 + Math.max(0, removed.getStock()));
+                                        giveBack.setAmount(amountToGive);
+                                        giveOrMergeToPlayer(p, giveBack);
+                                        markRemovalHandled(p, loc, idx);
+                                        p.sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: " + giveBack.getType().toString() + " x" + amountToGive);
+                                        p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+
                             boolean ok = store.saveListings(loc, updated);
                             if (ok) {
                                 Bukkit.getLogger().info("[ChestShop] Auto-saved editor for player=" + p.getName() + " shop=" + shop.getName() + " entries=" + updated.size());
@@ -203,8 +251,37 @@ public class ChestShopModule implements Listener {
 
     // players for whom we recently opened a UI — used to suppress handling close/open re-entrancy
     private final Set<UUID> suppressCloseHandling = ConcurrentHashMap.newKeySet();
+    // prevent duplicate-return races: track recent removals (player+loc+slot)
+    private final Map<String, Long> recentRemovalTimestamps = new ConcurrentHashMap<>();
 
-    private ShopListing parseRawToListing(org.bukkit.inventory.ItemStack it, String raw, int prevStock) {
+    private String makeRemovalKey(org.bukkit.entity.Player p, Location loc, int slot) {
+        if (p == null || loc == null) return null;
+        return p.getUniqueId().toString() + ":" + loc.getWorld().getName() + ":" + loc.getBlockX() + ":" + loc.getBlockY() + ":" + loc.getBlockZ() + ":" + slot;
+    }
+
+    private void markRemovalHandled(org.bukkit.entity.Player p, Location loc, int slot) {
+        String k = makeRemovalKey(p, loc, slot);
+        if (k == null) return;
+        recentRemovalTimestamps.put(k, System.currentTimeMillis());
+    }
+
+    private boolean wasRemovalRecentlyHandled(org.bukkit.entity.Player p, Location loc, int slot) {
+        String k = makeRemovalKey(p, loc, slot);
+        if (k == null) return false;
+        Long t = recentRemovalTimestamps.get(k);
+        if (t == null) return false;
+        if (System.currentTimeMillis() - t < 2000L) return true;
+        recentRemovalTimestamps.remove(k);
+        return false;
+    }
+
+    private ShopListing parseRawToListing(org.bukkit.inventory.ItemStack it, String raw, ShopListing prev) {
+        int prevStock = prev != null ? prev.getStock() : 0;
+        int prevPrice = prev != null ? prev.getPrice() : 0;
+        String prevDesc = prev != null && prev.getDescription() != null ? prev.getDescription() : "";
+        Map<String,Object> prevItemData = prev != null ? prev.getItemData() : null;
+        Map<String,Integer> prevEnchants = prev != null ? prev.getEnchants() : null;
+        int prevDamage = prev != null ? prev.getDamage() : 0;
         if (raw == null) raw = it.getType().name();
         try { Bukkit.getLogger().info("[ChestShop] parseRawToListing raw='"+raw+"' type="+it.getType().name()); } catch (Exception ignored) {}
         String desc = "";
@@ -256,7 +333,11 @@ public class ChestShopModule implements Listener {
             } catch (Exception ignored) {}
         }
 
-        String display = raw;
+        // If no price parsed from display, reuse previous listing's price if present
+        if (price == 0 && prevPrice > 0) price = prevPrice;
+
+        // normalize display name: strip embedded JSON blocks {..} which were used as inline metadata
+        String display = raw == null ? null : raw.replaceAll("\\{[^}]*\\}", "").trim();
         Map<String,Integer> enchMap = new LinkedHashMap<>();
         int damage = 0;
         try {
@@ -277,6 +358,9 @@ public class ChestShopModule implements Listener {
                 }
             }
         } catch (Exception ignored) {}
+        if ((enchMap == null || enchMap.isEmpty()) && prevEnchants != null) {
+            enchMap = new LinkedHashMap<>(prevEnchants);
+        }
 
         Map<String,Object> itemData = null;
         try {
@@ -289,16 +373,31 @@ public class ChestShopModule implements Listener {
                         for (String L : cim.getLore()) {
                             if (L == null) continue;
                             if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                            newLore.add(L);
+                            String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                            if (cleaned.isEmpty()) continue;
+                            newLore.add(cleaned);
                         }
                         cim.setLore(newLore.isEmpty() ? null : newLore);
                     }
+                    // also sanitize display name in copied data to remove inline JSON blocks
+                    try {
+                        if (cim != null && cim.hasDisplayName() && cim.getDisplayName() != null) {
+                            String clean = cim.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                            if (clean.isEmpty()) clean = null;
+                            cim.setDisplayName(clean);
+                        }
+                    } catch (Exception ignored) {}
                     copy.setItemMeta(cim);
                 } catch (Exception ignoredMeta) {}
                 itemData = copy.serialize();
+                // if we couldn't serialize meaningful data, fall back to previously stored item data
+                if ((itemData == null || itemData.isEmpty()) && prevItemData != null) itemData = new LinkedHashMap<>(prevItemData);
             }
         } catch (Exception ignored) {}
         String matName = it == null ? org.bukkit.Material.PAPER.name() : it.getType().name();
+        // if description blank, keep previous description
+        if ((desc == null || desc.isEmpty()) && prevDesc != null && !prevDesc.isEmpty()) desc = prevDesc;
+        if (damage == 0 && prevDamage > 0) damage = prevDamage;
         ShopListing sl = new ShopListing(matName, display, price, desc, prevStock, enchMap, damage, itemData);
         return sl;
     }
@@ -520,8 +619,7 @@ public class ChestShopModule implements Listener {
                 if (it.hasItemMeta() && it.getItemMeta().hasDisplayName()) rawDisplay = it.getItemMeta().getDisplayName();
                 if (rawDisplay == null) rawDisplay = it.getType().name();
                 ShopListing prev = old.get(i);
-                int prevStock = prev != null ? prev.getStock() : 0;
-                ShopListing sl = parseRawToListing(it, rawDisplay, prevStock);
+                ShopListing sl = parseRawToListing(it, rawDisplay, prev);
                 updated.put(i, sl);
             }
             store.saveListings(loc, updated);
@@ -936,7 +1034,9 @@ public class ChestShopModule implements Listener {
                             for (String L : gm.getLore()) {
                                 if (L == null) continue;
                                 if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
-                                newl.add(L);
+                                String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                if (cleaned.isEmpty()) continue;
+                                newl.add(cleaned);
                             }
                             gm.setLore(newl.isEmpty() ? null : newl);
                         }
@@ -951,9 +1051,10 @@ public class ChestShopModule implements Listener {
                     int amountToGive = Math.max(1, 1 + Math.max(0, sl.getStock()));
                     give.setAmount(amountToGive);
 
-                    Map<Integer, org.bukkit.inventory.ItemStack> leftover = ((Player)e.getWhoClicked()).getInventory().addItem(give);
-                    if (!leftover.isEmpty()) {
-                        for (org.bukkit.inventory.ItemStack r : leftover.values()) if (r != null) ((Player)e.getWhoClicked()).getWorld().dropItemNaturally(((Player)e.getWhoClicked()).getLocation(), r);
+                    Player receiver = (Player)e.getWhoClicked();
+                    if (!wasRemovalRecentlyHandled(receiver, loc, e.getRawSlot())) {
+                        giveOrMergeToPlayer(receiver, give);
+                        markRemovalHandled(receiver, loc, e.getRawSlot());
                     }
 
                     // remove the listing and save
@@ -967,6 +1068,80 @@ public class ChestShopModule implements Listener {
                     ((Player)e.getWhoClicked()).playSound(((Player)e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                     e.setCancelled(true);
                     return;
+                }
+                // --- additionally handle other click/drag pickup flows ---
+                // Some clients move items via pickup/place rather than MOVE_TO_OTHER_INVENTORY.
+                // Schedule a next-tick check whenever a top-inventory editor slot was clicked
+                // and may have been moved to the player's inventory. If the editor slot is
+                // found empty next tick, treat it as a removal and return stock and clean lore.
+                if (e.getClickedInventory() != null && e.getClickedInventory() == viewNow.getTopInventory() && e.getRawSlot() < topSize) {
+                    org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
+                    if (plugin != null) {
+                        final int clickedSlot = e.getRawSlot();
+                        org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                            try {
+                                ResolveResult rrLater = resolveByTitle(title);
+                                if (rrLater == null) return;
+                                Location locLater = rrLater.loc;
+                                Map<Integer, ShopListing> listingsLater = store.getListings(locLater);
+                                org.bukkit.inventory.Inventory topInv = viewNow.getTopInventory();
+                                if (topInv == null) return;
+                                org.bukkit.inventory.ItemStack nowTopItem = topInv.getItem(clickedSlot);
+                                // if the editor slot is empty now but the listing still exists, treat as removal
+                                if (nowTopItem == null && listingsLater.containsKey(clickedSlot)) {
+                                    ShopListing removed = listingsLater.get(clickedSlot);
+                                    if (removed == null) return;
+                                    // build return item (preserve NBT if possible)
+                                    org.bukkit.inventory.ItemStack giveBack = null;
+                                    if (removed.getItemData() != null) {
+                                        try { giveBack = org.bukkit.inventory.ItemStack.deserialize(removed.getItemData()); } catch (Exception ignored) { giveBack = null; }
+                                    }
+                                    if (giveBack == null) {
+                                        org.bukkit.Material m = org.bukkit.Material.matchMaterial(removed.getMaterial());
+                                        giveBack = new org.bukkit.inventory.ItemStack(m == null ? org.bukkit.Material.PAPER : m);
+                                    }
+                                    // clean editor-only lore and display name
+                                    org.bukkit.inventory.meta.ItemMeta gm = giveBack.getItemMeta();
+                                    if (gm != null) {
+                                        if (gm.hasLore() && gm.getLore() != null) {
+                                            List<String> newl = new ArrayList<>();
+                                            for (String L : gm.getLore()) {
+                                                if (L == null) continue;
+                                                if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:")) continue;
+                                                String cleaned = L.replaceAll("\\{[^}]*\\}", "").trim();
+                                                if (cleaned.isEmpty()) continue;
+                                                newl.add(cleaned);
+                                            }
+                                            gm.setLore(newl.isEmpty() ? null : newl);
+                                        }
+                                        if (gm.hasDisplayName() && gm.getDisplayName() != null) {
+                                            String name = gm.getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                                            if (name.isEmpty()) gm.setDisplayName(null); else gm.setDisplayName(name);
+                                        }
+                                        giveBack.setItemMeta(gm);
+                                    }
+                                    // amount: one sample + stock
+                                    int amountToGive = Math.max(1, 1 + Math.max(0, removed.getStock()));
+                                    giveBack.setAmount(amountToGive);
+                                    Player clicker = (Player) e.getWhoClicked();
+                                    if (!wasRemovalRecentlyHandled(clicker, locLater, clickedSlot)) {
+                                        giveOrMergeToPlayer(clicker, giveBack);
+                                        markRemovalHandled(clicker, locLater, clickedSlot);
+                                    }
+
+                                    // remove listing and persist
+                                    listingsLater.remove(clickedSlot);
+                                    store.saveListings(locLater, listingsLater);
+
+                                    // inform and play sound
+                                    clicker.sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: " + giveBack.getType().toString() + " x" + amountToGive);
+                                    clicker.playSound(clicker.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
+                                    // ensure editor UI shows cleared slot
+                                    if (topInv.getItem(clickedSlot) != null) topInv.setItem(clickedSlot, null);
+                                }
+                            } catch (Exception ignored) {}
+                        }, 1L);
+                    }
                 }
             } catch (Exception ignored) {}
             // otherwise allow simple clicks and drag — auto-save handles state
@@ -1165,6 +1340,78 @@ public class ChestShopModule implements Listener {
     }
 
     public ChestShopStore getStore() { return store; }
+
+    // Attempt to merge or overwrite a matching item in player's cursor/inventory before adding new.
+    private void giveOrMergeToPlayer(org.bukkit.entity.Player p, org.bukkit.inventory.ItemStack prototype) {
+        if (p == null || prototype == null) return;
+        try {
+            org.bukkit.inventory.PlayerInventory inv = p.getInventory();
+            int amountToGive = prototype.getAmount();
+            // helper to compare ignoring amount
+            java.util.function.Predicate<org.bukkit.inventory.ItemStack> similar = (it) -> {
+                if (it == null) return false;
+                // require same material first
+                if (it.getType() != prototype.getType()) return false;
+                org.bukkit.inventory.ItemStack a = it.clone(); a.setAmount(1);
+                org.bukkit.inventory.ItemStack b = prototype.clone(); b.setAmount(1);
+                if (a.isSimilar(b)) return true;
+                // fallback: compare cleaned display names (strip inline JSON blocks)
+                try {
+                    String an = null, bn = null;
+                    if (a.hasItemMeta() && a.getItemMeta().hasDisplayName()) an = a.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                    if (b.hasItemMeta() && b.getItemMeta().hasDisplayName()) bn = b.getItemMeta().getDisplayName().replaceAll("\\{[^}]*\\}", "").trim();
+                    if (an != null && bn != null && an.equals(bn)) return true;
+                } catch (Exception ignored) {}
+                return false;
+            };
+
+            // If player has the item on cursor, merge/overwrite there
+            try {
+                org.bukkit.inventory.ItemStack cursor = p.getItemOnCursor();
+                if (cursor != null && similar.test(cursor)) {
+                    org.bukkit.inventory.ItemStack merged = cursor;
+                    org.bukkit.inventory.meta.ItemMeta pm = prototype.getItemMeta();
+                    if (pm != null) {
+                        org.bukkit.inventory.meta.ItemMeta cm = merged.getItemMeta();
+                        if (cm != null) {
+                            try { cm.setDisplayName(pm.getDisplayName()); } catch (Exception ignored) {}
+                            try { cm.setLore(pm.getLore()); } catch (Exception ignored) {}
+                            merged.setItemMeta(cm);
+                        }
+                    }
+                    merged.setAmount(merged.getAmount() + amountToGive);
+                    p.setItemOnCursor(merged);
+                    return;
+                }
+            } catch (Exception ignored) {}
+
+            // search inventory for similar item and merge/overwrite
+            for (int i = 0; i < inv.getSize(); i++) {
+                org.bukkit.inventory.ItemStack it = inv.getItem(i);
+                if (it == null) continue;
+                if (!similar.test(it)) continue;
+                // overwrite meta (displayName/lore) then add amount
+                org.bukkit.inventory.meta.ItemMeta pm = prototype.getItemMeta();
+                if (pm != null) {
+                    org.bukkit.inventory.meta.ItemMeta im = it.getItemMeta();
+                    if (im != null) {
+                        try { im.setDisplayName(pm.getDisplayName()); } catch (Exception ignored) {}
+                        try { im.setLore(pm.getLore()); } catch (Exception ignored) {}
+                        it.setItemMeta(im);
+                    }
+                }
+                it.setAmount(it.getAmount() + amountToGive);
+                inv.setItem(i, it);
+                return;
+            }
+
+            // no matching existing stack found, add and drop leftovers
+            Map<Integer, org.bukkit.inventory.ItemStack> leftover = inv.addItem(prototype);
+            if (!leftover.isEmpty()) {
+                for (org.bukkit.inventory.ItemStack r : leftover.values()) if (r != null) p.getWorld().dropItemNaturally(p.getLocation(), r);
+            }
+        } catch (Exception ignored) {}
+    }
 
     private int countItems(org.bukkit.inventory.PlayerInventory inv, Material mat) {
         int count = 0;
