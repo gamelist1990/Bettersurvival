@@ -70,6 +70,15 @@ public class FenceLeashModule implements Listener {
             return;
         }
 
+        // 保留が無い場合、クリック先に既存のコネクタがあれば拾える（リード不要）
+        if (!api.hasPending(pid)) {
+            if (api.pickupConnectorAt(player, blockLoc)) {
+                player.sendMessage("§a▸ フェンスからリードを拾いました。Pos1 が取り出されました。");
+                e.setCancelled(true);
+                return;
+            }
+        }
+
         // ここからはリードを持っていることが前提（Pos1 が選択されていない場合）
         if (!hasLead) return;
 

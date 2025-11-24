@@ -247,6 +247,91 @@ public class LeashAPI {
         return out;
     }
 
+    public java.util.List<Rabbit> findConnectorsAtBlock(Location blockLoc) {
+        java.util.List<Rabbit> out = new java.util.ArrayList<>();
+        for (Rabbit r : blockLoc.getWorld().getEntitiesByClass(Rabbit.class)) {
+            if (!r.getScoreboardTags().contains(CONNECTION_TAG)) continue;
+            try {
+                if (r.getLocation().getBlock().equals(blockLoc.getBlock())) out.add(r);
+            } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+        }
+        return out;
+    }
+
+    /**
+     * Player picks up an existing connector at the clicked block (pos2).
+     * This will remove the connector at pos2 and create a visual tether at pos1
+     * attached to the player so the rope appears to come from pos1 -> player.
+     */
+    public boolean pickupConnectorAt(Player player, Location blockLoc) {
+        java.util.List<Rabbit> connectors = findConnectorsAtBlock(blockLoc);
+        if (connectors.isEmpty()) return false;
+
+        Rabbit chosen = chooseNearest(connectors, player.getLocation());
+        if (chosen == null) return false;
+
+        // Get original hitch (pos1) this connector was attached to
+        try {
+            org.bukkit.entity.Entity holder = chosen.getLeashHolder();
+            if (!(holder instanceof LeashHitch)) {
+                // not a plugin hitch we know how to handle
+                return false;
+            }
+
+            Location pos1Block = holder.getLocation().getBlock().getLocation();
+            Location pos1Center = pos1Block.clone().add(0.5, 0.5, 0.5);
+
+            // If this connector counted as consumed lead, decrement pos1 counts
+            if (chosen.getScoreboardTags().contains(COUNTED_TAG)) {
+                if (hitchLeadCounts.containsKey(pos1Block)) {
+                    hitchLeadCounts.put(pos1Block, Math.max(0, hitchLeadCounts.get(pos1Block) - 1));
+                    if (hitchLeadCounts.get(pos1Block) <= 0) {
+                        LeashHitch h = findHitchAtBlock(pos1Block);
+                        if (h != null) h.remove();
+                        hitchLeadCounts.remove(pos1Block);
+                    }
+                }
+            }
+
+            // remove connector entity at pos2
+            chosen.remove();
+
+            // if no more connectors remain at pos2, remove the pos2 hitch we created earlier
+            if (findConnectorsAtBlock(blockLoc).isEmpty()) {
+                LeashHitch hitchAt2 = findHitchAtBlock(blockLoc);
+                if (hitchAt2 != null) {
+                    hitchAt2.remove();
+                    hitchLeadCounts.remove(blockLoc);
+                }
+            }
+
+            // spawn visual tether at pos1 attached to player
+            Rabbit tether = pos1Center.getWorld().spawn(pos1Center, Rabbit.class);
+            tether.setInvisible(false);
+            tether.setInvulnerable(true);
+            tether.setSilent(true);
+            tether.addScoreboardTag(TETHER_TAG);
+            try { tether.setAI(false); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+            try { tether.setGravity(false); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+            try { tether.setCollidable(false); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+            tether.setVelocity(new Vector(0, 0, 0));
+            try { tether.setLeashHolder(player); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+
+            // set pending state for this player to the pos1 center
+            UUID pid = player.getUniqueId();
+            // cleanup any previous tether for this player
+            Rabbit old = tetherRabbits.remove(pid);
+            if (old != null && !old.isDead()) old.remove();
+
+            tetherRabbits.put(pid, tether);
+            pendingFirst.put(pid, pos1Center);
+
+            return true;
+        } catch (NoSuchMethodError | AbstractMethodError ignored) {
+            return false;
+        }
+    }
+
     public Rabbit chooseNearest(java.util.List<Rabbit> list, Location loc) {
         if (list == null || list.isEmpty()) return null;
         Rabbit best = list.get(0);
