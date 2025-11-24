@@ -14,6 +14,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModul
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestSort.ChestSortModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.FenceLeash.FenceLeashModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
@@ -60,6 +61,8 @@ public final class Loader extends JavaPlugin {
         // ChestShop module registration
         ChestShopModule chestShop = new ChestShopModule(toggleModule, configManager, chestLock);
         getServer().getPluginManager().registerEvents(chestShop, this);
+        // FenceLeash module registration (allow placing a leash knot on fence by right-clicking while holding a lead)
+        getServer().getPluginManager().registerEvents(new FenceLeashModule(toggleModule), this);
         // Toggle 機能として登録
         toggleModule.registerFeature(new ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します(スニーク必須)", Material.DIAMOND_AXE));
         toggleModule.registerFeature(new ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（スニーク必須）", Material.DIAMOND_PICKAXE));
@@ -69,6 +72,7 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(new ToggleFeature("chestlock", "ChestLock", "チェスト保護を有効/無効にします（破壊・移動・取得を制限）", Material.CHEST, false));
         toggleModule.registerFeature(new ToggleFeature("chestshop", "ChestShop", "看板でチェストをショップ化します(>>Shop 名前)", Material.OAK_SIGN, false));
         toggleModule.registerFeature(new ToggleFeature("chestsort", "ChestSort", "スニーク+木の棒でチェスト内を整理します", Material.STICK));
+        toggleModule.registerFeature(new ToggleFeature("fenceleash", "FenceLeash", "手持ちのリードをフェンスに付けられるようにします", Material.LEAD));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -89,6 +93,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("chestsort")) {
             toggleModule.setGlobal("chestsort", true);
+        }
+        if (!toggleModule.hasGlobal("fenceleash")) {
+            toggleModule.setGlobal("fenceleash", true);
         }
             if (!toggleModule.hasGlobal("chestshop")) {
                 toggleModule.setGlobal("chestshop", true);
