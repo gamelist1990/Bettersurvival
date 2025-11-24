@@ -15,6 +15,7 @@ public class LeashAPI {
     public static final String HITCH_TAG = "bettersurvival:fence_leash_hitch";
     public static final String CONNECTION_TAG = "bettersurvival:fence_leash_connection";
     public static final String TETHER_TAG = "bettersurvival:fence_leash_tether";
+    public static final String COUNTED_TAG = "bettersurvival:fence_leash_counted";
 
     // state owned by the API
     private final Map<UUID, Location> pendingFirst = new HashMap<>();
@@ -79,7 +80,7 @@ public class LeashAPI {
         return true;
     }
 
-    public boolean connectPendingTo(Player player, Location pos2Center, Location pos2BlockLocation) {
+    public boolean connectPendingTo(Player player, Location pos2Center, Location pos2BlockLocation, boolean consumeLead) {
         UUID pid = player.getUniqueId();
         Location firstPos = pendingFirst.get(pid);
         if (firstPos == null) return false;
@@ -101,9 +102,18 @@ public class LeashAPI {
             hitch1 = firstPos.getWorld().spawn(firstPos, LeashHitch.class);
             try { hitch1.setPersistent(true); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
             hitch1.addScoreboardTag(HITCH_TAG);
-            hitchLeadCounts.put(firstBlockLoc, hitchLeadCounts.getOrDefault(firstBlockLoc, 0) + 1);
+            if (consumeLead) hitchLeadCounts.put(firstBlockLoc, hitchLeadCounts.getOrDefault(firstBlockLoc, 0) + 1);
         } else {
-            hitchLeadCounts.put(firstBlockLoc, hitchLeadCounts.getOrDefault(firstBlockLoc, 0) + 1);
+            if (consumeLead) hitchLeadCounts.put(firstBlockLoc, hitchLeadCounts.getOrDefault(firstBlockLoc, 0) + 1);
+        }
+
+        // ensure there is a hitch at Pos2 (so the fence shows the knot as well)
+        Location secondBlockLoc = pos2BlockLocation.getBlock().getLocation();
+        LeashHitch hitch2 = findHitchAtBlock(secondBlockLoc);
+        if (hitch2 == null) {
+            hitch2 = pos2Center.getWorld().spawn(pos2Center, LeashHitch.class);
+            try { hitch2.setPersistent(true); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
+            hitch2.addScoreboardTag(HITCH_TAG);
         }
 
         // spawn connector at Pos2 and attach to hitch1
@@ -112,6 +122,7 @@ public class LeashAPI {
         connector.setInvulnerable(true);
         connector.setSilent(true);
         connector.addScoreboardTag(CONNECTION_TAG);
+        if (consumeLead) connector.addScoreboardTag(COUNTED_TAG);
         try { connector.setAI(false); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
         try { connector.setGravity(false); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
         try { connector.setCollidable(false); } catch (NoSuchMethodError | AbstractMethodError ignored) {}
@@ -127,7 +138,7 @@ public class LeashAPI {
         if (e.getEntity() instanceof Rabbit && (e.getEntity().getScoreboardTags().contains(CONNECTION_TAG) ||
                 e.getEntity().getScoreboardTags().contains(TETHER_TAG))) {
 
-            if (e.getEntity().getScoreboardTags().contains(CONNECTION_TAG)) {
+            if (e.getEntity().getScoreboardTags().contains(CONNECTION_TAG) && e.getEntity().getScoreboardTags().contains(COUNTED_TAG)) {
                 try {
                     org.bukkit.entity.Entity holder = ((Rabbit) e.getEntity()).getLeashHolder();
                     if (holder instanceof LeashHitch) {
@@ -145,7 +156,7 @@ public class LeashAPI {
             }
 
             // remove tether mapping if any
-            if (e.getEntity().getScoreboardTags().contains(TETHER_TAG)) {
+                if (e.getEntity().getScoreboardTags().contains(TETHER_TAG)) {
                 UUID id = e.getEntity().getUniqueId();
                 List<UUID> toRemove = new ArrayList<>();
                 for (Map.Entry<UUID, Rabbit> entry : tetherRabbits.entrySet()) {
@@ -181,7 +192,7 @@ public class LeashAPI {
                 e.getEntity().getScoreboardTags().contains(TETHER_TAG))) {
             UUID id = e.getEntity().getUniqueId();
 
-            if (e.getEntity().getScoreboardTags().contains(CONNECTION_TAG)) {
+            if (e.getEntity().getScoreboardTags().contains(CONNECTION_TAG) && e.getEntity().getScoreboardTags().contains(COUNTED_TAG)) {
                 try {
                     org.bukkit.entity.Entity holder = ((Rabbit) e.getEntity()).getLeashHolder();
                     if (holder instanceof LeashHitch) {

@@ -52,10 +52,6 @@ public class FenceLeashModule implements Listener {
         Location fencePos = blockLoc.clone().add(0.5, 0.5, 0.5);
         UUID pid = player.getUniqueId();
 
-        // ここからはリードを持っていることが前提
-        if (!hasLead)
-            return;
-
         // Pos1 が既に選択済みの場合: Pos2 として接続を作成
         if (api.hasPending(pid)) {
             // Already picked Pos1 — connect it to this clicked fence
@@ -67,16 +63,15 @@ public class FenceLeashModule implements Listener {
                 return;
             }
 
-            if (!hasLead)
-                return;
-
-            boolean connected = api.connectPendingTo(player, fencePos, blockLoc);
-            if (connected)
-                consumeLead(player, main, off);
+            boolean connected = api.connectPendingTo(player, fencePos, blockLoc, hasLead);
+            if (connected && hasLead) consumeLead(player, main, off);
             player.sendMessage("§a▸ フェンスを接続しました。");
             e.setCancelled(true);
             return;
         }
+
+        // ここからはリードを持っていることが前提（Pos1 が選択されていない場合）
+        if (!hasLead) return;
 
         // Pos1 を新たに選択
         // Pos1 側に LeashHitch を作成（API に委譲）
