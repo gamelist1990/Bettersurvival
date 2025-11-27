@@ -24,6 +24,8 @@ public class ChestLockUI {
 
     private static final Map<UUID, ChestLock> openLocks = new HashMap<>();
     private static final Map<UUID, Location> openLocations = new HashMap<>();
+     private static final Map<UUID, Location> persistentLocations = new HashMap<>();
+
     private static final Map<UUID, String> openUIType = new HashMap<>();
     private static final Map<UUID, List<String>> listKeys = new HashMap<>();
     private static final Map<UUID, Integer> listPages = new HashMap<>();
@@ -34,6 +36,10 @@ public class ChestLockUI {
 
     public static Location getOpenLocation(UUID uid) {
         return openLocations.get(uid);
+    }
+
+    public static Location getPersistentLocation(UUID uid) {
+        return persistentLocations.get(uid);
     }
 
     public static String getOpenUIType(UUID uid) {
@@ -48,7 +54,7 @@ public class ChestLockUI {
         return listPages.getOrDefault(uid, 0);
     }
 
-    @SuppressWarnings("deprecation")
+    @SuppressWarnings({ "deprecation", "null" })
     public static void openForPlayer(Player p, ChestLock lock, Location loc, ChestLockStore store, org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore) {
         // Bedrockプレイヤーの場合は専用フォームを開く
         if (FloodgateUtil.isBedrock(p)) {
@@ -65,6 +71,7 @@ public class ChestLockUI {
 
         openLocks.put(p.getUniqueId(), lock);
         openLocations.put(p.getUniqueId(), loc);
+        if (loc != null) persistentLocations.put(p.getUniqueId(), loc);
         openUIType.put(p.getUniqueId(), "main");
         try { Bukkit.getLogger().info("[ChestLock DEBUG] openForPlayer player=" + p.getName() + " uiType=main lock=" + (lock != null ? lock.getName() + "/" + lock.getOwner() : "null") + " loc=" + loc); } catch (Exception ignored) {}
 

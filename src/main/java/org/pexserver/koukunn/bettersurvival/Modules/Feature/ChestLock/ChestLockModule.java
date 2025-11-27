@@ -129,15 +129,16 @@ public class ChestLockModule implements Listener {
         if (e.getInventory().getType() != InventoryType.CHEST && e.getInventory().getType() != InventoryType.BARREL) return;
         if (!(e.getPlayer() instanceof Player)) return;
         Player p = (Player) e.getPlayer();
+        
+        // ChestLock UIのインベントリの場合は処理しない（ホルダーがnullの場合）
+        // UI用インベントリはBlockStateをホルダーとして持たない
+        if (!(e.getInventory().getHolder() instanceof BlockState)) {
+            return;
+        }
+        
         // InventoryOpenEvent においては、プレイヤーの視線ブロックではなく
         // インベントリのホルダーから正確なチェスト位置を取るようにする。
-        Location holderLoc = null;
-        if (e.getInventory().getHolder() instanceof BlockState) {
-            holderLoc = ((BlockState) e.getInventory().getHolder()).getLocation();
-        } else {
-            Block b = p.getTargetBlockExact(6);
-            if (b != null) holderLoc = b.getLocation();
-        }
+        Location holderLoc = ((BlockState) e.getInventory().getHolder()).getLocation();
         if (holderLoc == null) return;
 
         // 近隣のチェスト(ラージチェストを含む)を全て取得
@@ -404,7 +405,8 @@ public class ChestLockModule implements Listener {
         
         // 保護済みチェスト一覧
         if (d.contains("保護済みチェスト一覧")) {
-            ChestLockUI.openProtectedListUI(p, loc, store, shopStore, 0);
+            Location useLoc = loc != null ? loc : ChestLockUI.getPersistentLocation(p.getUniqueId());
+            ChestLockUI.openProtectedListUI(p, useLoc, store, shopStore, 0);
             return;
         }
         
@@ -539,8 +541,8 @@ public class ChestLockModule implements Listener {
                     }
                 }
             }
-            // avoid calling store.get with null contextLoc; prefer parsedLoc then fallback to UI-stored location
-            Location useLoc = contextLoc != null ? contextLoc : (parsedLoc != null ? parsedLoc : ChestLockUI.getOpenLocation(p.getUniqueId()));
+            // avoid calling store.get with null contextLoc; prefer parsedLoc then fallback to persistent UI-stored location
+            Location useLoc = contextLoc != null ? contextLoc : (parsedLoc != null ? parsedLoc : ChestLockUI.getPersistentLocation(p.getUniqueId()));
             ChestLock cached = ChestLockUI.getOpenLock(p.getUniqueId());
             ChestLock lock = useLoc != null ? store.get(useLoc).orElse(cached) : cached;
             try { Bukkit.getLogger().info("[ChestLock DEBUG] resolved useLoc=" + useLoc + " lock=" + (lock != null ? lock.getName() + "/" + lock.getOwner() : "null")); } catch (Exception ignored) {}
