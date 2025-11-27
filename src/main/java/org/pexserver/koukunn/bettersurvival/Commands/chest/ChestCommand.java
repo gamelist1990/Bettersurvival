@@ -208,9 +208,9 @@ public class ChestCommand extends BaseCommand {
             List<Location> locs = ChestLockModule.getChestRelatedLocations(b);
             if (locs.isEmpty()) { sendError(sender, "対象はチェスト/樽のみです"); return true; }
             ChestLock lock = store.get(locs.get(0)).orElse(null);
-                 plugin.getServer().getScheduler().runTask(plugin, () -> {
-                     ChestLockUI.openForPlayer(p, lock, locs.get(0), store, shopStore);
-                });
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                ChestLockUI.openMainUI(p, lock, locs.get(0), store, shopStore);
+            });
             return true;
         }
 
