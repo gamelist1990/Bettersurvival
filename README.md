@@ -117,6 +117,9 @@ bettersurvival/
 
    # macOS/Linux
    ./gradlew build
+
+   # 開発用 Paper サーバーを起動 (Windows)
+   ./gradlew.bat runServer
    ```
    ビルドが成功すると、`build/libs/Bettersurvival-<version>.jar` が生成されます。
 
@@ -188,7 +191,7 @@ bettersurvival/
 ```
 MIT License
 
-Copyright (c) 2024 Koukunn
+Copyright (c) 2025 Koukunn
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -185,7 +185,12 @@ public class ChestLockModule implements Listener {
     public void onInventoryClose(InventoryCloseEvent e) {
         if (e.getView() == null || e.getView().getTitle() == null) return;
         String title = e.getView().getTitle();
-        if (!title.startsWith(ChestLockUI.TITLE_PREFIX)) return;
+        boolean isChestLockUI = title.startsWith(ChestLockUI.TITLE_PREFIX) ||
+                                title.startsWith(ChestLockUI.LIST_TITLE) ||
+                                title.startsWith(ChestLockUI.MEMBER_ADD_TITLE) ||
+                                title.startsWith(ChestLockUI.MEMBER_REMOVE_TITLE) ||
+                                title.startsWith(ChestLockUI.MEMBER_MANAGE_TITLE);
+        if (!isChestLockUI) return;
         if (!(e.getPlayer() instanceof Player)) return;
         ChestLockUI.closeForPlayer((Player) e.getPlayer());
     }
@@ -294,79 +299,251 @@ public class ChestLockModule implements Listener {
         InventoryView view = e.getView();
         if (view == null || view.getTitle() == null) return;
         String title = view.getTitle();
-        if (!title.startsWith(ChestLockUI.TITLE_PREFIX)) return;
+        
+        // UI タイトルのチェック
+        boolean isChestLockUI = title.startsWith(ChestLockUI.TITLE_PREFIX) ||
+                                title.startsWith(ChestLockUI.LIST_TITLE) ||
+                                title.startsWith(ChestLockUI.MEMBER_ADD_TITLE) ||
+                                title.startsWith(ChestLockUI.MEMBER_REMOVE_TITLE) ||
+                                title.startsWith(ChestLockUI.MEMBER_MANAGE_TITLE);
+        
+        if (!isChestLockUI) return;
         e.setCancelled(true);
         if (!(e.getWhoClicked() instanceof Player)) return;
         Player p = (Player) e.getWhoClicked();
         ItemStack clicked = e.getCurrentItem();
-        if (clicked == null || !clicked.hasItemMeta()) return;
-        SkullMeta meta = null;
-        if (clicked.getItemMeta() instanceof SkullMeta) meta = (SkullMeta) clicked.getItemMeta();
-        if (meta == null || meta.getOwningPlayer() == null) {
-            ItemMeta m = clicked.getItemMeta();
-            if (m != null && m.hasDisplayName()) {
-                String d = m.getDisplayName();
-                if (d.contains("ロックする")) {
-                    Location ctx = ChestLockUI.getOpenLocation(p.getUniqueId());
-                    if (ctx == null) return;
-                    // prevent locking of a chest that belongs to a shop
-                    for (Location r : getChestRelatedLocations(ctx.getBlock())) {
-                        try { if (shopStore != null && shopStore.get(r).isPresent()) { p.sendMessage("§cこのチェストはショップに紐づいているためロックできません"); return; } } catch (Exception ignored) {}
-                    }
-                    ChestLock newLock = new ChestLock(p.getUniqueId().toString(), "lock-" + UUID.randomUUID().toString().substring(0,6));
-                    for (Location l : getChestRelatedLocations(ctx.getBlock())) store.save(l, newLock);
-                    p.sendMessage("§aチェストをロックしました: " + newLock.getName());
-                    ChestLockUI.openForPlayer(p, newLock, ctx, store, shopStore);
-                    return;
-                }
-                if (d.contains("ロック解除")) {
-                                    if (d.contains("保護済みチェスト一覧")) {
-                                        // show list via messages (cap limit)
-                                        Map<String, ChestLock> all = store.getAll();
-                                        p.sendMessage("§e保護済みチェスト数: " + all.size());
-                                        int j = 0;
-                                        for (Map.Entry<String, ChestLock> entry : all.entrySet()) {
-                                            if (j++ >= 100) { p.sendMessage("(省略...) 表示上限到達"); break; }
-                                            String key = entry.getKey();
-                                            ChestLock lock = entry.getValue();
-                                            String ownerName = lock.getOwner();
-                                            try { ownerName = Bukkit.getOfflinePlayer(UUID.fromString(lock.getOwner())).getName(); } catch (Exception ex) {}
-                                            p.sendMessage(key + " - " + lock.getName() + " (owner: " + ownerName + ")");
-                                        }
-                                        return;
-                                    }
-                    Location ctx = ChestLockUI.getOpenLocation(p.getUniqueId());
-                    if (ctx == null) return;
-                    Optional<ChestLock> existed = store.get(ctx);
-                    if (!existed.isPresent()) { p.sendMessage("§cこのチェストはロックされていません"); return; }
-                    ChestLock lock = existed.get();
-                    if (!p.isOp() && !lock.getOwner().equals(p.getUniqueId().toString())) { p.sendMessage("§cあなたはオーナーではありません"); return; }
-                    for (Location l : getChestRelatedLocations(ctx.getBlock())) store.remove(l);
-                    p.sendMessage("§aチェストのロックを解除しました");
-                    ChestLockUI.openForPlayer(p, null, ctx, store, shopStore);
-                    return;
-                }
-            }
+        if (clicked == null || clicked.getType() == Material.AIR) return;
+        
+        String uiType = ChestLockUI.getOpenUIType(p.getUniqueId());
+        Location loc = ChestLockUI.getOpenLocation(p.getUniqueId());
+        ChestLock lock = ChestLockUI.getOpenLock(p.getUniqueId());
+        
+        // メイン画面の処理
+        if ("main".equals(uiType) || title.startsWith(ChestLockUI.TITLE_PREFIX)) {
+            handleMainUIClick(p, clicked, lock, loc);
             return;
         }
-        OfflinePlayer target = meta.getOwningPlayer();
-        ChestLock lock = ChestLockUI.getOpenLock(p.getUniqueId());
-        if (lock == null) return;
-        String uuid = target.getUniqueId().toString();
-        if (lock.isMember(uuid)) {
-            lock.removeMember(uuid);
-            p.sendMessage("§aメンバーから削除しました: " + target.getName());
-        } else {
-            lock.addMember(uuid);
-            p.sendMessage("§aメンバーに追加しました: " + target.getName());
+        
+        // メンバー管理画面の処理
+        if ("member_manage".equals(uiType) || title.startsWith(ChestLockUI.MEMBER_MANAGE_TITLE)) {
+            handleMemberManageClick(p, clicked, lock, loc);
+            return;
         }
-        Location loc = ChestLockUI.getOpenLocation(p.getUniqueId());
-        if (loc != null) {
-            for (Location l : getChestRelatedLocations(loc.getBlock())) {
-                store.save(l, lock);
+        
+        // メンバー追加画面の処理
+        if ("member_add".equals(uiType) || title.startsWith(ChestLockUI.MEMBER_ADD_TITLE)) {
+            handleMemberAddClick(p, clicked, lock, loc, e.getSlot());
+            return;
+        }
+        
+        // メンバー削除画面の処理
+        if ("member_remove".equals(uiType) || title.startsWith(ChestLockUI.MEMBER_REMOVE_TITLE)) {
+            handleMemberRemoveClick(p, clicked, lock, loc, e.getSlot());
+            return;
+        }
+        
+        // 保護済みチェスト一覧画面の処理
+        if ("protected_list".equals(uiType) || title.startsWith(ChestLockUI.LIST_TITLE)) {
+            handleProtectedListClick(p, clicked, loc, e.getSlot());
+            return;
+        }
+    }
+    
+    private void handleMainUIClick(Player p, ItemStack clicked, ChestLock lock, Location loc) {
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        ItemMeta m = clicked.getItemMeta();
+        if (m == null || !m.hasDisplayName()) return;
+        String d = m.getDisplayName();
+        
+        // ロックする
+        if (d.contains("ロックする")) {
+            if (loc == null) return;
+            // ショップチェックを防ぐ
+            for (Location r : getChestRelatedLocations(loc.getBlock())) {
+                try { 
+                    if (shopStore != null && shopStore.get(r).isPresent()) { 
+                        p.sendMessage("§cこのチェストはショップに紐づいているためロックできません"); 
+                        return; 
+                    } 
+                } catch (Exception ignored) {}
+            }
+            ChestLock newLock = new ChestLock(p.getUniqueId().toString(), "lock-" + UUID.randomUUID().toString().substring(0,6));
+            for (Location l : getChestRelatedLocations(loc.getBlock())) store.save(l, newLock);
+            p.sendMessage("§aチェストをロックしました: " + newLock.getName());
+            ChestLockUI.openForPlayer(p, newLock, loc, store, shopStore);
+            return;
+        }
+        
+        // ロック解除
+        if (d.contains("ロック解除")) {
+            if (loc == null) return;
+            Optional<ChestLock> existed = store.get(loc);
+            if (!existed.isPresent()) { 
+                p.sendMessage("§cこのチェストはロックされていません"); 
+                return; 
+            }
+            ChestLock lockToRemove = existed.get();
+            if (!p.isOp() && !lockToRemove.getOwner().equals(p.getUniqueId().toString())) { 
+                p.sendMessage("§cあなたはオーナーではありません"); 
+                return; 
+            }
+            for (Location l : getChestRelatedLocations(loc.getBlock())) store.remove(l);
+            p.sendMessage("§aチェストのロックを解除しました");
+            ChestLockUI.openForPlayer(p, null, loc, store, shopStore);
+            return;
+        }
+        
+        // メンバー管理
+        if (d.contains("メンバー管理")) {
+            if (lock == null) return;
+            ChestLockUI.openMemberManageUI(p, lock, loc, store, shopStore);
+            return;
+        }
+        
+        // 保護済みチェスト一覧
+        if (d.contains("保護済みチェスト一覧")) {
+            ChestLockUI.openProtectedListUI(p, loc, store, shopStore, 0);
+            return;
+        }
+        
+        // 閉じる
+        if (d.contains("閉じる") || clicked.getType() == Material.BARRIER) {
+            p.closeInventory();
+            return;
+        }
+    }
+    
+    private void handleMemberManageClick(Player p, ItemStack clicked, ChestLock lock, Location loc) {
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        ItemMeta m = clicked.getItemMeta();
+        if (m == null || !m.hasDisplayName()) return;
+        String d = m.getDisplayName();
+        
+        // メンバー追加
+        if (d.contains("メンバー追加")) {
+            if (lock == null) return;
+            ChestLockUI.openMemberAddUI(p, lock, loc, store, shopStore);
+            return;
+        }
+        
+        // メンバー削除
+        if (d.contains("メンバー削除")) {
+            if (lock == null) return;
+            ChestLockUI.openMemberRemoveUI(p, lock, loc, store, shopStore);
+            return;
+        }
+        
+        // 戻る
+        if (d.contains("戻る")) {
+            ChestLockUI.openForPlayer(p, lock, loc, store, shopStore);
+            return;
+        }
+    }
+    
+    private void handleMemberAddClick(Player p, ItemStack clicked, ChestLock lock, Location loc, int slot) {
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        ItemMeta m = clicked.getItemMeta();
+        if (m == null || !m.hasDisplayName()) return;
+        String d = m.getDisplayName();
+        
+        // 戻る
+        if (d.contains("戻る")) {
+            ChestLockUI.openMemberManageUI(p, lock, loc, store, shopStore);
+            return;
+        }
+        
+        // プレイヤーヘッドのクリック
+        if (clicked.getType() == Material.PLAYER_HEAD && m instanceof SkullMeta) {
+            SkullMeta sm = (SkullMeta) m;
+            if (sm.getOwningPlayer() != null) {
+                String uuid = sm.getOwningPlayer().getUniqueId().toString();
+                String name = sm.getOwningPlayer().getName();
+                
+                if (lock != null && !lock.isMember(uuid)) {
+                    lock.addMember(uuid);
+                    for (Location l : getChestRelatedLocations(loc.getBlock())) {
+                        store.save(l, lock);
+                    }
+                    p.sendMessage("§aメンバーに追加しました: " + name);
+                }
+                ChestLockUI.openMemberAddUI(p, lock, loc, store, shopStore);
             }
         }
-        ChestLockUI.openForPlayer(p, lock, loc, store, shopStore);
+    }
+    
+    private void handleMemberRemoveClick(Player p, ItemStack clicked, ChestLock lock, Location loc, int slot) {
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        ItemMeta m = clicked.getItemMeta();
+        if (m == null || !m.hasDisplayName()) return;
+        String d = m.getDisplayName();
+        
+        // 戻る
+        if (d.contains("戻る")) {
+            ChestLockUI.openMemberManageUI(p, lock, loc, store, shopStore);
+            return;
+        }
+        
+        // プレイヤーヘッドのクリック
+        if (clicked.getType() == Material.PLAYER_HEAD && m instanceof SkullMeta) {
+            SkullMeta sm = (SkullMeta) m;
+            if (sm.getOwningPlayer() != null) {
+                String uuid = sm.getOwningPlayer().getUniqueId().toString();
+                String name = sm.getOwningPlayer().getName();
+                
+                if (lock != null && lock.isMember(uuid)) {
+                    lock.removeMember(uuid);
+                    for (Location l : getChestRelatedLocations(loc.getBlock())) {
+                        store.save(l, lock);
+                    }
+                    p.sendMessage("§aメンバーから削除しました: " + name);
+                }
+                ChestLockUI.openMemberRemoveUI(p, lock, loc, store, shopStore);
+            }
+        }
+    }
+    
+    private void handleProtectedListClick(Player p, ItemStack clicked, Location contextLoc, int slot) {
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        ItemMeta m = clicked.getItemMeta();
+        if (m == null || !m.hasDisplayName()) return;
+        String d = m.getDisplayName();
+        
+        // 戻る
+        if (d.contains("戻る") || clicked.getType() == Material.BARRIER) {
+            ChestLock lock = ChestLockUI.getOpenLock(p.getUniqueId());
+            ChestLockUI.openForPlayer(p, lock, contextLoc, store, shopStore);
+            return;
+        }
+        
+        // 前のページ
+        if (d.contains("前のページ")) {
+            int page = ChestLockUI.getListPage(p.getUniqueId());
+            ChestLockUI.openProtectedListUI(p, contextLoc, store, shopStore, page - 1);
+            return;
+        }
+        
+        // 次のページ
+        if (d.contains("次のページ")) {
+            int page = ChestLockUI.getListPage(p.getUniqueId());
+            ChestLockUI.openProtectedListUI(p, contextLoc, store, shopStore, page + 1);
+            return;
+        }
+        
+        // チェストをクリック - 座標をチャットに送信
+        if (clicked.getType() == Material.CHEST) {
+            List<String> keys = ChestLockUI.getListKeys(p.getUniqueId());
+            int page = ChestLockUI.getListPage(p.getUniqueId());
+            int index = page * 45 + slot;
+            if (keys != null && index < keys.size()) {
+                String key = keys.get(index);
+                String[] parts = key.split(":");
+                if (parts.length >= 4) {
+                    String tpCmd = "/tp " + parts[1] + " " + parts[2] + " " + parts[3];
+                    p.sendMessage("§e座標: §f" + parts[1] + ", " + parts[2] + ", " + parts[3]);
+                    p.sendMessage("§7テレポートコマンド: §f" + tpCmd);
+                }
+            }
+        }
     }
 
 }
