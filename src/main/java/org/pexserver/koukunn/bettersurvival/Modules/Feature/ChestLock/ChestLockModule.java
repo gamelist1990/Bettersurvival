@@ -149,8 +149,7 @@ public class ChestLockModule implements Listener {
 
         if (!anyLock.isPresent()) return;
 
-        Bukkit.getLogger().info("[ChestLock DEBUG] onInventoryOpen player=" + p.getName() + 
-            " lockAt=" + lockAt + " lockName=" + anyLock.get().getName() + " owner=" + anyLock.get().getOwner());
+        
         
         if (!canAccess(p, lockAt)) {
             e.setCancelled(true);
@@ -292,8 +291,7 @@ public class ChestLockModule implements Listener {
         ChestLockStore holderStore = holder.getStore();
         ChestShopStore holderShopStore = holder.getShopStore();
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] onClick uiType=" + uiType + " player=" + p.getName() + 
-            " loc=" + loc + " lock=" + (lock != null ? lock.getName() : "null"));
+        
         
         switch (uiType) {
             case MAIN:
@@ -481,7 +479,7 @@ public class ChestLockModule implements Listener {
         int page = holder.getPage();
         List<String> keys = holder.getListKeys();
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] protectedListClick d=" + d + " contextLoc=" + contextLoc + " page=" + page);
+        
         
         // 戻る
         if (d.contains("戻る") || (clicked.getType() == Material.BARRIER && slot == 49)) {

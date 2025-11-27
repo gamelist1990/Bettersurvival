@@ -121,8 +121,7 @@ public class ChestLockUI {
         Inventory inv = Bukkit.createInventory(holder, 27, TITLE_PREFIX + name);
         holder.setInventory(inv);
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] openMainUI player=" + p.getName() + 
-            " lock=" + (lock != null ? lock.getName() : "null") + " loc=" + loc);
+        
         
         boolean isOwnerOrOp = lock != null && (p.isOp() || 
             (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString())));
@@ -190,8 +189,7 @@ public class ChestLockUI {
         Inventory inv = Bukkit.createInventory(holder, 27, MEMBER_MANAGE_TITLE + " - " + lock.getName());
         holder.setInventory(inv);
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] openMemberManageUI player=" + p.getName() + 
-            " lock=" + lock.getName() + " loc=" + loc);
+        
         
         // 装飾
         ItemStack border = createItem(Material.GRAY_STAINED_GLASS_PANE, " ");
@@ -250,8 +248,7 @@ public class ChestLockUI {
         Inventory inv = Bukkit.createInventory(holder, size, MEMBER_ADD_TITLE + " - " + lock.getName());
         holder.setInventory(inv);
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] openMemberAddUI player=" + p.getName() + 
-            " lock=" + lock.getName() + " candidates=" + candidates.size());
+        
         
         // プレイヤーヘッド配置
         int slot = 0;
@@ -302,8 +299,7 @@ public class ChestLockUI {
         Inventory inv = Bukkit.createInventory(holder, size, MEMBER_REMOVE_TITLE + " - " + lock.getName());
         holder.setInventory(inv);
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] openMemberRemoveUI player=" + p.getName() + 
-            " lock=" + lock.getName() + " members=" + members.size());
+        
         
         // メンバーのヘッド配置
         int slot = 0;
@@ -379,8 +375,7 @@ public class ChestLockUI {
         Inventory inv = Bukkit.createInventory(holder, 54, LIST_TITLE + " (" + (page + 1) + "/" + totalPages + ")");
         holder.setInventory(inv);
         
-        Bukkit.getLogger().info("[ChestLock DEBUG] openProtectedListUI player=" + p.getName() + 
-            " contextLoc=" + contextLoc + " page=" + page + " items=" + filtered.size());
+        
         
         // チェストアイテム配置
         int start = page * itemsPerPage;
