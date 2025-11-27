@@ -823,6 +823,16 @@ public class ChestShopModule implements Listener {
         return Optional.ofNullable(best);
     }
 
+    public boolean isShopChest(Location loc) {
+        try {
+            if (loc == null) return false;
+            Optional<ChestShop> opt = store.get(loc);
+            return opt != null && opt.isPresent();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent e) {
         if (!toggle.getGlobal("chestshop"))

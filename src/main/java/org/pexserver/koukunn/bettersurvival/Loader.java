@@ -51,15 +51,15 @@ public final class Loader extends JavaPlugin {
         // OreMine モジュール登録
         OreMineModule oremine = new OreMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(oremine, this);
-        // ChestSort モジュール登録
-        ChestSortModule chestSort = new ChestSortModule(toggleModule);
-        getServer().getPluginManager().registerEvents(chestSort, this);
         // ChestLock module registration
         ChestLockModule chestLock = new ChestLockModule(toggleModule, configManager);
         getServer().getPluginManager().registerEvents(chestLock, this);
         // ChestShop module registration
         ChestShopModule chestShop = new ChestShopModule(toggleModule, configManager, chestLock);
         getServer().getPluginManager().registerEvents(chestShop, this);
+        // ChestSort モジュール登録
+        ChestSortModule chestSort = new ChestSortModule(toggleModule, chestLock, chestShop);
+        getServer().getPluginManager().registerEvents(chestSort, this);
         // FenceLeash module registration (allow placing a leash knot on fence by
         // right-clicking while holding a lead)
         // Toggle 機能として登録
