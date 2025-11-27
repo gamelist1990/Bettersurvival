@@ -42,6 +42,16 @@ public abstract class BaseCommand {
     }
 
     /**
+     * コマンドが有効かどうかを返します
+     * グローバルで無効化されている場合などに false を返すことで、
+     * コマンドがタブ補完やヘルプに表示されなくなります
+     * @return コマンドが有効な場合 true
+     */
+    public boolean isEnabled() {
+        return true;
+    }
+
+    /**
      * コマンド実行処理
      * @param sender コマンド実行者
      * @param args コマンド引数

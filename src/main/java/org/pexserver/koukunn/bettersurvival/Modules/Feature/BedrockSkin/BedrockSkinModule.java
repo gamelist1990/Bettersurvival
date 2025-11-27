@@ -99,11 +99,6 @@ public class BedrockSkinModule implements Listener {
                 case SKIN_UPDATED:
                     // スキンが変更された → キャッシュ更新済み、次回接続で反映
                     LOGGER.info("[BedrockSkin] スキン変更を検出、キャッシュを更新: " + player.getName());
-                    player.sendMessage(Component.text()
-                            .append(Component.text("スキンの変更を検出しました。", NamedTextColor.GREEN))
-                            .appendNewline()
-                            .append(Component.text("再接続すると新しいスキンが他のプレイヤーにも表示されます。", NamedTextColor.YELLOW))
-                            .build());
                     break;
                 case SKIN_UNCHANGED:
                     // スキンに変更なし → キャッシュからそのまま適用
@@ -169,13 +164,13 @@ public class BedrockSkinModule implements Listener {
                                 return SkinCheckResult.SKIN_UNCHANGED;
                             } else {
                                 // スキンが変更された → キャッシュを更新
-                                SkinEntry entry = new SkinEntry(value, signature, null, null, System.currentTimeMillis());
+                                SkinEntry entry = new SkinEntry(value, signature, System.currentTimeMillis());
                                 skinDatabase.saveSkinEntry(playerId, entry);
                                 return SkinCheckResult.SKIN_UPDATED;
                             }
                         } else {
                             // 初回参加 → キャッシュに保存
-                            SkinEntry entry = new SkinEntry(value, signature, null, null, System.currentTimeMillis());
+                            SkinEntry entry = new SkinEntry(value, signature, System.currentTimeMillis());
                             skinDatabase.saveSkinEntry(playerId, entry);
                             return SkinCheckResult.FIRST_TIME_UPDATED;
                         }

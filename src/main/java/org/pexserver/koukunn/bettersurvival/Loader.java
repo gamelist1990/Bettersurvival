@@ -112,9 +112,6 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("bedrockskin")) {
             toggleModule.setGlobal("bedrockskin", true);
         }
-        if (!toggleModule.hasGlobal("oremine")) {
-            toggleModule.setGlobal("oremine", true);
-        }
 
         getLogger().info("Better Survival Plugin が有効になりました");
     }

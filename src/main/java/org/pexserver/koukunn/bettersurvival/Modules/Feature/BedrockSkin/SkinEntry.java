@@ -2,19 +2,16 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin;
 
 /**
  * アップロード済みスキンのキャッシュエントリ
+ * value には Base64 エンコードされたテクスチャ情報（スキンと Cape の両方）が含まれる
  */
 public class SkinEntry {
     private final String value;
     private final String signature;
-    private final String skinUrl;
-    private final String model;
     private final long uploadedAt;
 
-    public SkinEntry(String value, String signature, String skinUrl, String model, long uploadedAt) {
+    public SkinEntry(String value, String signature, long uploadedAt) {
         this.value = value;
         this.signature = signature;
-        this.skinUrl = skinUrl;
-        this.model = model;
         this.uploadedAt = uploadedAt;
     }
 
@@ -24,14 +21,6 @@ public class SkinEntry {
 
     public String getSignature() {
         return signature;
-    }
-
-    public String getSkinUrl() {
-        return skinUrl;
-    }
-
-    public String getModel() {
-        return model;
     }
 
     public long getUploadedAt() {

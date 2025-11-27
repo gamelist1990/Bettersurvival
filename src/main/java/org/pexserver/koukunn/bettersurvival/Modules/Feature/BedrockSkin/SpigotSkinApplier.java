@@ -1,13 +1,14 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
-import com.destroystokyo.paper.profile.ProfileProperty;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.profile.PlayerTextures;
 
+import java.net.URI;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Collection;
@@ -15,14 +16,15 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Paper API で PlayerTextures を使用してスキンを適用するクラス
+ * org.bukkit.profile.PlayerTextures を使用してスキンを適用するクラス
  * 
  * 処理フロー:
- * 1. Base64 encoded textures から スキンURL を抽出
- * 2. PlayerTextures.setSkin(URL) でスキンを設定
+ * 1. Base64 エンコードされた textures から スキン URL を抽出
+ * 2. PlayerTextures.setSkin(URL, SkinModel) でスキンを設定
  * 3. player.setPlayerProfile() で適用
  * 4. 全プレイヤーに対して hidePlayer/showPlayer で更新を強制
  */
@@ -31,7 +33,9 @@ public class SpigotSkinApplier {
     private static final Logger LOGGER = Bukkit.getLogger();
     private final Plugin plugin;
     
-    // スリムモデル判定用
+    // スキン URL 抽出用パターン
+    private static final Pattern SKIN_URL_PATTERN = Pattern.compile("\"SKIN\"\\s*:\\s*\\{[^}]*\"url\"\\s*:\\s*\"([^\"]+)\"");
+    // スリムモデル判定用パターン
     private static final Pattern SLIM_MODEL_PATTERN = Pattern.compile("\"model\"\\s*:\\s*\"slim\"");
     
     // スキン適用中のプレイヤーを追跡（重複適用防止）
@@ -58,76 +62,69 @@ public class SpigotSkinApplier {
 
         // メインスレッドで実行
         if (Bukkit.isPrimaryThread()) {
-            applySkinInternal(player, value, signature);
+            applySkinInternal(player, value);
         } else {
             Bukkit.getScheduler().runTask(plugin, () -> {
-                applySkinInternal(player, value, signature);
+                applySkinInternal(player, value);
             });
         }
     }
 
     /**
-     * スキン適用の内部処理 (PlayerTextures API を使用)
+     * スキン適用の内部処理 (org.bukkit.profile.PlayerTextures API を使用)
      */
-    private void applySkinInternal(Player player, String value, String signature) {
+    private void applySkinInternal(Player player, String value) {
         UUID playerId = player.getUniqueId();
         
         try {
             applyingPlayers.add(playerId);
             
-            // 1. Base64 から JSON をデコードしてスキンURL を抽出
+            // Base64 から JSON をデコード
             String decodedJson = new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8);
             LOGGER.fine("[BedrockSkin] デコード済みJSON: " + decodedJson);
             
+            // スキン URL を抽出
+            URL skinUrl = null;
+            Matcher skinMatcher = SKIN_URL_PATTERN.matcher(decodedJson);
+            if (skinMatcher.find()) {
+                skinUrl = URI.create(skinMatcher.group(1)).toURL();
+                LOGGER.fine("[BedrockSkin] スキンURL: " + skinUrl);
+            }
             
-            // 3. スリムモデルかどうかを判定
+            if (skinUrl == null) {
+                LOGGER.warning("[BedrockSkin] スキンURLが見つかりません: " + player.getName());
+                return;
+            }
+            
+            // スリムモデルかどうかを判定
             boolean isSlim = SLIM_MODEL_PATTERN.matcher(decodedJson).find();
             PlayerTextures.SkinModel skinModel = isSlim ? 
                 PlayerTextures.SkinModel.SLIM : PlayerTextures.SkinModel.CLASSIC;
             
-
-            
-            // 4. PlayerProfile を取得して PlayerTextures を使用
+            // Paper の PlayerProfile を取得し、org.bukkit.profile.PlayerTextures を使用
             PlayerProfile profile = player.getPlayerProfile();
             PlayerTextures textures = profile.getTextures();
             
-            // 5. スキンを設定
-            textures.setSkin(null, skinModel);
+            // スキンを設定
+            textures.setSkin(skinUrl, skinModel);
             
-            // 6. プロファイルを適用
+            // プロファイルを適用
             player.setPlayerProfile(profile);
-
-            // 7. 全オンラインプレイヤーに対して更新を強制
+            
+            // 全オンラインプレイヤーに対して更新を強制
             refreshPlayerForAllPlayers(player);
 
-            LOGGER.info("[BedrockSkin] PlayerTextures API でスキンを適用しました: " + player.getName());
+            LOGGER.info("[BedrockSkin] PlayerTextures API でスキンを適用しました: " + player.getName() + 
+                    " (モデル: " + skinModel + ")");
             
         } catch (Exception e) {
-            LOGGER.warning("[BedrockSkin] PlayerTextures API でのスキン適用に失敗、フォールバック: " + e.getMessage());
-            // フォールバック: 従来の ProfileProperty 方式
-            applyUsingProfileProperty(player, value, signature);
+            LOGGER.warning("[BedrockSkin] スキン適用に失敗: " + e.getMessage());
+            e.printStackTrace();
         } finally {
             // 少し遅延してから適用中フラグを解除
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 applyingPlayers.remove(playerId);
             }, 10L);
-        }
-    }
-    
-    /**
-     * 従来の ProfileProperty を使用したスキン適用（フォールバック）
-     */
-    private void applyUsingProfileProperty(Player player, String value, String signature) {
-        try {
-            PlayerProfile profile = player.getPlayerProfile();
-            profile.removeProperty("textures");
-            ProfileProperty skinProperty = new ProfileProperty("textures", value, signature);
-            profile.setProperty(skinProperty);
-            player.setPlayerProfile(profile);
-            refreshPlayerForAllPlayers(player);
-            LOGGER.info("[BedrockSkin] ProfileProperty でスキンを適用しました: " + player.getName());
-        } catch (Exception e) {
-            LOGGER.warning("[BedrockSkin] フォールバック適用も失敗: " + e.getMessage());
         }
     }
 

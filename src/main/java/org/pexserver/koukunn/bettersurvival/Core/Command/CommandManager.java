@@ -132,6 +132,10 @@ public class CommandManager {
 
         @Override
         public boolean testPermissionSilent(CommandSender sender) {
+            // コマンドが無効な場合は非表示
+            if (!command.isEnabled()) {
+                return false;
+            }
             // Brigadier / Bukkit の候補表示などはこのメソッドで権限チェックされることがあるため
             // カスタム権限 (getPermission) がある場合はそれを優先し、無ければ PermissionLevel を利用する
             PermissionLevel permLevel = command.getPermissionLevel();
