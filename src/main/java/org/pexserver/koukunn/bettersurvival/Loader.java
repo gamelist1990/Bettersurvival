@@ -14,6 +14,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModul
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestSort.ChestSortModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
@@ -60,6 +61,9 @@ public final class Loader extends JavaPlugin {
         // ChestSort モジュール登録
         ChestSortModule chestSort = new ChestSortModule(toggleModule, chestLock, chestShop);
         getServer().getPluginManager().registerEvents(chestSort, this);
+        // BedrockSkin モジュール登録 (Floodgate/Geyser ユーザーのスキン自動適用)
+        BedrockSkinModule bedrockSkin = new BedrockSkinModule(this, toggleModule, configManager);
+        getServer().getPluginManager().registerEvents(bedrockSkin, this);
         // FenceLeash module registration (allow placing a leash knot on fence by
         // right-clicking while holding a lead)
         // Toggle 機能として登録
@@ -79,6 +83,8 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("chestshop", "ChestShop", "看板でチェストをショップ化します(>>Shop 名前)", Material.OAK_SIGN, false));
         toggleModule
                 .registerFeature(new ToggleFeature("chestsort", "ChestSort", "スニーク+木の棒でチェスト内を整理します", Material.STICK));
+        toggleModule.registerFeature(
+                new ToggleFeature("bedrockskin", "BedrockSkin", "BedrockユーザーのスキンをJavaクライアントに自動反映します", Material.PLAYER_HEAD, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -102,6 +108,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("chestshop")) {
             toggleModule.setGlobal("chestshop", true);
+        }
+        if (!toggleModule.hasGlobal("bedrockskin")) {
+            toggleModule.setGlobal("bedrockskin", true);
         }
         if (!toggleModule.hasGlobal("oremine")) {
             toggleModule.setGlobal("oremine", true);
