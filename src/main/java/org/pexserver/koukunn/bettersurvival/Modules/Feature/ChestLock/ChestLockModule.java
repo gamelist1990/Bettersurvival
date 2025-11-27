@@ -154,6 +154,8 @@ public class ChestLockModule implements Listener {
 
         if (!anyLock.isPresent()) return;
 
+        // ロックを発見 → ログ出力してからアクセス許可をチェック
+        try { Bukkit.getLogger().info("[ChestLock DEBUG] onInventoryOpen player=" + p.getName() + " lockAt=" + lockAt + " lockName=" + anyLock.get().getName() + " owner=" + anyLock.get().getOwner()); } catch (Exception ignored) {}
         // ロックを発見 → まずはアクセス許可をチェック
         if (!canAccess(p, lockAt)) {
             e.setCancelled(true);
@@ -510,8 +512,39 @@ public class ChestLockModule implements Listener {
         
         // 戻る
         if (d.contains("戻る") || clicked.getType() == Material.BARRIER) {
-            ChestLock lock = ChestLockUI.getOpenLock(p.getUniqueId());
-            ChestLockUI.openForPlayer(p, lock, contextLoc, store, shopStore);
+            // debug
+            try { Bukkit.getLogger().info("[ChestLock DEBUG] protected_list return clicked by=" + p.getName() + " contextLoc=" + contextLoc + " uiLoc=" + ChestLockUI.getOpenLocation(p.getUniqueId()) + " uiLock=" + ChestLockUI.getOpenLock(p.getUniqueId())); } catch (Exception ignored) {}
+            // try to recover contextLoc from clicked item's lore if UI state was cleared
+            Location parsedLoc = null;
+            if (contextLoc == null) {
+                ItemMeta cm = clicked.getItemMeta();
+                if (cm != null && cm.hasLore()) {
+                    for (String line : cm.getLore()) {
+                        if (line != null && line.startsWith("CTX:")) {
+                            String data = line.substring(4);
+                            if (!"null".equals(data)) {
+                                String[] parts = data.split(":");
+                                if (parts.length == 4) {
+                                    try {
+                                        org.bukkit.World w = Bukkit.getWorld(parts[0]);
+                                        int x = Integer.parseInt(parts[1]);
+                                        int y = Integer.parseInt(parts[2]);
+                                        int z = Integer.parseInt(parts[3]);
+                                        if (w != null) parsedLoc = new Location(w, x, y, z);
+                                    } catch (Exception ignored) {}
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            // avoid calling store.get with null contextLoc; prefer parsedLoc then fallback to UI-stored location
+            Location useLoc = contextLoc != null ? contextLoc : (parsedLoc != null ? parsedLoc : ChestLockUI.getOpenLocation(p.getUniqueId()));
+            ChestLock cached = ChestLockUI.getOpenLock(p.getUniqueId());
+            ChestLock lock = useLoc != null ? store.get(useLoc).orElse(cached) : cached;
+            try { Bukkit.getLogger().info("[ChestLock DEBUG] resolved useLoc=" + useLoc + " lock=" + (lock != null ? lock.getName() + "/" + lock.getOwner() : "null")); } catch (Exception ignored) {}
+            ChestLockUI.openForPlayer(p, lock, useLoc, store, shopStore);
             return;
         }
         

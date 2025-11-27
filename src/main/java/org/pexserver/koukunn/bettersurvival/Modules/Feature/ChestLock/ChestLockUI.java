@@ -66,6 +66,7 @@ public class ChestLockUI {
         openLocks.put(p.getUniqueId(), lock);
         openLocations.put(p.getUniqueId(), loc);
         openUIType.put(p.getUniqueId(), "main");
+        try { Bukkit.getLogger().info("[ChestLock DEBUG] openForPlayer player=" + p.getName() + " uiType=main lock=" + (lock != null ? lock.getName() + "/" + lock.getOwner() : "null") + " loc=" + loc); } catch (Exception ignored) {}
 
         boolean isOwnerOrOp = lock != null && (p.isOp() || 
             (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString())));
@@ -417,6 +418,7 @@ public class ChestLockUI {
         openLocations.put(p.getUniqueId(), contextLoc);
         openUIType.put(p.getUniqueId(), "protected_list");
         listPages.put(p.getUniqueId(), page);
+        try { Bukkit.getLogger().info("[ChestLock DEBUG] openProtectedListUI player=" + p.getName() + " contextLoc=" + contextLoc + " page=" + page + " items=" + filtered.size()); } catch (Exception ignored) {}
         
         // キーリストを保存
         List<String> keys = new ArrayList<>();
@@ -485,6 +487,13 @@ public class ChestLockUI {
         ItemMeta bm = backBtn.getItemMeta();
         if (bm != null) {
             bm.setDisplayName("§c戻る");
+            List<String> blore = new ArrayList<>();
+            if (contextLoc != null) {
+                blore.add("CTX:" + contextLoc.getWorld().getName() + ":" + contextLoc.getBlockX() + ":" + contextLoc.getBlockY() + ":" + contextLoc.getBlockZ());
+            } else {
+                blore.add("CTX:null");
+            }
+            bm.setLore(blore);
             backBtn.setItemMeta(bm);
         }
         inv.setItem(49, backBtn);
