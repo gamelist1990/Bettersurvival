@@ -19,6 +19,8 @@ import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -26,6 +28,7 @@ public final class Loader extends JavaPlugin {
     private CommandManager commandManager;
     private ConfigManager configManager;
     private ToggleModule toggleModule;
+    private TpaModule tpaModule;
 
     @Override
     public void onEnable() {
@@ -64,6 +67,9 @@ public final class Loader extends JavaPlugin {
         // BedrockSkin モジュール登録 (Floodgate/Geyser ユーザーのスキン自動適用)
         BedrockSkinModule bedrockSkin = new BedrockSkinModule(this, toggleModule, configManager);
         getServer().getPluginManager().registerEvents(bedrockSkin, this);
+        // TPA モジュール登録 (テレポートリクエスト機能)
+        tpaModule = new TpaModule(this);
+        getServer().getPluginManager().registerEvents(tpaModule, this);
         // FenceLeash module registration (allow placing a leash knot on fence by
         // right-clicking while holding a lead)
         // Toggle 機能として登録
@@ -85,6 +91,8 @@ public final class Loader extends JavaPlugin {
                 .registerFeature(new ToggleFeature("chestsort", "ChestSort", "スニーク+木の棒でチェスト内を整理します", Material.STICK));
         toggleModule.registerFeature(
                 new ToggleFeature("bedrockskin", "BedrockSkin", "BedrockユーザーのスキンをJavaクライアントに自動反映します", Material.PLAYER_HEAD, false));
+        toggleModule.registerFeature(
+                new ToggleFeature("tpa", "TPA", "テレポートリクエスト機能（無効にすると受信拒否）", Material.ENDER_PEARL));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -112,6 +120,9 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("bedrockskin")) {
             toggleModule.setGlobal("bedrockskin", true);
         }
+        if (!toggleModule.hasGlobal("tpa")) {
+            toggleModule.setGlobal("tpa", true);
+        }
 
         getLogger().info("Better Survival Plugin が有効になりました");
     }
@@ -128,6 +139,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new ChestCommand(this));
         // Rename command: 手持ちアイテムの名前変更
         commandManager.register(new RenameCommand());
+        // TPA command: テレポートリクエスト
+        commandManager.register(new TpaCommand(this));
         // 他のコマンドはここに追加できます
     }
 
@@ -146,6 +159,10 @@ public final class Loader extends JavaPlugin {
 
     public ToggleModule getToggleModule() {
         return toggleModule;
+    }
+
+    public TpaModule getTpaModule() {
+        return tpaModule;
     }
 
     @Override
