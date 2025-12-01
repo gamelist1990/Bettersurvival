@@ -20,7 +20,9 @@ import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -70,6 +72,8 @@ public final class Loader extends JavaPlugin {
         // TPA モジュール登録 (テレポートリクエスト機能)
         tpaModule = new TpaModule(this);
         getServer().getPluginManager().registerEvents(tpaModule, this);
+        // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
+        getServer().getPluginManager().registerEvents(new InvseeListener(this), this);
         // FenceLeash module registration (allow placing a leash knot on fence by
         // right-clicking while holding a lead)
         // Toggle 機能として登録
@@ -141,6 +145,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new RenameCommand());
         // TPA command: テレポートリクエスト
         commandManager.register(new TpaCommand(this));
+        // InvSee command: プレイヤーインベントリ閲覧・編集（OP専用）
+        commandManager.register(new InvseeCommand(this));
         // 他のコマンドはここに追加できます
     }
 
