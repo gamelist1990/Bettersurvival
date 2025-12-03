@@ -56,17 +56,14 @@ public class InvseeCommand extends BaseCommand {
         Player p = (Player) sender;
 
         if (args.length == 0) {
-            // プレイヤー選択UIを表示
             Bukkit.getScheduler().runTask(plugin, () -> {
                 InvseeUI.openPlayerSelectUI(p, plugin, 0);
             });
             return true;
         }
 
-        // 指定されたプレイヤー名で検索
         String targetName = args[0];
         
-        // オンラインプレイヤーを検索
         Player onlineTarget = null;
         for (Player pl : Bukkit.getOnlinePlayers()) {
             if (pl.getName().equalsIgnoreCase(targetName)) {
@@ -76,7 +73,6 @@ public class InvseeCommand extends BaseCommand {
         }
 
         if (onlineTarget != null) {
-            // オンラインプレイヤーのインベントリを表示
             final Player target = onlineTarget;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 InvseeUI.openInventoryUI(p, target, plugin);
@@ -84,7 +80,6 @@ public class InvseeCommand extends BaseCommand {
             return true;
         }
 
-        // オフラインプレイヤーを検索
         @SuppressWarnings("deprecation")
         OfflinePlayer offlineTarget = Bukkit.getOfflinePlayer(targetName);
         
@@ -106,21 +101,18 @@ public class InvseeCommand extends BaseCommand {
         if (args.length == 1) {
             String partial = args[0].toLowerCase();
             
-            // オンラインプレイヤー
             for (Player p : Bukkit.getOnlinePlayers()) {
                 if (p.getName().toLowerCase().startsWith(partial)) {
                     completions.add(p.getName());
                 }
             }
             
-            // 過去にログインしたプレイヤー（最近のもののみ）
             for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
                 if (op.getName() != null && op.getName().toLowerCase().startsWith(partial)) {
                     if (!completions.contains(op.getName())) {
                         completions.add(op.getName());
                     }
                 }
-                // 上限を設けて処理時間を制限
                 if (completions.size() >= 20) break;
             }
         }

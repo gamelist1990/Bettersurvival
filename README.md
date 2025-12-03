@@ -23,7 +23,6 @@ Bettersurvival は、Minecraft サーバーの運営をより快適にするた�
 
 ## 機能
 
-- **ブロックリスト管理**: IP およびプレイヤーのブロック/解除機能
 - **チェストロック**: チェストのロックと保護
 - **チェストソート**: チェスト内のアイテム自動整理
 - **自動餌やり**: 動物への自動餌やり機能
@@ -82,7 +81,6 @@ bettersurvival/
 ├── gradlew                       # Gradle ラッパー (Unix)
 ├── gradlew.bat                   # Gradle ラッパー (Windows)
 ├── settings.gradle               # Gradle 設定
-├── .gitignore                    # Git 除外ファイル
 └── README.md                     # このファイル
 ```
 
@@ -143,12 +141,7 @@ bettersurvival/
 
 
 ### 機能の有効化/無効化
-各機能は `/toggle` コマンドで個別にオン/オフを切り替えられます。管理者モードではグローバル設定も可能です。
-
-### 設定ファイル
-- `plugins/Bettersurvival/banned-ips.json`: IP ブロックリスト
-- `plugins/Bettersurvival/banned-players.json`: プレイヤーブロックリスト
-- `plugins/Bettersurvival/config.yml`: プラグイン設定
+各機能は `/toggle` コマンドで個別にオン/オフを切り替えられます。管理者モードではグローバル設定も可能です
 
 ## 貢献ガイドライン
 
@@ -172,7 +165,7 @@ bettersurvival/
 3. レビューを待ち、必要に応じて修正してください。
 
 ### バグ報告・機能リクエスト
-- [GitHub Issues](https://github.com/your-username/bettersurvival/issues) を使用してください。
+- [GitHub Issues](https://github.com/gamelist1990/Bettersurvival/issues) を使用してください。
 - バグ報告には以下の情報を含めてください：
   - Minecraft バージョン
   - サーバーソフトウェア (Paper/Spigot)
@@ -215,8 +208,8 @@ SOFTWARE.
 ## 連絡先
 
 - **作者**: Koukunn
-- **GitHub**: [https://github.com/your-username/bettersurvival](https://github.com/your-username/bettersurvival)
-- **Issues**: [バグ報告・機能リクエスト](https://github.com/your-username/bettersurvival/issues)
+- **GitHub**: [https://github.com/gamelist1990/Bettersurvival](https://github.com/gamelist1990/Bettersurvival)
+- **Issues**: [バグ報告・機能リクエスト](https://github.com/gamelist1990/Bettersurvival/issues)
 
 ---
 

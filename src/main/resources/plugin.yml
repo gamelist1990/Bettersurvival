@@ -1,5 +1,5 @@
 name: Bettersurvival
-version: '1.3-SNAPSHOT'
+version: "${version}"
 main: org.pexserver.koukunn.bettersurvival.Loader
 api-version: '1.21'
 authors: [ Koukunn ]
