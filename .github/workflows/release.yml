@@ -46,24 +46,35 @@ jobs:
         run: |
           set -euo pipefail
           jar=$(ls -1 build/libs/*.jar | head -n 1)
+          jar_name=$(basename "$jar")
+          base="${jar_name%.*}"
+          version=""
+          if [[ "$base" =~ ^(.+)-([0-9]+(\.[0-9]+)*([.-][A-Za-z0-9]+)*)$ ]]; then
+            version="${BASH_REMATCH[2]}"
+          else
+            version="${base##*-}"
+          fi
           echo "JAR_PATH=$jar" >> $GITHUB_OUTPUT
-          echo "JAR_NAME=$(basename "$jar")" >> $GITHUB_OUTPUT
-
+          echo "JAR_NAME=$jar_name" >> $GITHUB_OUTPUT
+          echo "JAR_VERSION=$version" >> $GITHUB_OUTPUT
       - name: Prepare release metadata (date, tag)
         id: release_meta
         run: |
           set -euo pipefail
           date=$(date -u +%Y-%m-%d)
-          tag=release-$date
+          version="${{ steps.find_jar.outputs.JAR_VERSION }}"
+          tag="release-${version}"
           echo "RELEASE_DATE=$date" >> $GITHUB_OUTPUT
+          echo "RELEASE_VERSION=$version" >> $GITHUB_OUTPUT
           echo "TAG_NAME=$tag" >> $GITHUB_OUTPUT
-
+          echo "RELEASE_NAME=$version" >> $GITHUB_OUTPUT
       - name: Delete existing same-day release
         uses: actions/github-script@v6
         with:
           script: |
             const tag = '${{ steps.release_meta.outputs.TAG_NAME }}';
             const repo = context.repo;
+            // Delete release if exists
             try {
               const existing = await github.rest.repos.getReleaseByTag({ owner: repo.owner, repo: repo.repo, tag });
               await github.rest.repos.deleteRelease({ owner: repo.owner, repo: repo.repo, release_id: existing.data.id });
@@ -75,7 +86,17 @@ jobs:
                 throw err;
               }
             }
-
+            // Delete git tag ref if exists (so we can re-create the tag pointing to the current commit)
+            try {
+              await github.rest.git.deleteRef({ owner: repo.owner, repo: repo.repo, ref: `tags/${tag}` });
+              console.log(`Deleted git tag ref for tag ${tag}`);
+            } catch (err) {
+              if (err.status === 422 || err.status === 404) {
+                console.log('No git tag ref found to delete');
+              } else {
+                throw err;
+              }
+            }
       - name: Determine changelog compare URL
         id: changelog
         uses: actions/github-script@v6
@@ -83,19 +104,19 @@ jobs:
           script: |
             const repo = context.repo;
             const releases = await github.rest.repos.listReleases(repo);
-            const latest = releases.data.find(r => !r.draft && !r.prerelease);
             const newTag = '${{ steps.release_meta.outputs.TAG_NAME }}';
-            if (latest) {
-              return `https://github.com/${repo.owner}/${repo.repo}/compare/${latest.tag_name}...${newTag}`;
+            // Find the most recent release that isn't the same as the new tag
+            const previous = releases.data.find(r => !r.draft && !r.prerelease && r.tag_name !== newTag);
+            if (previous) {
+              return `https://github.com/${repo.owner}/${repo.repo}/compare/${previous.tag_name}...${newTag}`;
             }
             return `https://github.com/${repo.owner}/${repo.repo}/commits/${process.env.GITHUB_SHA}`;
-
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
         with:
           tag_name: ${{ steps.release_meta.outputs.TAG_NAME }}
-          release_name: ${{ steps.release_meta.outputs.RELEASE_DATE }}
+          release_name: ${{ steps.release_meta.outputs.RELEASE_NAME }}
           body: |
             Changelog: ${{ steps.changelog.outputs.result }}
 
