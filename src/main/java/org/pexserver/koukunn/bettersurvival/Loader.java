@@ -21,6 +21,7 @@ import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
@@ -147,6 +148,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new TpaCommand(this));
         // InvSee command: プレイヤーインベントリ閲覧・編集（OP専用）
         commandManager.register(new InvseeCommand(this));
+        // List command: オンラインのプレイヤー一覧を表示
+        commandManager.register(new ListCommand());
         // 他のコマンドはここに追加できます
     }
 
