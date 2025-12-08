@@ -2059,8 +2059,14 @@ public class ChestShopModule implements Listener {
                 return;
             Location loc = rr.loc;
             ChestShop shop = rr.shop;
-            if (shop == null || shop.getCurrency() == null)
-                return;
+                // If there's no shop or currency is not configured, prevent any interaction
+                if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
+                    // prevent accidental item pickup from buyer UI
+                    e.setCancelled(true);
+                    p.sendMessage("§c通貨が設定されていないため、購入できません");
+                    p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                    return;
+                }
             Map<Integer, ShopListing> listings = store.getListings(loc);
             ShopListing sl = listings.get(e.getRawSlot());
             if (sl != null && sl.getStock() >= sl.getCount()) {
