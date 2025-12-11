@@ -2,8 +2,11 @@ package org.pexserver.koukunn.bettersurvival;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.Material;
+import org.pexserver.koukunn.bettersurvival.Core.Command.CommandBlockManager;
 import org.pexserver.koukunn.bettersurvival.Core.Command.CommandManager;
+import org.pexserver.koukunn.bettersurvival.Core.Command.GlobalCommandFilter;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Listeners.CommandBlockerListener;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule;
@@ -16,6 +19,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockM
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
@@ -30,6 +34,7 @@ public final class Loader extends JavaPlugin {
 
     private CommandManager commandManager;
     private ConfigManager configManager;
+    private CommandBlockManager commandBlockManager;
     private ToggleModule toggleModule;
     private TpaModule tpaModule;
 
@@ -38,7 +43,17 @@ public final class Loader extends JavaPlugin {
         // マネージャーを初期化
         commandManager = new CommandManager(this);
         configManager = new ConfigManager(this);
-        // ConfigManager を初期化（PEXConfig フォルダを作成）
+
+        // CommandBlockManager を作成して CommandManager に渡す
+        this.commandBlockManager = new CommandBlockManager(this);
+        commandManager.setBlockManager(this.commandBlockManager);
+        // リスナー登録
+        getServer().getPluginManager().registerEvents(new CommandBlockerListener(this.commandBlockManager), this);
+
+        // グローバルコマンドフィルタを適用（別プラグインのコマンドにも干渉）
+        GlobalCommandFilter globalFilter = new GlobalCommandFilter(this, this.commandBlockManager);
+        globalFilter.applyGlobalFilter();
+        getServer().getPluginManager().registerEvents(globalFilter, this);
 
         // コマンドを登録
         registerCommands();
@@ -150,6 +165,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new InvseeCommand(this));
         // List command: オンラインのプレイヤー一覧を表示
         commandManager.register(new ListCommand());
+        // Command: グローバル無効化コマンド
+        commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
     }
 

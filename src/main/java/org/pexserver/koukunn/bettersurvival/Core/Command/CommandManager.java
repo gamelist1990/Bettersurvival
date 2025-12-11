@@ -19,10 +19,15 @@ public class CommandManager {
     private final Plugin plugin;
     private final Map<String, BaseCommand> commands = new HashMap<>();
     private final CommandMap commandMap;
+    private CommandBlockManager blockManager;
 
     public CommandManager(Plugin plugin) {
         this.plugin = plugin;
         this.commandMap = getCommandMap();
+    }
+
+    public void setBlockManager(CommandBlockManager blockManager) {
+        this.blockManager = blockManager;
     }
 
     /**
@@ -118,7 +123,7 @@ public class CommandManager {
     /**
      * Bukkit Command のラッパークラス
      */
-    private static class CommandWrapper extends Command {
+    private class CommandWrapper extends Command {
         private final BaseCommand command;
         private final Plugin plugin;
 
@@ -136,10 +141,26 @@ public class CommandManager {
             if (!command.isEnabled()) {
                 return false;
             }
+            // グローバル無効化に該当する場合は非表示（非表示化）
+            if (blockManager != null) {
+                try {
+                    if (blockManager.matches(sender, this.getName())) {
+                        return false;  // 権限がない場合、コマンドを完全に非表示にする（Lumplus方式）
+                    }
+                } catch (Exception ignored) {}
+            }
             // Brigadier / Bukkit の候補表示などはこのメソッドで権限チェックされることがあるため
             // カスタム権限 (getPermission) がある場合はそれを優先し、無ければ PermissionLevel を利用する
             PermissionLevel permLevel = command.getPermissionLevel();
+            // 権限チェック - 権限がない場合はコマンドを完全に非表示にする（Lumplus方式）
             return permLevel.hasAccess(sender, command.getPermission());
+        }
+
+        @Override
+        public boolean testPermission(CommandSender sender) {
+            // Lumplus 方式: 権限がない場合、ユーザーには存在しないコマンドとして扱う
+            // この結果は help コマンドなどで使用される
+            return testPermissionSilent(sender);
         }
 
         @Override
@@ -151,16 +172,26 @@ public class CommandManager {
                 return true;
             }
 
-            // コマンド実行
-            try {
-                return command.execute(sender, args);
-            } catch (Exception e) {
-                plugin.getLogger().warning("コマンド実行エラー: " + command.getName());
-                e.printStackTrace();
-                sender.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§cコマンド実行中にエラーが発生しました"));
-                return true;
+                // グローバル無効化チェック
+                if (blockManager != null) {
+                    try {
+                        if (blockManager.matches(sender, this.getName())) {
+                            sender.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§cこのコマンドは無効化されています"));
+                            return true;
+                        }
+                    } catch (Exception ignored) {}
+                }
+
+                // コマンド実行
+                try {
+                    return command.execute(sender, args);
+                } catch (Exception e) {
+                    plugin.getLogger().warning("コマンド実行エラー: " + command.getName());
+                    e.printStackTrace();
+                    sender.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§cコマンド実行中にエラーが発生しました"));
+                    return true;
+                }
             }
-        }
 
         @Override
         public List<String> tabComplete(CommandSender sender, String alias, String[] args) {

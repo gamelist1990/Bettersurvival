@@ -14,9 +14,9 @@ repositories {
         name = "papermc-repo"
         url = "https://repo.papermc.io/repository/maven-public/"
     }
-    maven{
-        name = "Floodgate"
-        url = "https://repo.opencollab.dev/main/"
+    // Repository for Geyser artifacts (snapshots / community repo)
+    maven {
+        url 'https://repo.opencollab.dev/main/'
     }
 }
 
@@ -25,6 +25,7 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.10.1'
     compileOnly('org.geysermc.floodgate:api:2.2.4-SNAPSHOT')
     compileOnly('org.geysermc.cumulus:cumulus:1.0.18')
+    // Geyser API - used for Bedrock command registration if present at runtime
     compileOnly('org.geysermc.geyser:api:2.9.0-SNAPSHOT')
     paperweight.paperDevBundle("1.21.10-R0.1-SNAPSHOT")
 }
