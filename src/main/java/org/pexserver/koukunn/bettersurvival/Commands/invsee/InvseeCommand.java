@@ -80,7 +80,6 @@ public class InvseeCommand extends BaseCommand {
             return true;
         }
 
-        @SuppressWarnings("deprecation")
         OfflinePlayer offlineTarget = Bukkit.getOfflinePlayer(targetName);
         
         if (offlineTarget.hasPlayedBefore() || offlineTarget.isOnline()) {

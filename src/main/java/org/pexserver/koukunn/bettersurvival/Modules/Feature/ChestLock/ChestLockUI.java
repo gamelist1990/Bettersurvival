@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
@@ -118,7 +118,7 @@ public class ChestLockUI {
         ChestLockHolder holder = new ChestLockHolder(UIType.MAIN, lock, loc, store, shopStore);
         
         String name = (lock == null ? "(未ロック)" : lock.getName());
-        Inventory inv = Bukkit.createInventory(holder, 27, TITLE_PREFIX + name);
+        Inventory inv = ComponentUtils.createInventory(holder, 27, TITLE_PREFIX + name);
         holder.setInventory(inv);
         
         
@@ -144,7 +144,7 @@ public class ChestLockUI {
             ItemStack memberBtn = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta sm = (SkullMeta) memberBtn.getItemMeta();
             if (sm != null) {
-                sm.setDisplayName("§b§lメンバー管理");
+                ComponentUtils.setDisplayName(sm, "§b§lメンバー管理");
                 sm.setLore(Arrays.asList(
                     "§7メンバーの追加・削除を行います",
                     "§7現在のメンバー数: §f" + lock.getMembers().size() + "人"
@@ -179,14 +179,13 @@ public class ChestLockUI {
     
     // ========== メンバー管理画面 ==========
     
-    @SuppressWarnings("deprecation")
     public static void openMemberManageUI(Player p, ChestLock lock, Location loc,
                                           ChestLockStore store,
                                           org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore) {
         if (lock == null) return;
         
         ChestLockHolder holder = new ChestLockHolder(UIType.MEMBER_MANAGE, lock, loc, store, shopStore);
-        Inventory inv = Bukkit.createInventory(holder, 27, MEMBER_MANAGE_TITLE + " - " + lock.getName());
+        Inventory inv = ComponentUtils.createInventory(holder, 27, MEMBER_MANAGE_TITLE + " - " + lock.getName());
         holder.setInventory(inv);
         
         
@@ -245,7 +244,7 @@ public class ChestLockUI {
         size = Math.min(size, 54);
         
         ChestLockHolder holder = new ChestLockHolder(UIType.MEMBER_ADD, lock, loc, store, shopStore);
-        Inventory inv = Bukkit.createInventory(holder, size, MEMBER_ADD_TITLE + " - " + lock.getName());
+        Inventory inv = ComponentUtils.createInventory(holder, size, MEMBER_ADD_TITLE + " - " + lock.getName());
         holder.setInventory(inv);
         
         
@@ -258,7 +257,7 @@ public class ChestLockUI {
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
                 meta.setOwningPlayer(pl);
-                meta.setDisplayName("§a" + pl.getName());
+                ComponentUtils.setDisplayName(meta, "§a" + pl.getName());
                 double dist = pl.getLocation().distance(loc);
                 meta.setLore(Arrays.asList(
                     "§7クリックでメンバーに追加",
@@ -296,7 +295,7 @@ public class ChestLockUI {
         size = Math.min(size, 54);
         
         ChestLockHolder holder = new ChestLockHolder(UIType.MEMBER_REMOVE, lock, loc, store, shopStore);
-        Inventory inv = Bukkit.createInventory(holder, size, MEMBER_REMOVE_TITLE + " - " + lock.getName());
+        Inventory inv = ComponentUtils.createInventory(holder, size, MEMBER_REMOVE_TITLE + " - " + lock.getName());
         holder.setInventory(inv);
         
         
@@ -312,14 +311,14 @@ public class ChestLockUI {
                     OfflinePlayer op = Bukkit.getOfflinePlayer(UUID.fromString(memberUuid));
                     meta.setOwningPlayer(op);
                     String name = op.getName() != null ? op.getName() : memberUuid.substring(0, 8);
-                    meta.setDisplayName("§c" + name);
+                    ComponentUtils.setDisplayName(meta, "§c" + name);
                     meta.setLore(Arrays.asList(
                         "§7クリックでメンバーから削除",
                         op.isOnline() ? "§aオンライン" : "§7オフライン"
                     ));
                     head.setItemMeta(meta);
                 } catch (Exception e) {
-                    meta.setDisplayName("§c" + memberUuid.substring(0, 8));
+                    ComponentUtils.setDisplayName(meta, "§c" + memberUuid.substring(0, 8));
                     head.setItemMeta(meta);
                 }
             }
@@ -341,7 +340,6 @@ public class ChestLockUI {
     
     // ========== 保護済みチェスト一覧 ==========
     
-    @SuppressWarnings("deprecation")
     public static void openProtectedListUI(Player p, Location contextLoc,
                                            ChestLockStore store,
                                            org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore,
@@ -372,7 +370,7 @@ public class ChestLockUI {
         }
         holder.setListKeys(keys);
         
-        Inventory inv = Bukkit.createInventory(holder, 54, LIST_TITLE + " (" + (page + 1) + "/" + totalPages + ")");
+        Inventory inv = ComponentUtils.createInventory(holder, 54, LIST_TITLE + " (" + (page + 1) + "/" + totalPages + ")");
         holder.setInventory(inv);
         
         
@@ -425,9 +423,9 @@ public class ChestLockUI {
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(name);
+            ComponentUtils.setDisplayName(meta, name);
             if (lore.length > 0) {
-                meta.setLore(Arrays.asList(lore));
+                ComponentUtils.setLore(meta, Arrays.asList(lore));
             }
             item.setItemMeta(meta);
         }

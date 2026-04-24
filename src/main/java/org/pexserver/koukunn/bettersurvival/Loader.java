@@ -28,6 +28,7 @@ import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -89,6 +90,7 @@ public final class Loader extends JavaPlugin {
         tpaModule = new TpaModule(this);
         getServer().getPluginManager().registerEvents(tpaModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
+        InvseeOfflineData.initialize(this);
         getServer().getPluginManager().registerEvents(new InvseeListener(this), this);
         // FenceLeash module registration (allow placing a leash knot on fence by
         // right-clicking while holding a lead)

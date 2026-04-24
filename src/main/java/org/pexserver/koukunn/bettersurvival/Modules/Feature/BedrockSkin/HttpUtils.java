@@ -7,6 +7,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -27,7 +28,7 @@ public final class HttpUtils {
     public static HttpResponse post(String urlString, BufferedImage image) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(urlString);
+            URL url = URI.create(urlString).toURL();
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);

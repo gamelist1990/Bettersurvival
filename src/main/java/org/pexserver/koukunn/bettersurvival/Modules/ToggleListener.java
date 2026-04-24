@@ -6,6 +6,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.entity.Player;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 import java.util.Iterator;
@@ -21,9 +22,9 @@ public class ToggleListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent e) {
         Inventory inv = e.getInventory();
-        if (inv == null || e.getView() == null || e.getView().getTitle() == null) return;
+        if (inv == null || e.getView() == null || ComponentUtils.legacyText(e.getView().title()) == null) return;
 
-        String title = e.getView().getTitle();
+        String title = ComponentUtils.legacyText(e.getView().title());
         if (!title.startsWith(ToggleModule.TOGGLE_INVENTORY_TITLE)) return;
 
         e.setCancelled(true);

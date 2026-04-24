@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -14,6 +14,7 @@ import org.bukkit.Material;
 
 import java.util.*;
 
+@SuppressWarnings("deprecation")
 public class ChestShopUI {
 
     public static final String TITLE_PREFIX = "Shop UI - ";
@@ -63,9 +64,9 @@ public class ChestShopUI {
         boolean isOwner = shop != null && shop.getOwner() != null && shop.getOwner().equals(p.getUniqueId().toString());
         Inventory inv;
         if (isOwner)
-            inv = Bukkit.createInventory(null, 27, OWNER_TITLE_PREFIX + name);
+            inv = ComponentUtils.createInventory(null, 27, OWNER_TITLE_PREFIX + name);
         else
-            inv = Bukkit.createInventory(null, 27, TITLE_PREFIX + name);
+            inv = ComponentUtils.createInventory(null, 27, TITLE_PREFIX + name);
 
         // reserve slot 0 for owner UI control if owner; start heads at 1 for owner
         int slot = isOwner ? 1 : 0;
@@ -76,7 +77,7 @@ public class ChestShopUI {
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
                 meta.setOwningPlayer(pl);
-                meta.setDisplayName(pl.getName());
+                ComponentUtils.setDisplayName(meta, pl.getName());
                 head.setItemMeta(meta);
             }
             inv.setItem(slot++, head);
@@ -89,10 +90,10 @@ public class ChestShopUI {
             ItemStack edit = new ItemStack(Material.WRITABLE_BOOK);
             ItemMeta em = edit.getItemMeta();
             if (em != null) {
-                em.setDisplayName("§a編集ページを開く");
+                ComponentUtils.setDisplayName(em, "§a編集ページを開く");
                 List<String> lore = new ArrayList<>();
                 lore.add("クリックで出品アイテム編集画面を開きます");
-                em.setLore(lore);
+                ComponentUtils.setLore(em, lore);
                 edit.setItemMeta(em);
             }
             inv.setItem(0, edit);
@@ -109,7 +110,7 @@ public class ChestShopUI {
             ItemStack info = new ItemStack(Material.PAPER);
             ItemMeta im = info.getItemMeta();
             if (im != null) {
-                im.setDisplayName("§6在庫と売切れ表示");
+                ComponentUtils.setDisplayName(im, "§6在庫と売切れ表示");
                 // populate summary using store listings
                 Map<Integer, ShopListing> listings = store.getListings(loc);
                 int total = 0;
@@ -124,7 +125,7 @@ public class ChestShopUI {
                 List<String> lore = new ArrayList<>();
                 lore.add("総在庫: " + total);
                 lore.add("売切れ: " + (soldOut.isEmpty() ? "なし" : String.join(", ", soldOut)));
-                im.setLore(lore);
+                ComponentUtils.setLore(im, lore);
                 info.setItemMeta(im);
             }
             inv.setItem(19, info);
@@ -135,10 +136,10 @@ public class ChestShopUI {
                 ItemMeta em2 = earningsItem.getItemMeta();
                 if (em2 != null) {
                     String currencyName = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
-                    em2.setDisplayName("§6収益: " + shop.getEarnings() + " " + currencyName);
+                    ComponentUtils.setDisplayName(em2, "§6収益: " + shop.getEarnings() + " " + currencyName);
                     List<String> lore = new ArrayList<>();
                     lore.add("§aクリックで収益を回収");
-                    em2.setLore(lore);
+                    ComponentUtils.setLore(em2, lore);
                     earningsItem.setItemMeta(em2);
                 }
                 inv.setItem(15, earningsItem);
@@ -148,7 +149,7 @@ public class ChestShopUI {
             ItemStack barrier = new ItemStack(Material.BARRIER);
             ItemMeta bm = barrier.getItemMeta();
             if (bm != null) {
-                bm.setDisplayName("§c使用不可");
+                ComponentUtils.setDisplayName(bm, "§c使用不可");
                 barrier.setItemMeta(bm);
             }
             for (int i = 0; i < inv.getSize(); i++) {
@@ -168,7 +169,7 @@ public class ChestShopUI {
             ItemStack closeBtn = new ItemStack(Material.RED_STAINED_GLASS_PANE);
             ItemMeta m = closeBtn.getItemMeta();
             if (m != null) {
-                m.setDisplayName("§e閉じる");
+                ComponentUtils.setDisplayName(m, "§e閉じる");
                 closeBtn.setItemMeta(m);
             }
             inv.setItem(btnSlot, closeBtn);
@@ -218,7 +219,7 @@ public class ChestShopUI {
                     if (disp == null || disp.isEmpty())
                         disp = mat.name();
                     // displayName is already cleaned by setDisplayName()
-                    im2.setDisplayName(disp);
+                    ComponentUtils.setDisplayName(im2, disp);
                     List<String> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
                         lore2.add("§c通貨未設定 (販売不可)");
@@ -244,7 +245,7 @@ public class ChestShopUI {
                                 lore2.add(lines[j]);
                         }
                     }
-                    im2.setLore(lore2);
+                    ComponentUtils.setLore(im2, lore2);
                     it.setItemMeta(im2);
                 }
                 inv.setItem(i, it);
@@ -253,7 +254,7 @@ public class ChestShopUI {
             ItemStack barrierB = new ItemStack(Material.BARRIER);
             ItemMeta bmB = barrierB.getItemMeta();
             if (bmB != null) {
-                bmB.setDisplayName("§c使用不可");
+                ComponentUtils.setDisplayName(bmB, "§c使用不可");
                 barrierB.setItemMeta(bmB);
             }
             for (int i = 0; i < 26; i++) {
@@ -264,7 +265,7 @@ public class ChestShopUI {
             ItemStack help = new ItemStack(Material.BOOK);
             ItemMeta hm = help.getItemMeta();
             if (hm != null) {
-                hm.setDisplayName("§b購入方法");
+                ComponentUtils.setDisplayName(hm, "§b購入方法");
                 List<String> hl = new ArrayList<>();
                 hl.add("§e価格の仕組み");
                 hl.add("§f表示価格は §f1セット(個数分) §fの値段です");
@@ -275,7 +276,7 @@ public class ChestShopUI {
                 hl.add("§fクリックで1セット購入します");
                 hl.add("§f在庫がセット個数より少なくなると");
                 hl.add("§f品切れとなり購入できません");
-                hm.setLore(hl);
+                ComponentUtils.setLore(hm, hl);
                 help.setItemMeta(hm);
             }
             inv.setItem(26, help);
@@ -298,7 +299,6 @@ public class ChestShopUI {
         return displayNameForMaterial(matName);
     }
 
-    @SuppressWarnings("removal")
     public static String displayNameForMaterial(String matName) {
         if (matName == null || matName.isEmpty())
             return "未設定";
@@ -311,13 +311,11 @@ public class ChestShopUI {
             ItemStack probe = new ItemStack(m, 1);
             ItemMeta im = probe.getItemMeta();
             if (im != null) {
-                if (im.hasDisplayName())
-                    return im.getDisplayName();
-                try {
-                    String loc = im.getLocalizedName();
-                    if (loc != null && !loc.trim().isEmpty())
-                        return loc;
-                } catch (NoSuchMethodError | AbstractMethodError ignored) {
+                if (im.hasCustomName()) {
+                    String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                            .serialize(im.customName());
+                    if (name != null && !name.trim().isEmpty())
+                        return name;
                 }
             }
         } catch (Throwable ignored) {
@@ -409,7 +407,7 @@ public class ChestShopUI {
             return;
         // Check if owner UI is open
         InventoryView view = p.getOpenInventory();
-        if (view == null || view.getTitle() == null || !view.getTitle().startsWith(OWNER_TITLE_PREFIX))
+        if (view == null || ComponentUtils.legacyText(view.title()) == null || !ComponentUtils.legacyText(view.title()).startsWith(OWNER_TITLE_PREFIX))
             return;
         Inventory inv = view.getTopInventory();
         if (inv == null)
@@ -420,10 +418,10 @@ public class ChestShopUI {
         ItemMeta em = earningsItem.getItemMeta();
         if (em != null) {
             String currencyName = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
-            em.setDisplayName("§6収益: " + shop.getEarnings() + " " + currencyName);
+            ComponentUtils.setDisplayName(em, "§6収益: " + shop.getEarnings() + " " + currencyName);
             List<String> lore = new ArrayList<>();
             lore.add("§aクリックで収益を回収");
-            em.setLore(lore);
+            ComponentUtils.setLore(em, lore);
             earningsItem.setItemMeta(em);
         }
         inv.setItem(15, earningsItem);
@@ -432,7 +430,7 @@ public class ChestShopUI {
         ItemStack info = new ItemStack(Material.PAPER);
         ItemMeta im = info.getItemMeta();
         if (im != null) {
-            im.setDisplayName("§6在庫と売切れ表示");
+            ComponentUtils.setDisplayName(im, "§6在庫と売切れ表示");
             // populate summary using store listings
             Map<Integer, ShopListing> listings = store.getListings(loc);
             int total = 0;
@@ -447,7 +445,7 @@ public class ChestShopUI {
             List<String> lore = new ArrayList<>();
             lore.add("総在庫: " + total);
             lore.add("売切れ: " + (soldOut.isEmpty() ? "なし" : String.join(", ", soldOut)));
-            im.setLore(lore);
+            ComponentUtils.setLore(im, lore);
             info.setItemMeta(im);
         }
         inv.setItem(19, info);
@@ -463,7 +461,7 @@ public class ChestShopUI {
             return;
         // Check if buyer UI is open
         InventoryView view = p.getOpenInventory();
-        if (view == null || view.getTitle() == null || !view.getTitle().startsWith(TITLE_PREFIX))
+        if (view == null || ComponentUtils.legacyText(view.title()) == null || !ComponentUtils.legacyText(view.title()).startsWith(TITLE_PREFIX))
             return;
         Inventory inv = view.getTopInventory();
         if (inv == null)
@@ -479,7 +477,7 @@ public class ChestShopUI {
                     ItemStack barrier = new ItemStack(Material.BARRIER);
                     ItemMeta bm = barrier.getItemMeta();
                     if (bm != null) {
-                        bm.setDisplayName("§c使用不可");
+                        ComponentUtils.setDisplayName(bm, "§c使用不可");
                         barrier.setItemMeta(bm);
                     }
                     inv.setItem(i, barrier);
@@ -522,7 +520,7 @@ public class ChestShopUI {
                 String disp = sl.getDisplayName();
                 if (disp == null || disp.isEmpty())
                     disp = mat.name();
-                im.setDisplayName(disp);
+                ComponentUtils.setDisplayName(im, disp);
                 List<String> lore = new ArrayList<>();
                 if (shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
                     lore.add("§c通貨未設定 (販売不可)");
@@ -547,7 +545,7 @@ public class ChestShopUI {
                             lore.add(lines[j]);
                     }
                 }
-                im.setLore(lore);
+                ComponentUtils.setLore(im, lore);
                 it.setItemMeta(im);
             }
             inv.setItem(i, it);

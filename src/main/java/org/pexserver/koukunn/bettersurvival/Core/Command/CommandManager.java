@@ -7,7 +7,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.Plugin;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
-import java.lang.reflect.Field;
 import java.util.*;
 
 /**
@@ -35,14 +34,7 @@ public class CommandManager {
      * @return CommandMap インスタンス
      */
     private CommandMap getCommandMap() {
-        try {
-            Field field = Bukkit.getServer().getClass().getDeclaredField("commandMap");
-            field.setAccessible(true);
-            return (CommandMap) field.get(Bukkit.getServer());
-        } catch (Exception e) {
-            plugin.getLogger().warning("CommandMap の取得に失敗しました: " + e.getMessage());
-            return null;
-        }
+        return Bukkit.getCommandMap();
     }
 
     /**

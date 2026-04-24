@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Commands.rename;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -62,7 +62,7 @@ public class RenameCommand extends BaseCommand {
             return true;
         }
 
-        meta.setDisplayName(name);
+        ComponentUtils.setDisplayName(meta, name);
         item.setItemMeta(meta);
 
         sendSuccess(sender, "手持ちのアイテム名を変更しました: " + name.replace("\n", "/n"));

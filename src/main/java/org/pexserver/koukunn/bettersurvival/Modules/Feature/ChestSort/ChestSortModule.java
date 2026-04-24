@@ -12,42 +12,29 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
 
-import java.lang.reflect.Method;
 import java.util.*;
-import org.bukkit.inventory.CreativeCategory;
 
 /**
  * ChestSort: スニークしながら木の棒でチェスト等を右クリックすると整理します。
  */
+@SuppressWarnings("deprecation")
 public class ChestSortModule implements Listener {
 
     private final ToggleModule toggle;
     private final ChestLockModule chestLock;
     private final ChestShopModule chestShop;
-    private static final Method GET_CREATIVE_CATEGORY_METHOD;
 
     public ChestSortModule(ToggleModule toggle, ChestLockModule chestLock, ChestShopModule chestShop) {
         this.toggle = toggle;
         this.chestLock = chestLock;
         this.chestShop = chestShop;
-    }
-
-    static {
-        Method f = null;
-        try {
-            f = Material.class.getMethod("getCreativeCategory");
-        } catch (NoSuchMethodException ignored) {
-            try {
-                // some versions may name the getter differently
-                f = Material.class.getMethod("creativeCategory");
-            } catch (NoSuchMethodException ignored2) {
-            }
-        }
-        GET_CREATIVE_CATEGORY_METHOD = f;
     }
 
     @EventHandler
@@ -110,11 +97,6 @@ public class ChestSortModule implements Listener {
         }
 
         e.setCancelled(true);
-        List<ItemStack> before = new ArrayList<>();
-        for (ItemStack it : inv.getContents()) {
-            before.add(it);
-        }
-
         sortInventory(inv);
 
         p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5f, 1.2f);
@@ -130,16 +112,12 @@ public class ChestSortModule implements Listener {
             items.add(it.clone());
         }
 
-        // ソート: カテゴリ (ブロック系 > アイテム系 > 装備系 > ツール系 > 食べ物系) → CreativeCategory → マテリアル名 → カスタム名 → 耐久 → エンチャント量
+        // ソート: カテゴリ (ブロック系 > アイテム系 > 装備系 > ツール系 > 食べ物系) → マテリアル名 → カスタム名 → 耐久 → エンチャント量
         Comparator<ItemStack> cmp = (a, b) -> {
             int priA = determineCategoryPriority(a.getType());
             int priB = determineCategoryPriority(b.getType());
             int pr = Integer.compare(priA, priB);
             if (pr != 0) return pr;
-            int ca = creativeCategoryOrdinal(a.getType());
-            int cb = creativeCategoryOrdinal(b.getType());
-            int rCat = Integer.compare(ca, cb);
-            if (rCat != 0) return rCat;
             int r = a.getType().name().compareTo(b.getType().name());
             if (r != 0) return r;
             String aname = (a.hasItemMeta() && a.getItemMeta().hasDisplayName()) ? a.getItemMeta().getDisplayName() : null;
@@ -150,7 +128,7 @@ public class ChestSortModule implements Listener {
                 r = aname.compareTo(bname);
                 if (r != 0) return r;
             }
-            r = Short.compare(a.getDurability(), b.getDurability());
+            r = Integer.compare(damage(a), damage(b));
             if (r != 0) return r;
             int ae = a.getEnchantments().size();
             int be = b.getEnchantments().size();
@@ -190,78 +168,20 @@ public class ChestSortModule implements Listener {
         }
     }
 
-    private static int creativeCategoryOrdinal(Material m) {
-        if (m == null) return Integer.MAX_VALUE / 2;
-        if (GET_CREATIVE_CATEGORY_METHOD == null) return Integer.MAX_VALUE / 2;
-        try {
-            Object cat = GET_CREATIVE_CATEGORY_METHOD.invoke(m);
-            if (cat instanceof CreativeCategory) return ((CreativeCategory) cat).ordinal();
-            if (cat != null) {
-                try {
-                    CreativeCategory parsed = CreativeCategory.valueOf(cat.toString());
-                    return parsed.ordinal();
-                } catch (Exception ignored) {
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return Integer.MAX_VALUE / 2;
-    }
-
     private static int determineCategoryPriority(Material m) {
         if (m == null) return Integer.MAX_VALUE / 2;
-        // Category priorities: 0=Block, 1=Item, 2=Equipment, 3=Tool, 4=Food, 5=Other
-        try {
-            // Use CreativeCategory enum when available
-            if (GET_CREATIVE_CATEGORY_METHOD != null) {
-                Object cat = GET_CREATIVE_CATEGORY_METHOD.invoke(m);
-                if (cat instanceof CreativeCategory) {
-                    CreativeCategory c = (CreativeCategory) cat;
-                    switch (c) {
-                        case BUILDING_BLOCKS:
-                            return 0; // block
-                        case DECORATIONS:
-                        case REDSTONE:
-                        case TRANSPORTATION:
-                        case MISC:
-                        case BREWING:
-                            return 1; // item
-                        case COMBAT:
-                            return 2; // equipment
-                        case TOOLS:
-                            return 3; // tool
-                        case FOOD:
-                            return 4; // food
-                        default:
-                            break;
-                    }
-                } else if (cat != null) {
-                    // fallback: try to parse the enum name from unknown return type
-                    try {
-                        CreativeCategory c2 = CreativeCategory.valueOf(cat.toString());
-                        switch (c2) {
-                            case BUILDING_BLOCKS:
-                                return 0;
-                            case DECORATIONS:
-                            case REDSTONE:
-                            case TRANSPORTATION:
-                            case MISC:
-                            case BREWING:
-                                return 1;
-                            case COMBAT:
-                                return 2;
-                            case TOOLS:
-                                return 3;
-                            case FOOD:
-                                return 4;
-                            default:
-                                break;
-                        }
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-        } catch (Exception ignored) {
+        if (m.isBlock()) return 0;
+        if (m.isEdible()) return 4;
+
+        EquipmentSlot slot = m.getEquipmentSlot();
+        if (slot == EquipmentSlot.HEAD || slot == EquipmentSlot.CHEST || slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET) {
+            return 2;
+        }
+
+        String name = m.name();
+        if (name.endsWith("_SWORD") || name.endsWith("_AXE") || name.endsWith("_PICKAXE") || name.endsWith("_SHOVEL") || name.endsWith("_HOE")
+                || name.equals("BOW") || name.equals("CROSSBOW") || name.equals("TRIDENT") || name.equals("SHEARS") || name.equals("FISHING_ROD")) {
+            return 3;
         }
         return 1;
     }
@@ -269,7 +189,7 @@ public class ChestSortModule implements Listener {
     private boolean canMerge(ItemStack a, ItemStack b) {
         if (a == null || b == null) return false;
         if (a.getType() != b.getType()) return false;
-        if (a.getDurability() != b.getDurability()) return false;
+        if (damage(a) != damage(b)) return false;
         if (a.getEnchantments().size() != b.getEnchantments().size()) return false;
         if (a.hasItemMeta() && b.hasItemMeta()) {
             if (a.getItemMeta().hasDisplayName() || b.getItemMeta().hasDisplayName()) {
@@ -280,5 +200,14 @@ public class ChestSortModule implements Listener {
         }
         if (!a.getEnchantments().equals(b.getEnchantments())) return false;
         return true;
+    }
+
+    private static int damage(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return 0;
+        ItemMeta meta = item.getItemMeta();
+        if (meta instanceof Damageable) {
+            return ((Damageable) meta).getDamage();
+        }
+        return 0;
     }
 }

@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
@@ -90,7 +90,7 @@ public class TpaUI {
         size = Math.min(size, 54);
 
         TpaHolder holder = new TpaHolder(UIType.MAIN, module, requests, null);
-        Inventory inv = Bukkit.createInventory(holder, size, TITLE_MAIN);
+        Inventory inv = ComponentUtils.createInventory(holder, size, TITLE_MAIN);
         holder.setInventory(inv);
 
         // ガラス装飾
@@ -113,7 +113,7 @@ public class TpaUI {
                         OfflinePlayer sender = Bukkit.getOfflinePlayer(UUID.fromString(req.getSenderUuid()));
                         meta.setOwningPlayer(sender);
                     } catch (Exception ignored) {}
-                    meta.setDisplayName("§a" + req.getSenderName());
+                    ComponentUtils.setDisplayName(meta, "§a" + req.getSenderName());
                     meta.setLore(Arrays.asList(
                         "§7残り時間: §f" + req.getRemainingSeconds() + "秒",
                         "",
@@ -157,7 +157,7 @@ public class TpaUI {
         size = Math.min(size, 54);
 
         TpaHolder holder = new TpaHolder(UIType.SEND_SELECT, module, null, candidates);
-        Inventory inv = Bukkit.createInventory(holder, size, TITLE_SEND);
+        Inventory inv = ComponentUtils.createInventory(holder, size, TITLE_SEND);
         holder.setInventory(inv);
 
         if (candidates.isEmpty()) {
@@ -175,7 +175,7 @@ public class TpaUI {
                 SkullMeta meta = (SkullMeta) head.getItemMeta();
                 if (meta != null) {
                     meta.setOwningPlayer(pl);
-                    meta.setDisplayName("§a" + pl.getName());
+                    ComponentUtils.setDisplayName(meta, "§a" + pl.getName());
                     
                     // TPA受信が無効かどうかをチェック
                     boolean canReceive = module.canReceiveTpa(pl);
@@ -184,7 +184,7 @@ public class TpaUI {
                             "§7クリックでTPAリクエストを送信"
                         ));
                     } else {
-                        meta.setDisplayName("§7" + pl.getName());
+                        ComponentUtils.setDisplayName(meta, "§7" + pl.getName());
                         meta.setLore(Arrays.asList(
                             "§cこのプレイヤーはTPA受信を無効にしています"
                         ));
@@ -292,9 +292,9 @@ public class TpaUI {
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(name);
+            ComponentUtils.setDisplayName(meta, name);
             if (lore.length > 0) {
-                meta.setLore(Arrays.asList(lore));
+                ComponentUtils.setLore(meta, Arrays.asList(lore));
             }
             item.setItemMeta(meta);
         }

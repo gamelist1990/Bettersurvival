@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
@@ -28,6 +28,7 @@ import java.util.*;
  * - アイテムの取得・入れ替え対応
  * - オフラインプレイヤー対応
  */
+@SuppressWarnings("deprecation")
 public class InvseeUI {
 
     public static final String TITLE_PLAYER_SELECT = "§8InvSee - プレイヤー選択";
@@ -96,7 +97,6 @@ public class InvseeUI {
 
     // ========== プレイヤー選択画面 ==========
 
-    @SuppressWarnings("deprecation")
     public static void openPlayerSelectUI(Player viewer, Loader plugin, int page) {
         // Bedrockプレイヤーの場合は専用フォームを開く
         if (FloodgateUtil.isBedrock(viewer)) {
@@ -138,7 +138,7 @@ public class InvseeUI {
         holder.setPage(page);
         holder.setPlayerList(allPlayers);
 
-        Inventory inv = Bukkit.createInventory(holder, 54, TITLE_PLAYER_SELECT + " (" + (page + 1) + "/" + totalPages + ")");
+        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_PLAYER_SELECT + " (" + (page + 1) + "/" + totalPages + ")");
         holder.setInventory(inv);
 
         // プレイヤーヘッド配置
@@ -154,7 +154,7 @@ public class InvseeUI {
                 meta.setOwningPlayer(target);
                 String name = target.getName() != null ? target.getName() : "Unknown";
                 boolean isOnline = target.isOnline();
-                meta.setDisplayName((isOnline ? "§a" : "§7") + name);
+                ComponentUtils.setDisplayName(meta, (isOnline ? "§a" : "§7") + name);
                 
                 List<String> lore = new ArrayList<>();
                 lore.add(isOnline ? "§a● オンライン" : "§7● オフライン");
@@ -166,7 +166,7 @@ public class InvseeUI {
                 }
                 lore.add("");
                 lore.add("§eクリックでインベントリを表示");
-                meta.setLore(lore);
+                ComponentUtils.setLore(meta, lore);
                 head.setItemMeta(meta);
             }
             inv.setItem(slot++, head);
@@ -213,7 +213,7 @@ public class InvseeUI {
         String targetName = target.getName() != null ? target.getName() : "Unknown";
         String statusPrefix = isOnline ? "§a" : "§7";
         
-        Inventory inv = Bukkit.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName);
+        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName);
         holder.setInventory(inv);
 
         // インベントリ内容を取得（オンラインならリアルタイム、オフラインならファイルから）
@@ -261,11 +261,11 @@ public class InvseeUI {
         SkullMeta infoMeta = (SkullMeta) infoHead.getItemMeta();
         if (infoMeta != null) {
             infoMeta.setOwningPlayer(target);
-            infoMeta.setDisplayName(statusPrefix + "§l" + targetName);
+            ComponentUtils.setDisplayName(infoMeta, statusPrefix + "§l" + targetName);
             List<String> lore = new ArrayList<>();
             lore.add(isOnline ? "§a● オンライン" : "§7● オフライン");
             lore.add("§7UUID: §f" + target.getUniqueId().toString().substring(0, 8) + "...");
-            infoMeta.setLore(lore);
+            ComponentUtils.setLore(infoMeta, lore);
             infoHead.setItemMeta(infoMeta);
         }
         inv.setItem(49, infoHead);
@@ -289,7 +289,7 @@ public class InvseeUI {
         boolean isOnline = target.isOnline();
         String statusPrefix = isOnline ? "§a" : "§7";
         
-        Inventory inv = Bukkit.createInventory(holder, 27, TITLE_EQUIPMENT + statusPrefix + targetName);
+        Inventory inv = ComponentUtils.createInventory(holder, 27, TITLE_EQUIPMENT + statusPrefix + targetName);
         holder.setInventory(inv);
 
         // 背景
@@ -341,7 +341,7 @@ public class InvseeUI {
         String targetName = target.getName() != null ? target.getName() : "Unknown";
         String statusPrefix = "§7";
         
-        Inventory inv = Bukkit.createInventory(holder, 36, TITLE_ENDERCHEST + statusPrefix + targetName);
+        Inventory inv = ComponentUtils.createInventory(holder, 36, TITLE_ENDERCHEST + statusPrefix + targetName);
         holder.setInventory(inv);
 
         // エンダーチェストの内容を取得
@@ -579,7 +579,7 @@ public class InvseeUI {
         boolean isOnline = target.isOnline();
         String statusPrefix = isOnline ? "§a" : "§7";
         
-        Inventory inv = Bukkit.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName);
+        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName);
         holder.setInventory(inv);
 
         ItemStack[] contents = getPlayerInventoryContents(target);
@@ -621,9 +621,9 @@ public class InvseeUI {
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(name);
+            ComponentUtils.setDisplayName(meta, name);
             if (lore.length > 0) {
-                meta.setLore(Arrays.asList(lore));
+                ComponentUtils.setLore(meta, Arrays.asList(lore));
             }
             item.setItemMeta(meta);
         }

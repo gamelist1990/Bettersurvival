@@ -8,10 +8,8 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import java.util.*;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
-import org.bukkit.command.CommandMap;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.help.HelpTopic;
-import java.lang.reflect.Field;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -113,13 +111,7 @@ public class CommandBlockManager {
         // Special handling: if pattern equals "Vanilla*", add all server (non-plugin) commands
         if (pattern.equalsIgnoreCase("Vanilla*") || pattern.equalsIgnoreCase("vanilla*")) {
             try {
-                // get CommandMap and known commands
-                Field field = Bukkit.getServer().getClass().getDeclaredField("commandMap");
-                field.setAccessible(true);
-                CommandMap commandMap = (CommandMap) field.get(Bukkit.getServer());
-                Field knownField = commandMap.getClass().getDeclaredField("knownCommands");
-                knownField.setAccessible(true);
-                Map<String, Command> known = (Map<String, Command>) knownField.get(commandMap);
+                Map<String, Command> known = Bukkit.getCommandMap().getKnownCommands();
                 for (Map.Entry<String, Command> e : known.entrySet()) {
                     if (e.getValue() instanceof PluginCommand) continue; // skip plugin commands
                     String name = e.getKey();
@@ -146,13 +138,7 @@ public class CommandBlockManager {
     public synchronized boolean addPlugin(String pluginName, PermissionLevel level) {
         try {
             // プラグイン名でコマンドを検索
-            Field field = Bukkit.getServer().getClass().getDeclaredField("commandMap");
-            field.setAccessible(true);
-            CommandMap commandMap = (CommandMap) field.get(Bukkit.getServer());
-            Field knownField = commandMap.getClass().getDeclaredField("knownCommands");
-            knownField.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            Map<String, Command> known = (Map<String, Command>) knownField.get(commandMap);
+            Map<String, Command> known = Bukkit.getCommandMap().getKnownCommands();
 
             int count = 0;
             for (Map.Entry<String, Command> e : known.entrySet()) {

@@ -1,14 +1,12 @@
 package org.pexserver.koukunn.bettersurvival.Core.Command;
 
 import org.bukkit.Bukkit;
-import org.bukkit.command.CommandMap;
 import org.bukkit.help.HelpTopic;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.TabCompleteEvent;
 import org.bukkit.plugin.Plugin;
 
-import java.lang.reflect.Field;
 import java.util.*;
 
 /**
@@ -19,25 +17,9 @@ import java.util.*;
 public class GlobalCommandFilter implements Listener {
 
     private final Plugin plugin;
-    private final CommandMap commandMap;
 
     public GlobalCommandFilter(Plugin plugin, CommandBlockManager blockManager) {
         this.plugin = plugin;
-        this.commandMap = getCommandMap();
-    }
-
-    /**
-     * Bukkit の CommandMap を取得
-     */
-    private CommandMap getCommandMap() {
-        try {
-            Field field = Bukkit.getServer().getClass().getDeclaredField("commandMap");
-            field.setAccessible(true);
-            return (CommandMap) field.get(Bukkit.getServer());
-        } catch (Exception e) {
-            plugin.getLogger().warning("CommandMap の取得に失敗しました: " + e.getMessage());
-            return null;
-        }
     }
 
     /**
@@ -46,11 +28,6 @@ public class GlobalCommandFilter implements Listener {
      * HelpMap から実際に登録されているコマンドを取得
      */
     public void applyGlobalFilter() {
-        if (commandMap == null) {
-            plugin.getLogger().warning("[applyGlobalFilter] CommandMap is null");
-            return;
-        }
-
         // 初回試行：HelpMap がまだ初期化されていない可能性があるため、100 ms 後にリトライ
         plugin.getServer().getScheduler().scheduleSyncDelayedTask(plugin, () -> {
             applyGlobalFilterInternal(0);

@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.List;
 import java.util.ArrayList;
 
+@SuppressWarnings("unchecked")
 public class ChestLockStore {
 
     private final ConfigManager cfg;

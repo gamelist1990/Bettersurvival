@@ -1,6 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules;
-
-import org.bukkit.Bukkit;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
@@ -83,14 +82,14 @@ public class ToggleModule implements Listener {
         List<ToggleFeature> list = new ArrayList<>(getVisibleFeatures(adminMode));
         int size = 9 * ((list.size() + 8) / 9);
         if (size == 0) size = 9;
-        Inventory inv = Bukkit.createInventory(null, size, adminMode ? TOGGLE_INVENTORY_TITLE + " (OP)" : TOGGLE_INVENTORY_TITLE);
+        Inventory inv = ComponentUtils.createInventory(null, size, adminMode ? TOGGLE_INVENTORY_TITLE + " (OP)" : TOGGLE_INVENTORY_TITLE);
 
         int slot = 0;
         for (ToggleFeature f : list) {
             ItemStack item = new ItemStack(f.getIcon());
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
-                meta.setDisplayName(f.getDisplayName());
+                ComponentUtils.setDisplayName(meta, f.getDisplayName());
                 List<String> lore = new ArrayList<>();
                 String desc = getFeatureDescription(f.getKey());
                 if (desc != null && !desc.isEmpty()) lore.add(desc);
@@ -101,7 +100,7 @@ public class ToggleModule implements Listener {
                 } else {
                     lore.add((enabled ? "§a状態: 有効" : "§c状態: 無効"));
                 }
-                meta.setLore(lore);
+                ComponentUtils.setLore(meta, lore);
                 item.setItemMeta(meta);
             }
 

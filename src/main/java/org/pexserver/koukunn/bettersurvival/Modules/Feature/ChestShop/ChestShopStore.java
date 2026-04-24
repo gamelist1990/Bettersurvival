@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.List;
 
+@SuppressWarnings("unchecked")
 public class ChestShopStore {
 
     private final ConfigManager cfg;
@@ -57,7 +58,6 @@ public class ChestShopStore {
         return Optional.empty();
     }
 
-    @SuppressWarnings("unchecked")
     public Map<Integer, ShopListing> getListings(Location loc) {
         PEXConfig pc = cfg.loadConfig(path).orElseGet(PEXConfig::new);
         String canonical = keyFor(loc);

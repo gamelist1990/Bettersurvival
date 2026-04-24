@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -317,7 +317,7 @@ public class ChestLockModule implements Listener {
         if (clicked == null || !clicked.hasItemMeta()) return;
         ItemMeta m = clicked.getItemMeta();
         if (m == null || !m.hasDisplayName()) return;
-        String d = m.getDisplayName();
+        String d = ComponentUtils.getDisplayName(m);
         
         // ロックする
         if (d.contains("ロックする")) {
@@ -381,7 +381,7 @@ public class ChestLockModule implements Listener {
         if (clicked == null || !clicked.hasItemMeta()) return;
         ItemMeta m = clicked.getItemMeta();
         if (m == null || !m.hasDisplayName()) return;
-        String d = m.getDisplayName();
+        String d = ComponentUtils.getDisplayName(m);
         
         // メンバー追加
         if (d.contains("メンバー追加")) {
@@ -409,7 +409,7 @@ public class ChestLockModule implements Listener {
         if (clicked == null || !clicked.hasItemMeta()) return;
         ItemMeta m = clicked.getItemMeta();
         if (m == null || !m.hasDisplayName()) return;
-        String d = m.getDisplayName();
+        String d = ComponentUtils.getDisplayName(m);
         
         // 戻る
         if (d.contains("戻る")) {
@@ -441,7 +441,7 @@ public class ChestLockModule implements Listener {
         if (clicked == null || !clicked.hasItemMeta()) return;
         ItemMeta m = clicked.getItemMeta();
         if (m == null || !m.hasDisplayName()) return;
-        String d = m.getDisplayName();
+        String d = ComponentUtils.getDisplayName(m);
         
         // 戻る
         if (d.contains("戻る")) {
@@ -473,7 +473,7 @@ public class ChestLockModule implements Listener {
         if (clicked == null || !clicked.hasItemMeta()) return;
         ItemMeta m = clicked.getItemMeta();
         if (m == null || !m.hasDisplayName()) return;
-        String d = m.getDisplayName();
+        String d = ComponentUtils.getDisplayName(m);
         
         Location contextLoc = holder.getChestLocation();
         int page = holder.getPage();

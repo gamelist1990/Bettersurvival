@@ -4,6 +4,8 @@
 [![Java](https://img.shields.io/badge/Java-17+-blue.svg)](https://www.oracle.com/java/)
 [![Gradle](https://img.shields.io/badge/Gradle-8.x-green.svg)](https://gradle.org/)
 
+🔗 GitHub Pages: HTML ベースの開発ガイドを `docs/` に追加しました。ローカルでは `docs/index.html` をブラウザで開いて確認できます（リポジトリ設定で Pages を有効にしてください）。
+
 Minecraft サーバー（Paper/Spigot）向けの機能拡張プラグイン。サーバー運営を支援する様々な機能を備えています。
 
 ## 目次

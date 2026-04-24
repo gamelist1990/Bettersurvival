@@ -1,5 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa;
-
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -243,9 +243,9 @@ public class TpaModule implements Listener {
         // プレイヤーヘッド（リクエスト）
         if (clicked.getType() == Material.PLAYER_HEAD) {
             SkullMeta meta = (SkullMeta) clicked.getItemMeta();
-            if (meta == null || meta.getDisplayName() == null) return;
+            if (meta == null || ComponentUtils.getDisplayName(meta) == null) return;
             
-            String displayName = meta.getDisplayName();
+            String displayName = ComponentUtils.getDisplayName(meta);
             // §a で始まるプレイヤー名を取得
             if (displayName.startsWith("§a")) {
                 String senderName = displayName.substring(2);
@@ -272,9 +272,9 @@ public class TpaModule implements Listener {
         // プレイヤーヘッド
         if (clicked.getType() == Material.PLAYER_HEAD) {
             SkullMeta meta = (SkullMeta) clicked.getItemMeta();
-            if (meta == null || meta.getDisplayName() == null) return;
+            if (meta == null || ComponentUtils.getDisplayName(meta) == null) return;
 
-            String displayName = meta.getDisplayName();
+            String displayName = ComponentUtils.getDisplayName(meta);
             // §a で始まる（受信可能）プレイヤー名のみ処理
             if (displayName.startsWith("§a")) {
                 String targetName = displayName.substring(2);
