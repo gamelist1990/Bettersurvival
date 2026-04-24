@@ -45,22 +45,34 @@ public class ToggleCommand extends BaseCommand {
         Player player = (Player) sender;
 
         boolean adminMode = false;
-        if (args.length > 0 && "op".equalsIgnoreCase(args[0])) {
+        boolean defaultMode = false;
+        if (args.length > 0 && ("op".equalsIgnoreCase(args[0]) || "normal".equalsIgnoreCase(args[0]))) {
             if (!player.isOp()) {
                 sendError(sender, "管理者権限が必要です");
                 return true;
             }
-            adminMode = true;
+            if ("op".equalsIgnoreCase(args[0])) {
+                adminMode = true;
+            } else {
+                defaultMode = true;
+            }
         }
 
-        plugin.getToggleModule().openToggleUI(player, adminMode);
+        if (defaultMode) {
+            plugin.getToggleModule().openDefaultToggleUI(player);
+        } else {
+            plugin.getToggleModule().openToggleUI(player, adminMode);
+        }
         return true;
     }
 
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         List<String> list = new ArrayList<>();
-        if (args.length == 1) list.add("op");
+        if (args.length == 1) {
+            list.add("op");
+            list.add("normal");
+        }
         return list;
     }
 }

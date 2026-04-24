@@ -37,13 +37,26 @@ public class ToggleListener implements Listener {
         // map slot -> feature
         int slot = e.getRawSlot();
         int index = 0;
-        boolean adminMode = title.contains("(OP)");
+        boolean defaultMode = title.contains(ToggleModule.DEFAULT_MODE_SUFFIX);
+        boolean adminMode = title.contains("(OP)") || defaultMode;
         Iterator<ToggleFeature> it = module.getVisibleFeatures(adminMode).iterator();
         while (it.hasNext()) {
             ToggleFeature f = it.next();
             if (index == slot) {
                 String display = f.getDisplayName();
-                if (adminMode) {
+                if (defaultMode) {
+                    if (!clicker.isOp()) {
+                        clicker.sendMessage("§c管理者権限が必要です");
+                        return;
+                    }
+                    if (!f.isUserToggleAllowed()) {
+                        clicker.sendMessage("§cこの機能は個別切替対象ではないためデフォルト設定を変更できません");
+                        return;
+                    }
+                    boolean current = module.getDefault(f.getKey());
+                    module.setDefault(f.getKey(), !current);
+                    clicker.sendMessage((!current ? "§a『" + display + "』のデフォルトを有効にしました" : "§c『" + display + "』のデフォルトを無効にしました"));
+                } else if (adminMode) {
                     boolean current = module.getGlobal(f.getKey());
                     module.setGlobal(f.getKey(), !current);
                     clicker.sendMessage((!current ? "§a『" + display + "』のグローバルを有効にしました" : "§c『" + display + "』のグローバルを無効にしました"));
@@ -63,7 +76,11 @@ public class ToggleListener implements Listener {
                 }
                 // close & reopen to refresh
                 clicker.closeInventory();
-                module.openToggleUI(clicker, adminMode);
+                if (defaultMode) {
+                    module.openDefaultToggleUI(clicker);
+                } else {
+                    module.openToggleUI(clicker, adminMode);
+                }
                 return;
             }
             index++;

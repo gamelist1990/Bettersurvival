@@ -18,6 +18,7 @@ import java.util.*;
 public class ToggleModule implements Listener {
 
     public static final String TOGGLE_INVENTORY_TITLE = "Toggle Features";
+    public static final String DEFAULT_MODE_SUFFIX = " (Normal)";
 
     private final ConfigManager configManager;
 
@@ -79,10 +80,19 @@ public class ToggleModule implements Listener {
     }
 
     public void openToggleUI(Player player, boolean adminMode) {
+        openToggleUI(player, adminMode, false);
+    }
+
+    public void openDefaultToggleUI(Player player) {
+        openToggleUI(player, true, true);
+    }
+
+    private void openToggleUI(Player player, boolean adminMode, boolean defaultMode) {
         List<ToggleFeature> list = new ArrayList<>(getVisibleFeatures(adminMode));
         int size = 9 * ((list.size() + 8) / 9);
         if (size == 0) size = 9;
-        Inventory inv = ComponentUtils.createInventory(null, size, adminMode ? TOGGLE_INVENTORY_TITLE + " (OP)" : TOGGLE_INVENTORY_TITLE);
+        String title = defaultMode ? TOGGLE_INVENTORY_TITLE + DEFAULT_MODE_SUFFIX : adminMode ? TOGGLE_INVENTORY_TITLE + " (OP)" : TOGGLE_INVENTORY_TITLE;
+        Inventory inv = ComponentUtils.createInventory(null, size, title);
 
         int slot = 0;
         for (ToggleFeature f : list) {
@@ -94,7 +104,10 @@ public class ToggleModule implements Listener {
                 String desc = getFeatureDescription(f.getKey());
                 if (desc != null && !desc.isEmpty()) lore.add(desc);
                 boolean enabled = isEnabledFor(player.getUniqueId().toString(), f.getKey());
-                if (adminMode) {
+                if (defaultMode) {
+                    boolean defaultEnabled = getDefault(f.getKey());
+                    lore.add((defaultEnabled ? "§aデフォルト: 有効" : "§cデフォルト: 無効"));
+                } else if (adminMode) {
                     boolean global = getGlobal(f.getKey());
                     lore.add((global ? "§aグローバル: 有効" : "§cグローバル: 無効"));
                 } else {
@@ -118,16 +131,21 @@ public class ToggleModule implements Listener {
         return "toggles/global.json";
     }
 
+    private String getDefaultConfigPath() {
+        return "toggles/default.json";
+    }
+
     public boolean isEnabledFor(String uuid, String featureKey) {
         ToggleFeature f = features.get(featureKey);
-        // If feature does not allow per-user toggle, follow global
         if (f != null && !f.isUserToggleAllowed()) {
             return getGlobal(featureKey);
         }
         Optional<PEXConfig> cfg = configManager.loadConfig(getUserConfigPath(uuid));
-        if (!cfg.isPresent()) return false;
-        Object obj = cfg.get().get(featureKey);
-        return obj instanceof Boolean && (Boolean) obj;
+        if (cfg.isPresent()) {
+            Object obj = cfg.get().get(featureKey);
+            if (obj instanceof Boolean) return (Boolean) obj;
+        }
+        return getDefault(featureKey);
     }
 
     public boolean setEnabledFor(String uuid, String featureKey, boolean value) {
@@ -153,6 +171,18 @@ public class ToggleModule implements Listener {
         PEXConfig cfg = configManager.loadConfig(getGlobalConfigPath()).orElseGet(PEXConfig::new);
         cfg.put(key, value);
         return configManager.saveConfig(getGlobalConfigPath(), cfg);
+    }
+
+    public boolean getDefault(String key) {
+        PEXConfig cfg = configManager.loadConfig(getDefaultConfigPath()).orElseGet(PEXConfig::new);
+        Object v = cfg.get(key);
+        return v instanceof Boolean && (Boolean) v;
+    }
+
+    public boolean setDefault(String key, boolean value) {
+        PEXConfig cfg = configManager.loadConfig(getDefaultConfigPath()).orElseGet(PEXConfig::new);
+        cfg.put(key, value);
+        return configManager.saveConfig(getDefaultConfigPath(), cfg);
     }
 
     public static class ToggleFeature {
