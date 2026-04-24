@@ -112,10 +112,7 @@ public class AutoPlantModule implements Listener {
         if (!toggle.getGlobal("autoplant")) return;
         if (!toggle.isEnabledFor(player.getUniqueId().toString(), "autoplant")) return;
 
-        ItemStack off = player.getInventory().getItemInOffHand();
-        if (off == null) return;
-        Material mat = off.getType();
-        if (!seedToCrop.containsKey(mat)) return;
+        if (getOffHandSeed(player) == null) return;
 
 
 
@@ -123,64 +120,69 @@ public class AutoPlantModule implements Listener {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 Block b = center.getRelative(dx, 0, dz);
-                Block below = null;
-                boolean found = false;
+                Block plantTarget = null;
+                Block cropTarget = null;
                 for (int yOff = -2; yOff <= 2; yOff++) {
                     Block cand = b.getRelative(0, yOff, 0);
                     if (cand == null) continue;
-                    if (cand.getType() == Material.FARMLAND) {
-                        below = cand;
-                        found = true;
+                    if (cand.getType() != Material.FARMLAND) continue;
+
+                    Block above = cand.getRelative(BlockFace.UP);
+                    if (above.getBlockData() instanceof Ageable) {
+                        cropTarget = above;
                         break;
                     }
+                    if (plantTarget == null && above.getType().isAir()) plantTarget = above;
                 }
-                if (!found) continue;
 
-                @SuppressWarnings("null")
-                Block above = below.getRelative(BlockFace.UP);
-
-                if (above.getType() == Material.AIR) {
-                    Material crop = seedToCrop.get(mat);
+                if (cropTarget != null) {
                     try {
-                        above.setType(crop);
-                        if (above.getBlockData() instanceof Ageable) {
-                            Ageable a = (Ageable) above.getBlockData();
-                            a.setAge(0);
-                            above.setBlockData(a, true);
+                        Ageable age = (Ageable) cropTarget.getBlockData();
+                        if (age.getAge() >= age.getMaximumAge()) {
+                            cropTarget.breakNaturally();
+                            plantCrop(player, cropTarget);
                         }
-                       
-                    } catch (Throwable t) {
-                        if (plugin != null) plugin.getLogger().warning("AutoPlant: failed to plant " + t.getMessage());
-                    }
-                    consumeOffHand(player);
+                    } catch (Throwable ignored) {}
                     continue;
                 }
 
-                try {
-                    if (above.getBlockData() instanceof Ageable) {
-                        Ageable age = (Ageable) above.getBlockData();
-                        if (age.getAge() >= age.getMaximumAge()) {
-                            above.breakNaturally();
-                            ItemStack newOff = player.getInventory().getItemInOffHand();
-                            if (newOff != null && seedToCrop.containsKey(newOff.getType())) {
-                                Material crop = seedToCrop.get(newOff.getType());
-                                try {
-                                    above.setType(crop);
-                                    if (above.getBlockData() instanceof Ageable) {
-                                        Ageable a2 = (Ageable) above.getBlockData();
-                                        a2.setAge(0);
-                                        above.setBlockData(a2, true);
-                                    }
-                                } catch (Throwable t) {
-                                    if (plugin != null) plugin.getLogger().warning("AutoPlant: failed to replant " + t.getMessage());
-                                }
-                                consumeOffHand(player);
-                            }
-                        }
-                    }
-                } catch (Throwable ignored) {}
+                if (plantTarget != null) {
+                    if (!plantCrop(player, plantTarget)) return;
+                }
             }
         }
+    }
+
+    private boolean plantCrop(Player player, Block target) {
+        Material seed = getOffHandSeed(player);
+        if (seed == null) return false;
+        Material crop = seedToCrop.get(seed);
+        try {
+            target.setType(crop);
+            if (target.getBlockData() instanceof Ageable) {
+                Ageable a = (Ageable) target.getBlockData();
+                a.setAge(0);
+                target.setBlockData(a, true);
+            }
+
+        } catch (Throwable t) {
+            if (plugin != null) plugin.getLogger().warning("AutoPlant: failed to plant " + t.getMessage());
+            return true;
+        }
+        if (!consumeOffHand(player)) {
+            target.setType(Material.AIR);
+            return false;
+        }
+        return true;
+    }
+
+    private Material getOffHandSeed(Player player) {
+        ItemStack s = player.getInventory().getItemInOffHand();
+        if (s == null) return null;
+        if (s.getAmount() <= 0) return null;
+        Material mat = s.getType();
+        if (!seedToCrop.containsKey(mat)) return null;
+        return mat;
     }
 
     private boolean consumeOffHand(Player player) {

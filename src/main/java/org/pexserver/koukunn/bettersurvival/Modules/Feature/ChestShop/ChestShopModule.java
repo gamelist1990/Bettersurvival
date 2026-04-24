@@ -1,5 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.bukkit.Location;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -128,6 +129,7 @@ public class ChestShopModule implements Listener {
                                             + (snapStr.length() > 200 ? snapStr.substring(0, 200) : snapStr) + "'");
                             Map<Integer, ShopListing> old = store.getListings(loc);
                             Map<Integer, ShopListing> updated = new LinkedHashMap<>();
+                            boolean openedListingDialog = false;
                             for (int i = 0; i < 26; i++) {
                                 ItemStack it = invEditor.getItem(i);
                                 if (it == null)
@@ -139,9 +141,19 @@ public class ChestShopModule implements Listener {
                                     rawDisplay = it.getType().name();
                                 ShopListing prev = old.get(i);
                                 ShopListing sl = parseRawToListing(it, rawDisplay, prev);
+                                if (prev == null && requiresListingSetup(sl)) {
+                                    openListingSetupDialog(p, loc, shop, invEditor, i, it.clone(), sl, snap);
+                                    openedListingDialog = true;
+                                    break;
+                                }
                                 if (prev != null)
                                     sl.setStock(prev.getStock());
                                 updated.put(i, sl);
+                            }
+                            if (openedListingDialog) {
+                                editorSnapshotHash.put(uid, snap);
+                                editorLastSavedTick.put(uid, now);
+                                continue;
                             }
                             // detect any listings that were removed by the player (editor slot emptied)
                             // and return their physical items + stock back to the player.
@@ -176,11 +188,9 @@ public class ChestShopModule implements Listener {
                                                 for (String L : ComponentUtils.getLore(gm)) {
                                                     if (L == null)
                                                         continue;
-                                                    if (L.startsWith("在庫:") || L.startsWith("価格:")
-                                                            || L.startsWith("説明:"))
+                                                    if (isEditorLoreLine(L))
                                                         continue;
-                                                    String cleaned = L.replaceAll("\\{[^}]*\\}", "")
-                                                            .replaceAll("｛[^｝]*｝", "").trim();
+                                                    String cleaned = cleanInlineMetadata(L);
                                                     if (cleaned.isEmpty())
                                                         continue;
                                                     newl.add(cleaned);
@@ -363,6 +373,7 @@ public class ChestShopModule implements Listener {
     private final Set<UUID> suppressCloseHandling = ConcurrentHashMap.newKeySet();
     // prevent duplicate-return races: track recent removals (player+loc+slot)
     private final Map<String, Long> recentRemovalTimestamps = new ConcurrentHashMap<>();
+    private final Set<String> pendingListingDialogs = ConcurrentHashMap.newKeySet();
 
     private String makeRemovalKey(Player p, Location loc, int slot) {
         if (p == null || loc == null)
@@ -389,6 +400,302 @@ public class ChestShopModule implements Listener {
             return true;
         recentRemovalTimestamps.remove(k);
         return false;
+    }
+
+    private String makeListingDialogKey(Player p, Location loc, int slot) {
+        if (p == null || loc == null || loc.getWorld() == null)
+            return null;
+        return p.getUniqueId() + ":" + loc.getWorld().getName() + ":" + loc.getBlockX() + ":" + loc.getBlockY() + ":"
+                + loc.getBlockZ() + ":" + slot;
+    }
+
+    private boolean requiresListingSetup(ShopListing listing) {
+        return listing == null || listing.getPrice() <= 0;
+    }
+
+    private void openListingSetupDialog(Player player, Location loc, ChestShop shop, Inventory editorInventory, int slot,
+            ItemStack sourceItem, ShopListing draft, int snapshotHash) {
+        String key = makeListingDialogKey(player, loc, slot);
+        if (key == null || !pendingListingDialogs.add(key))
+            return;
+
+        String itemName = draft != null && draft.getDisplayName() != null && !draft.getDisplayName().isEmpty()
+                ? draft.getDisplayName()
+                : ChestShopUI.displayNameForMaterial(sourceItem == null ? null : sourceItem.getType().name());
+        int initialCount = Math.max(1, Math.min(64, sourceItem == null ? 1 : sourceItem.getAmount()));
+
+        player.sendMessage("§e出品情報が未設定です。表示された入力画面で価格などを設定してください。");
+        DialogUI.builder()
+                .title("出品設定")
+                .body(itemName)
+                .addTextInput("price", "価格 (1-64)", "1", 4, false)
+                .addTextInput("count", "販売個数 (1-64)", String.valueOf(initialCount), 2, false)
+                .addTextInput("description", "説明 (任意)", "", 120, true)
+                .confirmation("保存", "キャンセル")
+                .onResponse((result, p) -> {
+                    pendingListingDialogs.remove(key);
+                    if (!result.isConfirmed()) {
+                        removePendingEditorItem(editorInventory, slot, sourceItem, p);
+                        p.sendMessage("§e出品設定をキャンセルしました");
+                        return;
+                    }
+
+                    Integer price = parseBoundedInt(result.getText("price"), 1, 64);
+                    Integer count = parseBoundedInt(result.getText("count"), 1, 64);
+                    if (price == null || count == null) {
+                        p.sendMessage("§c価格と販売個数は 1-64 の数字で入力してください");
+                        openListingSetupDialog(p, loc, shop, editorInventory, slot, sourceItem, draft, snapshotHash);
+                        return;
+                    }
+
+                    ShopListing configured = draft;
+                    if (configured == null) {
+                        String matName = sourceItem == null ? Material.PAPER.name() : sourceItem.getType().name();
+                        configured = new ShopListing(matName, itemName, price, "", 0);
+                    }
+                    configured.setPrice(price);
+                    configured.setCount(count);
+                    configured.setOriginalCount(count);
+                    String desc = result.getText("description");
+                    configured.setDescription(desc == null ? "" : desc.trim().replace("\r\n", "<br>").replace("\n", "<br>"));
+                    if (configured.getDisplayName() == null || configured.getDisplayName().isEmpty())
+                        configured.setDisplayName(itemName);
+
+                    Map<Integer, ShopListing> listings = store.getListings(loc);
+                    listings.put(slot, configured);
+                    store.saveListings(loc, listings);
+                    updateEditorConfiguredItem(editorInventory, slot, sourceItem, configured);
+                    editorSnapshotHash.put(p.getUniqueId(), snapshotHash);
+                    editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
+                    p.sendMessage("§a出品を設定しました: " + configured.getDisplayName() + " 価格 " + price + " / 個数 " + count);
+                    p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                    if (shop != null && shop.getOwner() != null) {
+                        try {
+                            Player ownerPlayer = Bukkit.getPlayer(UUID.fromString(shop.getOwner()));
+                            if (ownerPlayer != null)
+                                ChestShopUI.updateOwnerInfo(ownerPlayer, store);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                })
+                .show(player);
+    }
+
+    private Integer parseBoundedInt(String value, int min, int max) {
+        if (value == null)
+            return null;
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed < min || parsed > max)
+                return null;
+            return parsed;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void updateEditorConfiguredItem(Inventory editorInventory, int slot, ItemStack sourceItem, ShopListing listing) {
+        if (editorInventory == null || slot < 0 || slot >= editorInventory.getSize() || sourceItem == null || listing == null)
+            return;
+        editorInventory.setItem(slot, createEditorDisplayItem(sourceItem, listing));
+    }
+
+    private void removePendingEditorItem(Inventory editorInventory, int slot, ItemStack sourceItem, Player player) {
+        if (editorInventory != null && slot >= 0 && slot < editorInventory.getSize()) {
+            ItemStack current = editorInventory.getItem(slot);
+            boolean stillOpen = player != null && player.getOpenInventory() != null
+                    && player.getOpenInventory().getTopInventory() == editorInventory;
+            if (stillOpen && current != null && current.getType() != Material.AIR) {
+                editorInventory.setItem(slot, null);
+                return;
+            }
+        }
+        if (sourceItem != null && player != null)
+            giveOrMergeToPlayer(player, sanitizeReturnedItem(sourceItem.clone()));
+    }
+
+    private ItemStack createEditorDisplayItem(ItemStack sourceItem, ShopListing listing) {
+        ItemStack item = sanitizeReturnedItem(sourceItem == null ? buildListingItem(listing) : sourceItem);
+        if (item == null) {
+            Material material = listing == null ? Material.PAPER : Material.matchMaterial(listing.getMaterial());
+            item = new ItemStack(material == null ? Material.PAPER : material);
+        }
+        if (listing == null)
+            return item;
+        item.setAmount(Math.max(1, Math.min(64, listing.getCount())));
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            if (listing.getDisplayName() != null && !listing.getDisplayName().isEmpty())
+                ComponentUtils.setDisplayName(meta, listing.getDisplayName());
+            List<String> lore = new ArrayList<>();
+            List<String> originalLore = ComponentUtils.getLore(meta);
+            if (originalLore != null) {
+                for (String line : originalLore) {
+                    if (line == null || isEditorLoreLine(line))
+                        continue;
+                    String cleaned = cleanInlineMetadata(line);
+                    if (!cleaned.isEmpty())
+                        lore.add(cleaned);
+                }
+            }
+            appendEditorLore(lore, listing);
+            ComponentUtils.setLore(meta, lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private void appendEditorLore(List<String> lore, ShopListing listing) {
+        lore.add("在庫: " + listing.getStock());
+        lore.add("個数: " + listing.getCount());
+        lore.add("価格: " + listing.getPrice());
+        if (listing.getDescription() != null && !listing.getDescription().isEmpty())
+            lore.add("説明: " + listing.getDescription().replace("<br>", "\n"));
+    }
+
+    private void openListingClickDialog(Player player, Location loc, ChestShop shop, Inventory editorInventory, int slot,
+            ItemStack editorItem, ShopListing listing) {
+        String itemName = listing != null && listing.getDisplayName() != null && !listing.getDisplayName().isEmpty()
+                ? listing.getDisplayName()
+                : ChestShopUI.displayNameForMaterial(editorItem == null ? null : editorItem.getType().name());
+
+        DialogUI.builder()
+                .title("出品操作")
+                .body(itemName)
+                .body("更新: 価格/個数/説明を変更します")
+                .body("返却: 出品を取り下げて在庫を返します")
+                .confirmation("更新", "返却")
+                .onResponse((result, p) -> {
+                    if (result.isConfirmed()) {
+                        openListingUpdateDialog(p, loc, editorInventory, slot, editorItem, listing);
+                    } else {
+                        returnListingFromEditor(p, loc, shop, editorInventory, slot, listing);
+                    }
+                })
+                .show(player);
+    }
+
+    private void openListingUpdateDialog(Player player, Location loc, Inventory editorInventory, int slot,
+            ItemStack editorItem, ShopListing listing) {
+        if (listing == null)
+            return;
+        String itemName = listing.getDisplayName() == null || listing.getDisplayName().isEmpty()
+                ? ChestShopUI.displayNameForMaterial(listing.getMaterial())
+                : listing.getDisplayName();
+        String desc = listing.getDescription() == null ? "" : listing.getDescription().replace("<br>", "\n");
+
+        DialogUI.builder()
+                .title("出品更新")
+                .body(itemName)
+                .addTextInput("price", "価格 (1-64)", String.valueOf(Math.max(1, listing.getPrice())), 4, false)
+                .addTextInput("count", "販売個数 (1-64)", String.valueOf(Math.max(1, listing.getCount())), 2, false)
+                .addTextInput("description", "説明 (任意)", desc, 120, true)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        return;
+                    }
+                    Integer price = parseBoundedInt(result.getText("price"), 1, 64);
+                    Integer count = parseBoundedInt(result.getText("count"), 1, 64);
+                    if (price == null || count == null) {
+                        p.sendMessage("§c価格と販売個数は 1-64 の数字で入力してください");
+                        openListingUpdateDialog(p, loc, editorInventory, slot, editorItem, listing);
+                        return;
+                    }
+
+                    listing.setPrice(price);
+                    listing.setCount(count);
+                    listing.setOriginalCount(count);
+                    String newDesc = result.getText("description");
+                    listing.setDescription(newDesc == null ? "" : newDesc.trim().replace("\r\n", "<br>").replace("\n", "<br>"));
+                    Map<Integer, ShopListing> listings = store.getListings(loc);
+                    listings.put(slot, listing);
+                    store.saveListings(loc, listings);
+                    updateEditorConfiguredItem(editorInventory, slot, editorItem, listing);
+                    editorSnapshotHash.put(p.getUniqueId(), buildEditorSnapshotHash(editorInventory));
+                    editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
+                    p.sendMessage("§a出品設定を更新しました");
+                    p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.0f);
+                })
+                .show(player);
+    }
+
+    private void returnListingFromEditor(Player player, Location loc, ChestShop shop, Inventory editorInventory, int slot,
+            ShopListing listing) {
+        if (player == null || loc == null || listing == null)
+            return;
+
+        ItemStack giveBack = buildListingItem(listing);
+        int amountToGive = Math.max(1, 1 + Math.max(0, listing.getStock()));
+        ItemStack proto = giveBack.clone();
+        proto.setAmount(1);
+        int existing = countSimilarInPlayer(player, proto);
+        int toGive = Math.max(0, amountToGive - existing);
+
+        if (toGive > 0) {
+            giveBack.setAmount(toGive);
+            giveOrMergeToPlayer(player, giveBack);
+        }
+
+        Map<Integer, ShopListing> listings = store.getListings(loc);
+        listings.remove(slot);
+        store.saveListings(loc, listings);
+
+        if (editorInventory != null && slot >= 0 && slot < editorInventory.getSize()) {
+            editorInventory.setItem(slot, null);
+            editorSnapshotHash.put(player.getUniqueId(), buildEditorSnapshotHash(editorInventory));
+            editorLastSavedTick.put(player.getUniqueId(), System.currentTimeMillis());
+        }
+
+        player.sendMessage("§a出品を返却しました: " + giveBack.getType() + " x" + amountToGive);
+        player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
+        if (shop != null && shop.getOwner() != null) {
+            try {
+                Player ownerPlayer = Bukkit.getPlayer(UUID.fromString(shop.getOwner()));
+                if (ownerPlayer != null)
+                    ChestShopUI.updateOwnerInfo(ownerPlayer, store);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private ItemStack buildListingItem(ShopListing listing) {
+        ItemStack item = null;
+        if (listing.getItemData() != null) {
+            try {
+                item = ItemStack.deserialize(listing.getItemData());
+            } catch (Exception ignored) {
+                item = null;
+            }
+        }
+        if (item == null) {
+            Material material = Material.matchMaterial(listing.getMaterial());
+            item = new ItemStack(material == null ? Material.PAPER : material);
+        }
+        return sanitizeReturnedItem(item);
+    }
+
+    private int buildEditorSnapshotHash(Inventory inventory) {
+        if (inventory == null)
+            return 0;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(26, inventory.getSize()); i++) {
+            ItemStack item = inventory.getItem(i);
+            if (item == null) {
+                sb.append("-");
+                continue;
+            }
+            String display = null;
+            if (item.hasItemMeta() && item.getItemMeta().hasDisplayName())
+                display = item.getItemMeta().getDisplayName();
+            if (display == null)
+                display = item.getType().name();
+            sb.append(item.getType().name()).append('|').append(display).append('|');
+            if (item.hasItemMeta() && item.getItemMeta().hasLore())
+                sb.append(String.join("/", item.getItemMeta().getLore()));
+            sb.append(':').append(item.getAmount()).append(';');
+        }
+        return sb.toString().hashCode();
     }
 
     private ShopListing parseRawToListing(ItemStack it, String raw, ShopListing prev) {
@@ -540,37 +847,7 @@ public class ChestShopModule implements Listener {
         Map<String, Object> itemData = null;
         try {
             if (it != null) {
-                ItemStack copy = it.clone();
-                try {
-                    ItemMeta cim = copy.getItemMeta();
-                    if (cim != null && cim.hasLore()) {
-                        List<String> newLore = new ArrayList<>();
-                        for (String L : ComponentUtils.getLore(cim)) {
-                            if (L == null)
-                                continue;
-                            if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
-                                continue;
-                            String cleaned = L.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
-                            if (cleaned.isEmpty())
-                                continue;
-                            newLore.add(cleaned);
-                        }
-                        ComponentUtils.setLore(cim, newLore.isEmpty() ? null : newLore);
-                    }
-                    // also sanitize display name in copied data to remove inline JSON blocks
-                    try {
-                        if (cim != null && cim.hasDisplayName() && ComponentUtils.getDisplayName(cim) != null) {
-                            String clean = ComponentUtils.getDisplayName(cim).replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "")
-                                    .trim();
-                            if (clean.isEmpty())
-                                clean = null;
-                            ComponentUtils.setDisplayName(cim, clean);
-                        }
-                    } catch (Exception ignored) {
-                    }
-                    copy.setItemMeta(cim);
-                } catch (Exception ignoredMeta) {
-                }
+                ItemStack copy = sanitizeReturnedItem(it);
                 itemData = copy.serialize();
                 // if we couldn't serialize meaningful data, fall back to previously stored item
                 // data
@@ -1087,6 +1364,10 @@ public class ChestShopModule implements Listener {
                     rawDisplay = it.getType().name();
                 ShopListing prev = old.get(i);
                 ShopListing sl = parseRawToListing(it, rawDisplay, prev);
+                if (prev == null && requiresListingSetup(sl)) {
+                    openListingSetupDialog(p, loc, shop, inv, i, it.clone(), sl, 0);
+                    return;
+                }
                 updated.put(i, sl);
             }
             store.saveListings(loc, updated);
@@ -1580,48 +1861,7 @@ public class ChestShopModule implements Listener {
                         } else {
                             it = new ItemStack(mat, 1);
                         }
-                        // ensure editor shows a sample amount equal to cont and append editor-only lore
-                        it.setAmount(Math.max(1, Math.min(64, sl.getCount())));
-                        ItemMeta im = it.getItemMeta();
-                        if (im != null) {
-                            // prefer existing display name, otherwise use stored displayName
-                            // sanitize display names (remove inline metadata blocks) and prefer existing
-                            // when present
-                            try {
-                                if (im.hasDisplayName() && ComponentUtils.getDisplayName(im) != null) {
-                                    ComponentUtils.setDisplayName(im, ComponentUtils.getDisplayName(im).replaceAll("\\{[^}]*\\}", "")
-                                            .replaceAll("｛[^｝]*｝", "").trim());
-                                }
-                                if (!im.hasDisplayName() || ComponentUtils.getDisplayName(im) == null
-                                        || ComponentUtils.getDisplayName(im).isEmpty()) {
-                                    if (sl.getDisplayName() != null)
-                                        ComponentUtils.setDisplayName(im, sl.getDisplayName().replaceAll("\\{[^}]*\\}", "")
-                                                .replaceAll("｛[^｝]*｝", "").trim());
-                                }
-                            } catch (Exception ignored) {
-                            }
-                            // start with existing lore but remove any editor-only lines to avoid
-                            // duplication
-                            List<String> lore = new ArrayList<>();
-                            if (im.hasLore() && ComponentUtils.getLore(im) != null) {
-                                for (String L : ComponentUtils.getLore(im)) {
-                                    if (L == null)
-                                        continue;
-                                    if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
-                                        continue;
-                                    lore.add(L);
-                                }
-                            }
-                            // append editor-only lines exactly once
-                            lore.add("在庫: " + sl.getStock());
-                            lore.add("個数: " + sl.getCount());
-                            lore.add("価格: " + sl.getPrice());
-                            if (sl.getDescription() != null && !sl.getDescription().isEmpty())
-                                lore.add("説明: " + sl.getDescription());
-                            ComponentUtils.setLore(im, lore);
-                            it.setItemMeta(im);
-                        }
-                        editor.setItem(i, it);
+                        editor.setItem(i, createEditorDisplayItem(it, sl));
                     }
                     // ensure editor mapping exists so autosave/detection can find this shop
                     ChestShopUI.registerOpen(p.getUniqueId(), shopEditor, locEditor);
@@ -1700,88 +1940,7 @@ public class ChestShopModule implements Listener {
                     return;
                 }
 
-                // Build return item with full stock (sanitized)
-                ItemStack giveBack = null;
-                if (sl.getItemData() != null) {
-                    try {
-                        giveBack = ItemStack.deserialize(sl.getItemData());
-                    } catch (Exception ignored) {
-                        giveBack = null;
-                    }
-                }
-                if (giveBack == null) {
-                    Material m = Material.matchMaterial(sl.getMaterial());
-                    giveBack = new ItemStack(m == null ? Material.PAPER : m);
-                }
-
-                // Sanitize: remove editor-only lore and metadata blocks
-                ItemMeta gm = giveBack.getItemMeta();
-                if (gm != null) {
-                    if (gm.hasLore() && ComponentUtils.getLore(gm) != null) {
-                        List<String> newl = new ArrayList<>();
-                        for (String L : ComponentUtils.getLore(gm)) {
-                            if (L == null)
-                                continue;
-                            if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
-                                continue;
-                            String cleaned = L.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
-                            if (cleaned.isEmpty())
-                                continue;
-                            newl.add(cleaned);
-                        }
-                        ComponentUtils.setLore(gm, newl.isEmpty() ? null : newl);
-                    }
-                    if (gm.hasDisplayName() && ComponentUtils.getDisplayName(gm) != null) {
-                        String name = ComponentUtils.getDisplayName(gm).replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "")
-                                .trim();
-                        ComponentUtils.setDisplayName(gm, name.isEmpty() ? null : name);
-                    }
-                    giveBack.setItemMeta(gm);
-                }
-
-                // Calculate total amount: 1 (sample) + stock
-                int amountToGive = Math.max(1, 1 + Math.max(0, sl.getStock()));
-
-                // Merge with existing inventory items (avoid duplication)
-                giveBack = sanitizeReturnedItem(giveBack);
-                ItemStack proto = giveBack.clone();
-                proto.setAmount(1);
-                int existing = countSimilarInPlayer(p, proto);
-                int toGive = Math.max(0, amountToGive - existing);
-
-                if (toGive > 0) {
-                    giveBack.setAmount(toGive);
-                    giveOrMergeToPlayer(p, giveBack);
-                }
-
-                // Remove from listings and save
-                listings.remove(slotIndex);
-                store.saveListings(loc, listings);
-
-                // Clear the editor slot immediately
-                if (topInv != null) {
-                    topInv.setItem(slotIndex, null);
-                }
-
-                p.sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: " + giveBack.getType().toString() + " x" + amountToGive);
-                p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
-
-                // Reopen editor after a brief delay to reflect changes
-                if (shop != null) {
-                    Plugin plugin = Bukkit.getPluginManager().getPlugin("Bettersurvival");
-                    if (plugin != null) {
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            try {
-                                InventoryView currentView = p.getOpenInventory();
-                                if (currentView != null && ComponentUtils.legacyText(currentView.title()) != null &&
-                                        ComponentUtils.legacyText(currentView.title()).startsWith(ChestShopUI.EDITOR_TITLE_PREFIX)) {
-                                    ChestShopUI.openForPlayer(p, shop, loc, store);
-                                }
-                            } catch (Exception ignored) {
-                            }
-                        }, 2L);
-                    }
-                }
+                openListingClickDialog(p, loc, shop, topInv, slotIndex, clickedItem.clone(), sl);
                 return;
             }
 
@@ -1823,9 +1982,9 @@ public class ChestShopModule implements Listener {
                                 for (String L : ComponentUtils.getLore(pm)) {
                                     if (L == null)
                                         continue;
-                                    if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
+                                    if (isEditorLoreLine(L))
                                         continue;
-                                    String cleaned = L.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
+                                    String cleaned = cleanInlineMetadata(L);
                                     if (cleaned.isEmpty())
                                         continue;
                                     nl.add(cleaned);
@@ -1877,10 +2036,9 @@ public class ChestShopModule implements Listener {
                                     for (String L : ComponentUtils.getLore(gm)) {
                                         if (L == null)
                                             continue;
-                                        if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
+                                        if (isEditorLoreLine(L))
                                             continue;
-                                        String cleaned = L.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "")
-                                                .trim();
+                                        String cleaned = cleanInlineMetadata(L);
                                         if (cleaned.isEmpty())
                                             continue;
                                         newl.add(cleaned);
@@ -1970,10 +2128,9 @@ public class ChestShopModule implements Listener {
                                             for (String L : ComponentUtils.getLore(gm)) {
                                                 if (L == null)
                                                     continue;
-                                                if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
+                                                if (isEditorLoreLine(L))
                                                     continue;
-                                                String cleaned = L.replaceAll("\\{[^}]*\\}", "")
-                                                        .replaceAll("｛[^｝]*｝", "").trim();
+                                                String cleaned = cleanInlineMetadata(L);
                                                 if (cleaned.isEmpty())
                                                     continue;
                                                 newl.add(cleaned);
@@ -2198,10 +2355,9 @@ public class ChestShopModule implements Listener {
                                         for (String L : ComponentUtils.getLore(im)) {
                                             if (L == null)
                                                 continue;
-                                            if (L.startsWith("在庫:") || L.startsWith("価格:") || L.startsWith("説明:"))
+                                            if (isEditorLoreLine(L))
                                                 continue;
-                                            String cleaned = L.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "")
-                                                    .trim();
+                                            String cleaned = cleanInlineMetadata(L);
                                             if (cleaned.isEmpty())
                                                 continue;
                                             newLore.add(cleaned);
@@ -2387,9 +2543,9 @@ public class ChestShopModule implements Listener {
                                     for (String L : ComponentUtils.getLore(cm)) {
                                         if (L == null)
                                             continue;
-                                        if (L.contains("在庫:") || L.contains("価格:") || L.contains("説明:"))
+                                        if (isEditorLoreLine(L))
                                             continue;
-                                        String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                                        String cleaned = cleanInlineMetadata(L);
                                         if (cleaned.isEmpty())
                                             continue;
                                         newl.add(cleaned);
@@ -2444,9 +2600,9 @@ public class ChestShopModule implements Listener {
                                 for (String L : ComponentUtils.getLore(im)) {
                                     if (L == null)
                                         continue;
-                                    if (L.contains("在庫:") || L.contains("価格:") || L.contains("説明:"))
+                                    if (isEditorLoreLine(L))
                                         continue;
-                                    String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                                    String cleaned = cleanInlineMetadata(L);
                                     if (cleaned.isEmpty())
                                         continue;
                                     newl.add(cleaned);
@@ -2732,7 +2888,7 @@ public class ChestShopModule implements Listener {
             // sanitize display name
             try {
                 if (im.hasDisplayName() && ComponentUtils.getDisplayName(im) != null) {
-                    String cleaned = ComponentUtils.getDisplayName(im).replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                    String cleaned = cleanInlineMetadata(ComponentUtils.getDisplayName(im));
                     ComponentUtils.setDisplayName(im, cleaned.isEmpty() ? null : cleaned);
                 }
             } catch (Exception ignored) {
@@ -2745,9 +2901,9 @@ public class ChestShopModule implements Listener {
                         if (L == null)
                             continue;
                         // drop any line that looks like editor-only meta
-                        if (L.contains("在庫:") || L.contains("価格:") || L.contains("説明:"))
+                        if (isEditorLoreLine(L))
                             continue;
-                        String cleaned = L.replaceAll("[\\{\\{][^\\}\\}]*[\\}\\}]", "").trim();
+                        String cleaned = cleanInlineMetadata(L);
                         if (cleaned.isEmpty())
                             continue;
                         newLore.add(cleaned);
@@ -2761,6 +2917,26 @@ public class ChestShopModule implements Listener {
         } catch (Exception ignored) {
             return src;
         }
+    }
+
+    private boolean isEditorLoreLine(String line) {
+        if (line == null)
+            return false;
+        String plain = stripLegacyColor(line).trim();
+        return plain.startsWith("在庫:") || plain.startsWith("価格:") || plain.startsWith("説明:")
+                || plain.startsWith("個数:");
+    }
+
+    private String cleanInlineMetadata(String line) {
+        if (line == null)
+            return "";
+        return line.replaceAll("[{｛][^}｝]*[}｝]", "").trim();
+    }
+
+    private String stripLegacyColor(String line) {
+        if (line == null)
+            return "";
+        return line.replaceAll("(?i)§[0-9A-FK-ORX]", "");
     }
 
     private int countItems(PlayerInventory inv, Material mat) {

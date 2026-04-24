@@ -69,6 +69,40 @@ public final class FormsUtil {
         return false;
     }
 
+    public static boolean openSimpleForm(Player p, String title, String content, List<?> buttons, Consumer<Integer> callback) {
+        if (p == null) return false;
+        if (FloodgateUtil.isBedrock(p)) {
+            FloodgateApi api = FloodgateApi.getInstance();
+            if (api == null) return false;
+
+            try {
+                SimpleForm.Builder b = SimpleForm.builder().title(title).content(content == null ? "" : content);
+                for (Object btn : buttons) {
+                    if (btn instanceof String) {
+                        b.button((String) btn);
+                    } else if (btn instanceof ButtonSpec) {
+                        ButtonSpec spec = (ButtonSpec) btn;
+                        if (spec.image != null) b.button(spec.text, spec.image);
+                        else b.button(spec.text);
+                    }
+                }
+                b.validResultHandler((form, resp) -> {
+                    if (resp == null) {
+                        if (callback != null) callback.accept(-1);
+                        return;
+                    }
+                    int idx = ((SimpleFormResponse) resp).clickedButtonId();
+                    if (callback != null) callback.accept(idx);
+                });
+                SimpleForm form = b.build();
+                return api.sendForm(p.getUniqueId(), form);
+            } catch (NoClassDefFoundError | Exception e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
     /**
      * ButtonSpec を使った SimpleForm 表示のオーバーロード。
      * ButtonSpec.text をボタンラベルに、ButtonSpec.image をボタン画像に使います。

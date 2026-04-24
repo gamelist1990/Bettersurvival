@@ -6,6 +6,8 @@ import org.pexserver.koukunn.bettersurvival.Core.Command.CommandBlockManager;
 import org.pexserver.koukunn.bettersurvival.Core.Command.CommandManager;
 import org.pexserver.koukunn.bettersurvival.Core.Command.GlobalCommandFilter;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
+import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Listeners.CommandBlockerListener;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleListener;
@@ -17,9 +19,14 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModul
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestSort.ChestSortModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest.DeathChestModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.discord.DiscordCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.home.HomeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.toggle.ToggleCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.chest.ChestCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
@@ -38,12 +45,16 @@ public final class Loader extends JavaPlugin {
     private CommandBlockManager commandBlockManager;
     private ToggleModule toggleModule;
     private TpaModule tpaModule;
+    private DiscordWebhookModule discordWebhookModule;
+    private HomeModule homeModule;
 
     @Override
     public void onEnable() {
         // マネージャーを初期化
         commandManager = new CommandManager(this);
         configManager = new ConfigManager(this);
+        ChestUI.register();
+        DialogUI.register();
 
         // CommandBlockManager を作成して CommandManager に渡す
         this.commandBlockManager = new CommandBlockManager(this);
@@ -83,6 +94,10 @@ public final class Loader extends JavaPlugin {
         // ChestSort モジュール登録
         ChestSortModule chestSort = new ChestSortModule(toggleModule, chestLock, chestShop);
         getServer().getPluginManager().registerEvents(chestSort, this);
+        getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
+        discordWebhookModule = new DiscordWebhookModule(this, configManager);
+        getServer().getPluginManager().registerEvents(discordWebhookModule, this);
+        homeModule = new HomeModule(this);
         // BedrockSkin モジュール登録 (Floodgate/Geyser ユーザーのスキン自動適用)
         BedrockSkinModule bedrockSkin = new BedrockSkinModule(this, toggleModule, configManager);
         getServer().getPluginManager().registerEvents(bedrockSkin, this);
@@ -111,6 +126,10 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("chestshop", "ChestShop", "看板でチェストをショップ化します(>>Shop 名前)", Material.OAK_SIGN, false));
         toggleModule
                 .registerFeature(new ToggleFeature("chestsort", "ChestSort", "スニーク+木の棒でチェスト内を整理します", Material.STICK));
+        toggleModule.registerFeature(new ToggleFeature("deathchest", "DeathChest",
+                "死亡時に所持品を死亡地点付近のラージチェストへ保管し座標を通知します", Material.TRAPPED_CHEST));
+        toggleModule.registerFeature(new ToggleFeature("home", "Home",
+                "/home で登録済みの家へ移動します。登録は最大3個までです", Material.RED_BED));
         toggleModule.registerFeature(
                 new ToggleFeature("bedrockskin", "BedrockSkin", "BedrockユーザーのスキンをJavaクライアントに自動反映します", Material.PLAYER_HEAD, false));
         toggleModule.registerFeature(
@@ -139,6 +158,12 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("chestshop")) {
             toggleModule.setGlobal("chestshop", true);
         }
+        if (!toggleModule.hasGlobal("deathchest")) {
+            toggleModule.setGlobal("deathchest", true);
+        }
+        if (!toggleModule.hasGlobal("home")) {
+            toggleModule.setGlobal("home", true);
+        }
         if (!toggleModule.hasGlobal("bedrockskin")) {
             toggleModule.setGlobal("bedrockskin", true);
         }
@@ -163,10 +188,14 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new RenameCommand());
         // TPA command: テレポートリクエスト
         commandManager.register(new TpaCommand(this));
+        // Home command: 登録済みHomeへの移動
+        commandManager.register(new HomeCommand(this));
         // InvSee command: プレイヤーインベントリ閲覧・編集（OP専用）
         commandManager.register(new InvseeCommand(this));
         // List command: オンラインのプレイヤー一覧を表示
         commandManager.register(new ListCommand());
+        // DiscordWebhook command: Discord通知設定UI（OP専用）
+        commandManager.register(new DiscordCommand(this));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
@@ -191,6 +220,14 @@ public final class Loader extends JavaPlugin {
 
     public TpaModule getTpaModule() {
         return tpaModule;
+    }
+
+    public DiscordWebhookModule getDiscordWebhookModule() {
+        return discordWebhookModule;
+    }
+
+    public HomeModule getHomeModule() {
+        return homeModule;
     }
 
     @Override
