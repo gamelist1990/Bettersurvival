@@ -425,7 +425,7 @@ public class ChestShopModule implements Listener {
         int initialCount = Math.max(1, Math.min(64, sourceItem == null ? 1 : sourceItem.getAmount()));
 
         player.sendMessage("§e出品情報が未設定です。表示された入力画面で価格などを設定してください。");
-        DialogUI.builder()
+        boolean shown = DialogUI.builder()
                 .title("出品設定")
                 .body(itemName)
                 .addTextInput("price", "価格 (1-64)", "1", 4, false)
@@ -440,8 +440,8 @@ public class ChestShopModule implements Listener {
                         return;
                     }
 
-                    Integer price = parseBoundedInt(result.getText("price"), 1, 64);
-                    Integer count = parseBoundedInt(result.getText("count"), 1, 64);
+                    Integer price = parseBoundedInt(valueOrDefault(result.getText("price"), "1"), 1, 64);
+                    Integer count = parseBoundedInt(valueOrDefault(result.getText("count"), String.valueOf(initialCount)), 1, 64);
                     if (price == null || count == null) {
                         p.sendMessage("§c価格と販売個数は 1-64 の数字で入力してください");
                         openListingSetupDialog(p, loc, shop, editorInventory, slot, sourceItem, draft, snapshotHash);
@@ -478,7 +478,12 @@ public class ChestShopModule implements Listener {
                         }
                     }
                 })
-                .show(player);
+                .showWithResult(player);
+        if (!shown) {
+            pendingListingDialogs.remove(key);
+            removePendingEditorItem(editorInventory, slot, sourceItem, player);
+            player.sendMessage("§c出品設定画面の表示に失敗したため、アイテムを返却しました");
+        }
     }
 
     private Integer parseBoundedInt(String value, int min, int max) {
@@ -595,8 +600,8 @@ public class ChestShopModule implements Listener {
                     if (!result.isConfirmed()) {
                         return;
                     }
-                    Integer price = parseBoundedInt(result.getText("price"), 1, 64);
-                    Integer count = parseBoundedInt(result.getText("count"), 1, 64);
+                    Integer price = parseBoundedInt(valueOrDefault(result.getText("price"), String.valueOf(Math.max(1, listing.getPrice()))), 1, 64);
+                    Integer count = parseBoundedInt(valueOrDefault(result.getText("count"), String.valueOf(Math.max(1, listing.getCount()))), 1, 64);
                     if (price == null || count == null) {
                         p.sendMessage("§c価格と販売個数は 1-64 の数字で入力してください");
                         openListingUpdateDialog(p, loc, editorInventory, slot, editorItem, listing);
@@ -2301,7 +2306,6 @@ public class ChestShopModule implements Listener {
         }
     }
 
-    @SuppressWarnings("null")
     @EventHandler
     public void onInventoryDrag(InventoryDragEvent e) {
         InventoryView view = e.getView();
@@ -2947,6 +2951,14 @@ public class ChestShopModule implements Listener {
             }
         }
         return count;
+    }
+
+    private String valueOrDefault(String value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
     }
 
     private void removeItems(PlayerInventory inv, Material mat, int amount) {

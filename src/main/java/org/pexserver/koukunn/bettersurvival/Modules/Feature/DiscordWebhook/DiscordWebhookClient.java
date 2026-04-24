@@ -8,7 +8,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 
@@ -69,6 +71,31 @@ public class DiscordWebhookClient {
                 });
     }
 
+    public CompletableFuture<String> sendAndReturnMessageId(String url, JsonObject payload, String fileName, byte[] fileBytes) {
+        if (!isValidUrl(url)) return CompletableFuture.completedFuture("");
+
+        String boundary = "----BetterSurvival" + UUID.randomUUID();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(withWait(url)))
+                .timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(buildMultipartBody(boundary, payload, fileName, fileBytes)))
+                .build();
+
+        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        plugin.getLogger().warning("DiscordWebhook送信失敗: HTTP " + response.statusCode());
+                        return "";
+                    }
+                    JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+                    return json.has("id") ? json.get("id").getAsString() : "";
+                })
+                .exceptionally(error -> {
+                    plugin.getLogger().log(Level.WARNING, "DiscordWebhook送信失敗: " + error.getMessage());
+                    return "";
+                });
+    }
+
     public CompletableFuture<Boolean> editMessage(String url, String messageId, JsonObject payload) {
         if (!isValidUrl(url) || messageId == null || messageId.isBlank()) {
             return CompletableFuture.completedFuture(false);
@@ -78,6 +105,34 @@ public class DiscordWebhookClient {
                 .timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/json")
                 .method("PATCH", HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .build();
+
+        return client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                .thenApply(response -> {
+                    if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                        return true;
+                    }
+                    if (response.statusCode() != 404) {
+                        plugin.getLogger().warning("DiscordWebhookメッセージ更新失敗: HTTP " + response.statusCode());
+                    }
+                    return false;
+                })
+                .exceptionally(error -> {
+                    plugin.getLogger().log(Level.WARNING, "DiscordWebhookメッセージ更新失敗: " + error.getMessage());
+                    return false;
+                });
+    }
+
+    public CompletableFuture<Boolean> editMessage(String url, String messageId, JsonObject payload, String fileName, byte[] fileBytes) {
+        if (!isValidUrl(url) || messageId == null || messageId.isBlank()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        String boundary = "----BetterSurvival" + UUID.randomUUID();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(messageUrl(url, messageId)))
+                .timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .method("PATCH", HttpRequest.BodyPublishers.ofByteArray(buildMultipartBody(boundary, payload, fileName, fileBytes)))
                 .build();
 
         return client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
@@ -114,5 +169,36 @@ public class DiscordWebhookClient {
             return value + "/messages/" + messageId;
         }
         return value.substring(0, queryIndex) + "/messages/" + messageId + value.substring(queryIndex);
+    }
+
+    private byte[] buildMultipartBody(String boundary, JsonObject payload, String fileName, byte[] fileBytes) {
+        ByteArrayBuilder body = new ByteArrayBuilder();
+        body.append(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        body.append("Content-Disposition: form-data; name=\"payload_json\"\r\n".getBytes(StandardCharsets.UTF_8));
+        body.append("Content-Type: application/json\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        body.append(payload.toString().getBytes(StandardCharsets.UTF_8));
+        body.append("\r\n".getBytes(StandardCharsets.UTF_8));
+        if (fileBytes != null && fileBytes.length > 0 && fileName != null && !fileName.isBlank()) {
+            body.append(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            body.append(("Content-Disposition: form-data; name=\"files[0]\"; filename=\"" + fileName + "\"\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            body.append("Content-Type: image/png\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            body.append(fileBytes);
+            body.append("\r\n".getBytes(StandardCharsets.UTF_8));
+        }
+        body.append(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return body.toByteArray();
+    }
+
+    private static final class ByteArrayBuilder {
+        private final java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+
+        private void append(byte[] value) {
+            output.write(value, 0, value.length);
+        }
+
+        private byte[] toByteArray() {
+            return output.toByteArray();
+        }
     }
 }

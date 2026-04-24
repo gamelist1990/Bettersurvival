@@ -9,6 +9,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
@@ -19,12 +20,14 @@ import java.lang.management.MemoryUsage;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class DiscordWebhookModule implements Listener {
+    private static final String STATUS_IMAGE_FILE_NAME = "status.png";
     private static final int JOIN_COLOR = 0x57F287;
     private static final int LEAVE_COLOR = 0xED4245;
     private static final int STATUS_COLOR = 0x5865F2;
-    private static final int PLAYER_LIST_LIMIT = 10;
+    private static final int PLAYER_LIST_LIMIT = 15;
 
     private final Loader plugin;
     private final DiscordWebhookStore store;
@@ -113,10 +116,10 @@ public class DiscordWebhookModule implements Listener {
                 .title("DiscordWebhook設定")
                 .body("Join/Leave用URLとStatus/List用URLは別々に設定できます")
                 .addBoolInput("enabled", "DiscordWebhookを有効にする", current.isEnabled())
-                .addTextInput("eventWebhookUrl", "Join/Leave Webhook URL", current.getEventWebhookUrl(), 2048, false)
+                .addTextInput("eventWebhookUrl", "Join/Leave Webhook URL", current.getEventWebhookUrl(), 2048, true)
                 .addBoolInput("joinEnabled", "Join通知", current.isJoinEnabled())
                 .addBoolInput("leaveEnabled", "Leave通知", current.isLeaveEnabled())
-                .addTextInput("statusWebhookUrl", "Status/List Webhook URL", current.getStatusWebhookUrl(), 2048, false)
+                .addTextInput("statusWebhookUrl", "Status/List Webhook URL", current.getStatusWebhookUrl(), 2048, true)
                 .addBoolInput("statusEnabled", "Status/List送信", current.isStatusEnabled())
                 .confirmation("保存", "キャンセル")
                 .onResponse((result, p) -> {
@@ -150,9 +153,14 @@ public class DiscordWebhookModule implements Listener {
 
     private void sendOrUpdateStatus(DiscordWebhookSettings current, Player sender) {
         JsonObject payload = createStatusPayload();
+        byte[] imageBytes = createStatusImageBytes();
+        if (imageBytes.length == 0) {
+            sender.sendMessage("§cStatus画像の生成に失敗しました");
+            return;
+        }
         String messageId = current.getStatusMessageId();
         if (!messageId.isBlank()) {
-            client.editMessage(current.getStatusWebhookUrl(), messageId, payload).thenAccept(updated -> {
+            client.editMessage(current.getStatusWebhookUrl(), messageId, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(updated -> {
                 if (updated) {
                     runSync(() -> sender.sendMessage("§a既存のStatus/Listメッセージを更新しました"));
                     return;
@@ -165,7 +173,12 @@ public class DiscordWebhookModule implements Listener {
     }
 
     private void createStatusMessage(String webhookUrl, JsonObject payload, Player sender) {
-        client.sendAndReturnMessageId(webhookUrl, payload).thenAccept(messageId -> {
+        byte[] imageBytes = createStatusImageBytes();
+        if (imageBytes.length == 0) {
+            sender.sendMessage("§cStatus画像の生成に失敗しました");
+            return;
+        }
+        client.sendAndReturnMessageId(webhookUrl, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(messageId -> {
             if (messageId.isBlank()) {
                 runSync(() -> sender.sendMessage("§cStatus/Listメッセージの作成に失敗しました"));
                 return;
@@ -188,17 +201,13 @@ public class DiscordWebhookModule implements Listener {
 
     private void sendPlayerEvent(String url, String title, Player player, int online, int color) {
         JsonObject embed = baseEmbed(title, color);
-        embed.addProperty("description", player.getName());
+        embed.addProperty("description", compactPlayerEventText(title, player.getName(), online));
         JsonObject thumbnail = new JsonObject();
         thumbnail.addProperty("url", getPlayerIconUrl(player));
         embed.add("thumbnail", thumbnail);
-        embed.add("fields", fields(
-                field("Player", player.getName(), true),
-                field("Players", online + "/" + Bukkit.getMaxPlayers(), true)
-        ));
 
         JsonObject payload = new JsonObject();
-        payload.addProperty("username", "PEXServer");
+        payload.addProperty("username", getWebhookDisplayName());
         JsonArray embeds = new JsonArray();
         embeds.add(embed);
         payload.add("embeds", embeds);
@@ -207,15 +216,13 @@ public class DiscordWebhookModule implements Listener {
 
     private JsonObject createStatusPayload() {
         JsonObject embed = baseEmbed("Status/List", STATUS_COLOR);
-        embed.add("fields", fields(
-                field("Players", Bukkit.getOnlinePlayers().size() + "/" + Bukkit.getMaxPlayers(), true),
-                field("Online Players", onlinePlayerList(), false),
-                field("Minecraft Time", minecraftTimeText(), true),
-                field("Server Load", serverLoadText(), false)
-        ));
+        embed.addProperty("description", "現在のサーバーステータス");
+        JsonObject image = new JsonObject();
+        image.addProperty("url", "attachment://" + STATUS_IMAGE_FILE_NAME);
+        embed.add("image", image);
 
         JsonObject payload = new JsonObject();
-        payload.addProperty("username", "PEXServer");
+        payload.addProperty("username", getWebhookDisplayName());
         JsonArray embeds = new JsonArray();
         embeds.add(embed);
         payload.add("embeds", embeds);
@@ -230,39 +237,46 @@ public class DiscordWebhookModule implements Listener {
         return embed;
     }
 
-    private JsonArray fields(JsonObject... values) {
-        JsonArray fields = new JsonArray();
-        for (JsonObject value : values) {
-            fields.add(value);
-        }
-        return fields;
-    }
-
-    private JsonObject field(String name, String value, boolean inline) {
-        JsonObject field = new JsonObject();
-        field.addProperty("name", name);
-        field.addProperty("value", value == null || value.isBlank() ? "-" : value);
-        field.addProperty("inline", inline);
-        return field;
-    }
-
     private String getPlayerIconUrl(Player player) {
         return "https://mc-heads.net/avatar/" + player.getUniqueId() + "/64";
     }
 
-    private String onlinePlayerList() {
+    private String compactPlayerEventText(String title, String playerName, int online) {
+        String action = "Join".equalsIgnoreCase(title) ? "joined" : "left";
+        return playerName + " " + action + "\nOnline: " + online + "/" + Bukkit.getMaxPlayers();
+    }
+
+    private byte[] createStatusImageBytes() {
+        try {
+            StatusImageRenderer.StatusImageData data = new StatusImageRenderer.StatusImageData(
+                    getWebhookDisplayName(),
+                    Bukkit.getOnlinePlayers().size(),
+                    Bukkit.getMaxPlayers(),
+                    sortedOnlinePlayerNames(),
+                    minecraftTimeText(),
+                    tpsText(),
+                    cpuLoadText(),
+                    heapText(),
+                    Instant.now());
+            return StatusImageRenderer.render(data);
+        } catch (Exception e) {
+            plugin.getLogger().warning("Status画像の生成に失敗しました: " + e.getMessage());
+            return new byte[0];
+        }
+    }
+
+    private List<String> sortedOnlinePlayerNames() {
         List<String> names = new ArrayList<>();
-        int index = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
-            if (index >= PLAYER_LIST_LIMIT) break;
             names.add(player.getName());
-            index++;
         }
-        if (names.isEmpty()) return "なし";
-        if (Bukkit.getOnlinePlayers().size() > PLAYER_LIST_LIMIT) {
-            names.add("...");
+        names.sort(String.CASE_INSENSITIVE_ORDER);
+        if (names.size() > PLAYER_LIST_LIMIT) {
+            List<String> clipped = new ArrayList<>(names.subList(0, PLAYER_LIST_LIMIT - 1));
+            clipped.add("+" + (names.size() - clipped.size()) + " more");
+            return clipped;
         }
-        return String.join(", ", names);
+        return names;
     }
 
     private String minecraftTimeText() {
@@ -279,16 +293,18 @@ public class DiscordWebhookModule implements Listener {
         return "夜";
     }
 
-    private String serverLoadText() {
+    private String tpsText() {
         double[] tps = plugin.getServer().getTPS();
-        String tpsText = tps.length > 0 ? String.format("%.2f/20.00", Math.min(20.0, tps[0])) : "unknown";
+        return tps.length > 0 ? String.format(Locale.ROOT, "%.2f/20.00", Math.min(20.0, tps[0])) : "unknown";
+    }
+
+    private String heapText() {
         MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
         MemoryUsage heap = memoryBean.getHeapMemoryUsage();
         long usedMb = heap.getUsed() / 1024 / 1024;
         long maxMb = heap.getMax() / 1024 / 1024;
         long heapPercent = maxMb > 0 ? Math.round(usedMb * 100.0 / maxMb) : 0;
-        String cpuText = cpuLoadText();
-        return "TPS: " + tpsText + "\nCPU: " + cpuText + "\nHeap: " + usedMb + "/" + maxMb + "MB (" + heapPercent + "%)";
+        return usedMb + "/" + maxMb + "MB (" + heapPercent + "%)";
     }
 
     private String cpuLoadText() {
@@ -296,9 +312,21 @@ public class DiscordWebhookModule implements Listener {
         if (bean instanceof com.sun.management.OperatingSystemMXBean operatingSystem) {
             double load = operatingSystem.getProcessCpuLoad();
             if (load >= 0) {
-                return String.format("%.1f%%", load * 100.0);
+                return String.format(Locale.ROOT, "%.1f%%", load * 100.0);
             }
         }
         return "unknown";
+    }
+
+    private String getWebhookDisplayName() {
+        String motd = PlainTextComponentSerializer.plainText().serialize(Bukkit.motd());
+        if (motd != null) {
+            String singleLine = motd.replace('\n', ' ').trim();
+            if (!singleLine.isEmpty()) {
+                return singleLine;
+            }
+        }
+        String fallback = plugin.getServer().getName();
+        return fallback == null || fallback.isBlank() ? "Minecraft Server" : fallback.trim();
     }
 }

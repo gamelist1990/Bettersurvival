@@ -33,9 +33,11 @@ import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -47,6 +49,7 @@ public final class Loader extends JavaPlugin {
     private TpaModule tpaModule;
     private DiscordWebhookModule discordWebhookModule;
     private HomeModule homeModule;
+    private PendingWhitelistModule pendingWhitelistModule;
 
     @Override
     public void onEnable() {
@@ -55,6 +58,8 @@ public final class Loader extends JavaPlugin {
         configManager = new ConfigManager(this);
         ChestUI.register();
         DialogUI.register();
+        pendingWhitelistModule = new PendingWhitelistModule(this, configManager);
+        getServer().getPluginManager().registerEvents(pendingWhitelistModule, this);
 
         // CommandBlockManager を作成して CommandManager に渡す
         this.commandBlockManager = new CommandBlockManager(this);
@@ -196,6 +201,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new ListCommand());
         // DiscordWebhook command: Discord通知設定UI（OP専用）
         commandManager.register(new DiscordCommand(this));
+        // Pending whitelist command: 初回参加前ユーザーを接続待機登録
+        commandManager.register(new WhitelistCommand(this));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
@@ -228,6 +235,10 @@ public final class Loader extends JavaPlugin {
 
     public HomeModule getHomeModule() {
         return homeModule;
+    }
+
+    public PendingWhitelistModule getPendingWhitelistModule() {
+        return pendingWhitelistModule;
     }
 
     @Override

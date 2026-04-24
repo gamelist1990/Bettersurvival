@@ -368,39 +368,43 @@ public class DialogUI {
          * @param player 表示対象のプレイヤー
          */
         public void show(Player player) {
-            // 総合版
+            showWithResult(player);
+        }
+
+        public boolean showWithResult(Player player) {
             if (FloodgateUtil.isBedrock(player)) {
-                showBedrockForm(player);
-                return;
+                return showBedrockForm(player);
             }
 
-            // Java版
             Dialog dialog = build();
             if (dialog != null) {
                 if (responseHandler != null) {
                     responseHandlers.put(player.getUniqueId(), responseHandler);
                 }
                 player.showDialog(dialog);
+                return true;
             }
+            return false;
         }
 
-        private void showBedrockForm(Player player) {
+        private boolean showBedrockForm(Player player) {
             try {
                 if (!inputs.isEmpty()) {
-                    showBedrockCustomForm(player);
+                    return showBedrockCustomForm(player);
                 } else if (yesButtonLabel != null && noButtonLabel != null) {
-                    showBedrockModalForm(player);
+                    return showBedrockModalForm(player);
                 } else {
-                    showBedrockSimpleForm(player);
+                    return showBedrockSimpleForm(player);
                 }
             } catch (Throwable ex) {
                 player.sendMessage("§c統合版フォームの表示に失敗しました");
                 Loader.getPlugin(Loader.class).getLogger().log(Level.WARNING, "Failed to show Bedrock form: {0}",
                         ex.getMessage());
+                return false;
             }
         }
 
-        private void showBedrockSimpleForm(Player player) {
+        private boolean showBedrockSimpleForm(Player player) {
             String titleStr = extractText(title);
             String contentStr = bodyComponents.stream()
                     .map(body -> extractBodyText(body))
@@ -419,7 +423,7 @@ public class DialogUI {
                 buttons.add("OK");
             }
 
-            FormsUtil.openSimpleForm(player, titleStr, contentStr, buttons, clickedIndex -> {
+            return FormsUtil.openSimpleForm(player, titleStr, contentStr, buttons, clickedIndex -> {
                 if (clickedIndex >= 0 && responseHandler != null) {
                     boolean confirmed = (yesButtonLabel != null && clickedIndex == 0);
                     int actionIndex = yesButtonLabel != null ? clickedIndex - 1 : clickedIndex;
@@ -429,13 +433,13 @@ public class DialogUI {
             });
         }
 
-        private void showBedrockModalForm(Player player) {
+        private boolean showBedrockModalForm(Player player) {
             String titleStr = extractText(title);
             String contentStr = bodyComponents.stream()
                     .map(body -> extractBodyText(body))
                     .reduce("", (a, b) -> a + "\n" + b);
 
-            FormsUtil.openModalForm(player, titleStr, contentStr, yesButtonLabel, noButtonLabel, clickedFirst -> {
+            return FormsUtil.openModalForm(player, titleStr, contentStr, yesButtonLabel, noButtonLabel, clickedFirst -> {
                 if (responseHandler != null) {
                     DialogResult result = new DialogResult(null, null, clickedFirst);
                     responseHandler.accept(result, player);
@@ -443,7 +447,7 @@ public class DialogUI {
             });
         }
 
-        private void showBedrockCustomForm(Player player) {
+        private boolean showBedrockCustomForm(Player player) {
             try {
                 String titleStr = extractText(title);
                 org.geysermc.cumulus.form.CustomForm.Builder builder = org.geysermc.cumulus.form.CustomForm.builder()
@@ -499,11 +503,13 @@ public class DialogUI {
                 org.geysermc.cumulus.form.CustomForm form = builder.build();
                 org.geysermc.floodgate.api.FloodgateApi api = org.geysermc.floodgate.api.FloodgateApi.getInstance();
                 if (api != null) {
-                    api.sendForm(player.getUniqueId(), form);
+                    return api.sendForm(player.getUniqueId(), form);
                 }
+                return false;
             } catch (Throwable ex) {
                 Loader.getPlugin(Loader.class).getLogger().log(Level.WARNING, "Failed to show Bedrock custom form: {0}",
                         ex.getMessage());
+                return false;
             }
         }
 
