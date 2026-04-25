@@ -54,7 +54,7 @@ import net.kyori.adventure.text.format.TextColor;
  */
 public class DialogUI {
 
-    private static final Map<UUID, BiConsumer<DialogResult, Player>> responseHandlers = new ConcurrentHashMap<>();
+    private static final Map<UUID, HandlerData> responseHandlers = new ConcurrentHashMap<>();
     private static int keyCounter = 0;
 
     /**
@@ -379,12 +379,23 @@ public class DialogUI {
             Dialog dialog = build();
             if (dialog != null) {
                 if (responseHandler != null) {
-                    responseHandlers.put(player.getUniqueId(), responseHandler);
+                    responseHandlers.put(player.getUniqueId(), new HandlerData(responseHandler, inputKeys()));
                 }
                 player.showDialog(dialog);
                 return true;
             }
             return false;
+        }
+
+        private List<String> inputKeys() {
+            List<String> keys = new ArrayList<>();
+            for (DialogInput input : inputs) {
+                String key = extractInputKey(input);
+                if (key != null && !key.isEmpty()) {
+                    keys.add(key);
+                }
+            }
+            return keys;
         }
 
         private boolean showBedrockForm(Player player) {
@@ -492,6 +503,9 @@ public class DialogUI {
 
                 builder.validResultHandler((form, response) -> {
                     if (response != null && responseHandler != null) {
+                        Loader.getPlugin(Loader.class).getLogger().info(
+                                "[DialogUI] Bedrock form response player=" + player.getName()
+                                        + " inputIndexes=" + inputIndexMap);
                         DialogResult result = new DialogResult(
                                 true,
                                 (org.geysermc.cumulus.response.CustomFormResponse) response,
@@ -770,6 +784,9 @@ public class DialogUI {
         }
     }
 
+    private record HandlerData(BiConsumer<DialogResult, Player> handler, List<String> inputKeys) {
+    }
+
     /**
      * ダイアログからの応答をカプセル化するオブジェクト。
      * <p>Java 版の {@link DialogResponseView} か、Bedrock 版の
@@ -975,8 +992,8 @@ public class DialogUI {
             }
 
             UUID playerId = player.getUniqueId();
-            BiConsumer<DialogResult, Player> handler = responseHandlers.get(playerId);
-            if (handler == null) {
+            HandlerData handlerData = responseHandlers.get(playerId);
+            if (handlerData == null) {
                 return;
             }
 
@@ -984,16 +1001,41 @@ public class DialogUI {
             DialogResponseView responseView = event.getDialogResponseView();
             boolean isConfirmed = clickedKey != null && clickedKey.value().contains("_yes");
             DialogResult result = new DialogResult(clickedKey, responseView, isConfirmed);
+            logJavaDialogResponse(player, clickedKey, responseView, isConfirmed, handlerData.inputKeys());
 
             try {
-                handler.accept(result, player);
+                handlerData.handler().accept(result, player);
             } catch (Exception e) {
                 Loader.getPlugin(Loader.class).getLogger().log(Level.WARNING, "Error handling dialog response: {0}",
                         e.getMessage());
             }
-            if (responseHandlers.get(playerId) == handler) {
+            if (responseHandlers.get(playerId) == handlerData) {
                 responseHandlers.remove(playerId);
             }
+        }
+
+        private void logJavaDialogResponse(Player player, Key clickedKey, DialogResponseView responseView,
+                boolean confirmed, List<String> keys) {
+            StringBuilder builder = new StringBuilder("[DialogUI] Java dialog response player=")
+                    .append(player.getName())
+                    .append(" clicked=")
+                    .append(clickedKey == null ? "null" : clickedKey.asString())
+                    .append(" confirmed=")
+                    .append(confirmed)
+                    .append(" payload=")
+                    .append(responseView == null ? "null" : responseView.payload());
+            if (keys != null && !keys.isEmpty() && responseView != null) {
+                for (String key : keys) {
+                    builder.append(" key[").append(key).append("]={text='")
+                            .append(responseView.getText(key))
+                            .append("', float=")
+                            .append(responseView.getFloat(key))
+                            .append(", bool=")
+                            .append(responseView.getBoolean(key))
+                            .append("}");
+                }
+            }
+            Loader.getPlugin(Loader.class).getLogger().info(builder.toString());
         }
     }
 

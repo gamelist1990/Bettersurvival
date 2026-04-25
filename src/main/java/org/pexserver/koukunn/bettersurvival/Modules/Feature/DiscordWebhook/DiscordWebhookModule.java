@@ -216,7 +216,7 @@ public class DiscordWebhookModule implements Listener {
 
     private JsonObject createStatusPayload() {
         JsonObject embed = baseEmbed("Status/List", STATUS_COLOR);
-        embed.addProperty("description", "現在のサーバーステータス");
+        embed.addProperty("description", "Current server status");
         JsonObject image = new JsonObject();
         image.addProperty("url", "attachment://" + STATUS_IMAGE_FILE_NAME);
         embed.add("image", image);
@@ -288,9 +288,9 @@ public class DiscordWebhookModule implements Listener {
     }
 
     private String dayPart(long time) {
-        if (time < 6000) return "朝";
-        if (time < 12000) return "昼";
-        return "夜";
+        if (time < 6000) return "Morning";
+        if (time < 12000) return "Day";
+        return "Night";
     }
 
     private String tpsText() {
@@ -322,11 +322,26 @@ public class DiscordWebhookModule implements Listener {
         String motd = PlainTextComponentSerializer.plainText().serialize(Bukkit.motd());
         if (motd != null) {
             String singleLine = motd.replace('\n', ' ').trim();
-            if (!singleLine.isEmpty()) {
+            if (!singleLine.isEmpty() && isAscii(singleLine)) {
                 return singleLine;
             }
         }
         String fallback = plugin.getServer().getName();
-        return fallback == null || fallback.isBlank() ? "Minecraft Server" : fallback.trim();
+        if (fallback != null) {
+            String trimmed = fallback.trim();
+            if (!trimmed.isEmpty() && isAscii(trimmed)) {
+                return trimmed;
+            }
+        }
+        return "Minecraft Server";
+    }
+
+    private boolean isAscii(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) > 0x7F) {
+                return false;
+            }
+        }
+        return true;
     }
 }
