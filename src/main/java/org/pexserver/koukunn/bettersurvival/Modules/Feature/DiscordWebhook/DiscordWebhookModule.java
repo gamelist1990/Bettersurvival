@@ -284,7 +284,7 @@ public class DiscordWebhookModule implements Listener {
         if (worlds.isEmpty()) return "unknown";
         World world = worlds.get(0);
         long time = world.getTime();
-        return world.getName() + " " + time + "tick / " + dayPart(time);
+        return time + "T / " + dayPart(time);
     }
 
     private String dayPart(long time) {

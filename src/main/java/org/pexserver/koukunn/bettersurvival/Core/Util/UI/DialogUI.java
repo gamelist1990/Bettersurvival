@@ -464,15 +464,16 @@ public class DialogUI {
                 org.geysermc.cumulus.form.CustomForm.Builder builder = org.geysermc.cumulus.form.CustomForm.builder()
                         .title(titleStr);
 
+                java.util.Map<String, Integer> inputIndexMap = new java.util.HashMap<>();
+                int componentIndex = 0;
+
                 for (DialogBody body : bodyComponents) {
                     String text = extractBodyText(body);
                     if (!text.isEmpty()) {
                         builder.label(text);
+                        componentIndex++;
                     }
                 }
-
-                java.util.Map<String, Integer> inputIndexMap = new java.util.HashMap<>();
-                int componentIndex = 0;
 
                 for (DialogInput input : inputs) {
                     try {
@@ -503,12 +504,15 @@ public class DialogUI {
 
                 builder.validResultHandler((form, response) -> {
                     if (response != null && responseHandler != null) {
+                        org.geysermc.cumulus.response.CustomFormResponse customResponse =
+                                (org.geysermc.cumulus.response.CustomFormResponse) response;
                         Loader.getPlugin(Loader.class).getLogger().info(
                                 "[DialogUI] Bedrock form response player=" + player.getName()
-                                        + " inputIndexes=" + inputIndexMap);
+                                        + " inputIndexes=" + inputIndexMap
+                                        + " values=" + bedrockDebugValues(customResponse, inputIndexMap));
                         DialogResult result = new DialogResult(
                                 true,
-                                (org.geysermc.cumulus.response.CustomFormResponse) response,
+                                customResponse,
                                 inputIndexMap);
                         responseHandler.accept(result, player);
                     }
@@ -525,6 +529,27 @@ public class DialogUI {
                         ex.getMessage());
                 return false;
             }
+        }
+
+        private String bedrockDebugValues(org.geysermc.cumulus.response.CustomFormResponse response,
+                java.util.Map<String, Integer> inputIndexMap) {
+            StringBuilder builder = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<String, Integer> entry : inputIndexMap.entrySet()) {
+                if (!first) {
+                    builder.append(", ");
+                }
+                first = false;
+                builder.append(entry.getKey()).append("@").append(entry.getValue()).append("='");
+                try {
+                    builder.append(response.asInput(entry.getValue()));
+                } catch (RuntimeException e) {
+                    builder.append("<not-input>");
+                }
+                builder.append("'");
+            }
+            builder.append("}");
+            return builder.toString();
         }
 
         private String extractText(Component comp) {

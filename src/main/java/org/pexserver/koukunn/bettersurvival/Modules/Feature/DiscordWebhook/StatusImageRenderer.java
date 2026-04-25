@@ -21,7 +21,7 @@ import java.util.Map;
 public final class StatusImageRenderer {
     private static final int WIDTH = 1200;
     private static final int HEIGHT = 675;
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("MM/dd HH:mm")
             .withZone(ZoneId.systemDefault());
     private static final Map<Character, String[]> GLYPHS = createGlyphs();
 
@@ -49,11 +49,11 @@ public final class StatusImageRenderer {
         drawBadge(g, 76, 164, 220, 76, new Color(63, 190, 120), "ONLINE",
                 data.onlinePlayers() + " / " + data.maxPlayers());
         drawBadge(g, 316, 164, 332, 76, new Color(81, 139, 255), "UPDATED",
-                clip(TIME_FORMAT.format(data.updatedAt()), 19));
+                TIME_FORMAT.format(data.updatedAt()));
 
         drawPanel(g, 74, 276, 330, 250, "OVERVIEW");
         drawMetric(g, 98, 334, "PLAYERS", data.onlinePlayers() + " / " + data.maxPlayers(), new Color(127, 236, 173));
-        drawMetric(g, 98, 404, "WORLD TIME", clip(sanitize(data.minecraftTime()), 18), new Color(120, 190, 255));
+        drawMetric(g, 98, 404, "WORLD TIME", clip(sanitize(data.minecraftTime()), 15), new Color(120, 190, 255));
         drawMetric(g, 98, 474, "TPS", clip(sanitize(data.tpsText()), 14), new Color(255, 131, 131));
 
         drawPanel(g, 430, 276, 696, 286, "SERVER");
@@ -101,7 +101,7 @@ public final class StatusImageRenderer {
 
     private static void drawMetric(Graphics2D g, int x, int y, String label, String value, Color accent) {
         drawText(g, label, x, y, 2, 1, accent);
-        drawText(g, sanitize(value), x, y + 22, 3, 1, Color.WHITE);
+        drawText(g, sanitize(value), x, y + 22, 2, 1, Color.WHITE);
     }
 
     private static void drawPlayers(Graphics2D g, int x, int y, int width, int height, List<String> names) {
