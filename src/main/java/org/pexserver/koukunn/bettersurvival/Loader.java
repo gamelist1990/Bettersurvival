@@ -243,7 +243,9 @@ public final class Loader extends JavaPlugin {
 
     @Override
     public void onDisable() {
-
+        if (discordWebhookModule != null) {
+            discordWebhookModule.shutdown();
+        }
         getLogger().info("Better Survival Plugin が無効になりました");
     }
 }

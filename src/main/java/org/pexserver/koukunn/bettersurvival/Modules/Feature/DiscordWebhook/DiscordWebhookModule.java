@@ -9,6 +9,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.scheduler.BukkitTask;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
@@ -28,17 +29,20 @@ public class DiscordWebhookModule implements Listener {
     private static final int LEAVE_COLOR = 0xED4245;
     private static final int STATUS_COLOR = 0x5865F2;
     private static final int PLAYER_LIST_LIMIT = 15;
+    private static final long STATUS_AUTO_UPDATE_INTERVAL_TICKS = 5L * 60L * 20L;
 
     private final Loader plugin;
     private final DiscordWebhookStore store;
     private final DiscordWebhookClient client;
     private DiscordWebhookSettings settings;
+    private BukkitTask statusAutoUpdateTask;
 
     public DiscordWebhookModule(Loader plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.store = new DiscordWebhookStore(configManager);
         this.client = new DiscordWebhookClient(plugin);
         this.settings = store.load();
+        updateStatusAutoUpdateTask();
     }
 
     @EventHandler
@@ -66,8 +70,13 @@ public class DiscordWebhookModule implements Listener {
         boolean saved = store.save(settings);
         if (saved) {
             this.settings = settings;
+            updateStatusAutoUpdateTask();
         }
         return saved;
+    }
+
+    public synchronized void shutdown() {
+        cancelStatusAutoUpdateTask();
     }
 
     public boolean sendStatusNow(Player sender) {
@@ -97,6 +106,7 @@ public class DiscordWebhookModule implements Listener {
                 .body("Join: " + enabledText(current.isJoinEnabled()))
                 .body("Leave: " + enabledText(current.isLeaveEnabled()))
                 .body("Status/List: " + enabledText(current.isStatusEnabled()))
+                .body("Status自動更新: " + enabledText(current.isStatusAutoUpdateEnabled()))
                 .addAction("設定", 0x57F287)
                 .addAction("Status送信", 0x5865F2)
                 .onResponse((result, p) -> {
@@ -121,6 +131,7 @@ public class DiscordWebhookModule implements Listener {
                 .addBoolInput("leaveEnabled", "Leave通知", current.isLeaveEnabled())
                 .addTextInput("statusWebhookUrl", "Status/List Webhook URL", current.getStatusWebhookUrl(), 2048, true)
                 .addBoolInput("statusEnabled", "Status/List送信", current.isStatusEnabled())
+                .addBoolInput("statusAutoUpdateEnabled", "Status/Listを5分ごとに自動更新", current.isStatusAutoUpdateEnabled())
                 .confirmation("保存", "キャンセル")
                 .onResponse((result, p) -> {
                     if (!result.isConfirmed()) {
@@ -134,6 +145,7 @@ public class DiscordWebhookModule implements Listener {
                     updated.setLeaveEnabled(result.getBool("leaveEnabled"));
                     updated.setStatusWebhookUrl(result.getText("statusWebhookUrl"));
                     updated.setStatusEnabled(result.getBool("statusEnabled"));
+                    updated.setStatusAutoUpdateEnabled(result.getBool("statusAutoUpdateEnabled"));
                     if (updated.getStatusWebhookUrl().equals(current.getStatusWebhookUrl())) {
                         updated.setStatusMessageId(current.getStatusMessageId());
                     }
@@ -155,14 +167,14 @@ public class DiscordWebhookModule implements Listener {
         JsonObject payload = createStatusPayload();
         byte[] imageBytes = createStatusImageBytes();
         if (imageBytes.length == 0) {
-            sender.sendMessage("§cStatus画像の生成に失敗しました");
+            sendStatusMessage(sender, "§cStatus画像の生成に失敗しました");
             return;
         }
         String messageId = current.getStatusMessageId();
         if (!messageId.isBlank()) {
             client.editMessage(current.getStatusWebhookUrl(), messageId, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(updated -> {
                 if (updated) {
-                    runSync(() -> sender.sendMessage("§a既存のStatus/Listメッセージを更新しました"));
+                    sendStatusMessageSync(sender, "§a既存のStatus/Listメッセージを更新しました");
                     return;
                 }
                 createStatusMessage(current.getStatusWebhookUrl(), payload, sender);
@@ -175,19 +187,56 @@ public class DiscordWebhookModule implements Listener {
     private void createStatusMessage(String webhookUrl, JsonObject payload, Player sender) {
         byte[] imageBytes = createStatusImageBytes();
         if (imageBytes.length == 0) {
-            sender.sendMessage("§cStatus画像の生成に失敗しました");
+            sendStatusMessage(sender, "§cStatus画像の生成に失敗しました");
             return;
         }
         client.sendAndReturnMessageId(webhookUrl, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(messageId -> {
             if (messageId.isBlank()) {
-                runSync(() -> sender.sendMessage("§cStatus/Listメッセージの作成に失敗しました"));
+                sendStatusMessageSync(sender, "§cStatus/Listメッセージの作成に失敗しました");
                 return;
             }
             runSync(() -> {
                 saveStatusMessageId(messageId);
-                sender.sendMessage("§aStatus/Listメッセージを作成し、次回以降は更新するようにしました");
+                sendStatusMessage(sender, "§aStatus/Listメッセージを作成し、次回以降は更新するようにしました");
             });
         });
+    }
+
+    private void updateStatusAutoUpdateTask() {
+        cancelStatusAutoUpdateTask();
+        DiscordWebhookSettings current = getSettings();
+        if (!current.isEnabled() || !current.isStatusEnabled() || !current.isStatusAutoUpdateEnabled()) return;
+        if (!client.isValidUrl(current.getStatusWebhookUrl())) return;
+        statusAutoUpdateTask = plugin.getServer().getScheduler().runTaskTimer(plugin,
+                this::sendScheduledStatus,
+                STATUS_AUTO_UPDATE_INTERVAL_TICKS,
+                STATUS_AUTO_UPDATE_INTERVAL_TICKS);
+    }
+
+    private void cancelStatusAutoUpdateTask() {
+        if (statusAutoUpdateTask != null) {
+            statusAutoUpdateTask.cancel();
+            statusAutoUpdateTask = null;
+        }
+    }
+
+    private void sendScheduledStatus() {
+        DiscordWebhookSettings current = getSettings();
+        if (!current.isEnabled() || !current.isStatusEnabled() || !current.isStatusAutoUpdateEnabled()) return;
+        if (!client.isValidUrl(current.getStatusWebhookUrl())) return;
+        sendOrUpdateStatus(current, null);
+    }
+
+    private void sendStatusMessage(Player sender, String message) {
+        if (sender != null && sender.isOnline()) {
+            sender.sendMessage(message);
+        }
+    }
+
+    private void sendStatusMessageSync(Player sender, String message) {
+        if (sender != null) {
+            runSync(() -> sendStatusMessage(sender, message));
+        }
     }
 
     private synchronized void saveStatusMessageId(String messageId) {

@@ -1,5 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.bukkit.plugin.Plugin;
@@ -173,10 +174,20 @@ public class DiscordWebhookClient {
 
     private byte[] buildMultipartBody(String boundary, JsonObject payload, String fileName, byte[] fileBytes) {
         ByteArrayBuilder body = new ByteArrayBuilder();
+        JsonObject multipartPayload = payload;
+        if (fileBytes != null && fileBytes.length > 0 && fileName != null && !fileName.isBlank()) {
+            multipartPayload = payload.deepCopy();
+            JsonArray attachments = new JsonArray();
+            JsonObject attachment = new JsonObject();
+            attachment.addProperty("id", 0);
+            attachment.addProperty("filename", fileName);
+            attachments.add(attachment);
+            multipartPayload.add("attachments", attachments);
+        }
         body.append(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
         body.append("Content-Disposition: form-data; name=\"payload_json\"\r\n".getBytes(StandardCharsets.UTF_8));
         body.append("Content-Type: application/json\r\n\r\n".getBytes(StandardCharsets.UTF_8));
-        body.append(payload.toString().getBytes(StandardCharsets.UTF_8));
+        body.append(multipartPayload.toString().getBytes(StandardCharsets.UTF_8));
         body.append("\r\n".getBytes(StandardCharsets.UTF_8));
         if (fileBytes != null && fileBytes.length > 0 && fileName != null && !fileName.isBlank()) {
             body.append(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));

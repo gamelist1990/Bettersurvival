@@ -8,6 +8,7 @@ public class DiscordWebhookSettings {
     private boolean joinEnabled;
     private boolean leaveEnabled;
     private boolean statusEnabled;
+    private boolean statusAutoUpdateEnabled;
 
     public boolean isEnabled() {
         return enabled;
@@ -63,5 +64,13 @@ public class DiscordWebhookSettings {
 
     public void setStatusEnabled(boolean statusEnabled) {
         this.statusEnabled = statusEnabled;
+    }
+
+    public boolean isStatusAutoUpdateEnabled() {
+        return statusAutoUpdateEnabled;
+    }
+
+    public void setStatusAutoUpdateEnabled(boolean statusAutoUpdateEnabled) {
+        this.statusAutoUpdateEnabled = statusAutoUpdateEnabled;
     }
 }
