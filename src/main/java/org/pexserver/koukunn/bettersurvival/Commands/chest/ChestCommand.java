@@ -85,12 +85,12 @@ public class ChestCommand extends BaseCommand {
             }
             for (Location loc : locs) {
                 Optional<ChestLock> exist = store.get(loc);
-                if (exist.isPresent() && !exist.get().getOwner().equals(p.getUniqueId().toString())) {
+                if (exist.isPresent() && !exist.get().isOwner(p)) {
                     sendError(sender, "このチェストは既に他プレイヤーがロックしています");
                     return true;
                 }
             }
-            ChestLock lock = new ChestLock(p.getUniqueId().toString(), args[1]);
+            ChestLock lock = new ChestLock(p.getUniqueId().toString(), p.getName(), args[1]);
             for (Location loc : locs) store.save(loc, lock);
             sendSuccess(sender, "チェストをロックしました: " + args[1]);
             return true;
@@ -106,7 +106,7 @@ public class ChestCommand extends BaseCommand {
                 Optional<ChestLock> opt = store.get(loc);
                 if (!opt.isPresent()) continue;
                 ChestLock lock = opt.get();
-                if (lock.getOwner().equals(p.getUniqueId().toString())) {
+                if (lock.isOwner(p)) {
                     store.remove(loc); removed = true; continue;
                 }
                 sendError(sender, "あなたはこのチェストのオーナーではありません");
@@ -159,7 +159,7 @@ public class ChestCommand extends BaseCommand {
             Optional<ChestLock> css = store.get(locs.get(0));
             if (!css.isPresent()) { sendError(sender, "このチェストは保護されていません"); return true; }
             ChestLock lock = css.get();
-            if (!lock.getOwner().equals(p.getUniqueId().toString()) && !p.isOp()) { sendError(sender, "あなたはオーナーではありません"); return true; }
+            if (!lock.isOwner(p) && !p.isOp()) { sendError(sender, "あなたはオーナーではありません"); return true; }
             if ("add".equals(cmd)) {
                 if (args.length < 3) { sendError(sender, "プレイヤー名を指定してください"); return true; }
                 String name = args[2];
@@ -169,7 +169,7 @@ public class ChestCommand extends BaseCommand {
                     if (pl.getWorld().equals(p.getWorld()) && pl.getName().toLowerCase().contains(name.toLowerCase())) { foundPlayer = pl; break; }
                 }
                 if (foundPlayer == null) { sendError(sender, "プレイヤーが見つかりません"); return true; }
-                lock.addMember(foundPlayer.getUniqueId().toString());
+                lock.addMember(foundPlayer);
                     for (Location loc : locs) store.save(loc, lock);
                 sendSuccess(sender, "メンバーを追加しました: " + foundPlayer.getName());
                 return true;
@@ -182,7 +182,7 @@ public class ChestCommand extends BaseCommand {
                     if (pl.getWorld().equals(p.getWorld()) && pl.getName().toLowerCase().contains(name.toLowerCase())) { foundPlayer = pl; break; }
                 }
                 if (foundPlayer == null) { sendError(sender, "プレイヤーが見つかりません"); return true; }
-                lock.removeMember(foundPlayer.getUniqueId().toString());
+                lock.removeMember(foundPlayer);
                     for (Location loc : locs) store.save(loc, lock);
                 sendSuccess(sender, "メンバーを削除しました: " + foundPlayer.getName());
                 return true;
@@ -227,8 +227,7 @@ public class ChestCommand extends BaseCommand {
                 String[] parts = key.split(":");
                 String coords = key;
                 if (parts.length >= 4) coords = parts[0] + " " + parts[1] + "," + parts[2] + "," + parts[3];
-                String ownerName = lock.getOwner();
-                try { ownerName = Bukkit.getOfflinePlayer(UUID.fromString(lock.getOwner())).getName(); } catch (Exception ex) {}
+                String ownerName = lock.getOwnerDisplayName();
                 sendInfo(sender, coords + " - " + lock.getName() + " (owner: " + ownerName + ")");
             }
             return true;
@@ -287,9 +286,8 @@ public class ChestCommand extends BaseCommand {
                     String name = pl.getName();
                     String low = name.toLowerCase();
                     if (!low.contains(partial)) continue;
-                    String uid = pl.getUniqueId().toString();
-                    if (lock.getOwner() != null && lock.getOwner().equals(uid)) continue;
-                    if (lock.isMember(uid)) continue;
+                    if (lock.isOwner(pl)) continue;
+                    if (lock.isMember(pl)) continue;
                     list.add(name);
                 }
                 return list;

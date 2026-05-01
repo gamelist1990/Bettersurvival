@@ -123,8 +123,7 @@ public class ChestLockUI {
         
         
         
-        boolean isOwnerOrOp = lock != null && (p.isOp() || 
-            (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString())));
+        boolean isOwnerOrOp = lock != null && (p.isOp() || lock.isOwner(p));
         
         // ガラス装飾
         ItemStack border = createItem(Material.GRAY_STAINED_GLASS_PANE, " ");
@@ -154,7 +153,7 @@ public class ChestLockUI {
             inv.setItem(11, memberBtn);
             
             // スロット13: 情報
-            String ownerName = getPlayerName(lock.getOwner());
+            String ownerName = getPlayerName(lock);
             inv.setItem(13, createItem(Material.BOOK, "§e§l" + lock.getName(),
                 "§7オーナー: §f" + ownerName,
                 "§7メンバー: §f" + lock.getMembers().size() + "人",
@@ -234,8 +233,7 @@ public class ChestLockUI {
         
         List<Player> candidates = new ArrayList<>();
         for (Player pl : getNearbyPlayers(p, loc)) {
-            if (!lock.isMember(pl.getUniqueId().toString()) &&
-                (lock.getOwner() == null || !lock.getOwner().equals(pl.getUniqueId().toString()))) {
+            if (!lock.isMember(pl) && !lock.isOwner(pl)) {
                 candidates.add(pl);
             }
         }
@@ -345,12 +343,9 @@ public class ChestLockUI {
                                            org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore,
                                            int page) {
         Map<String, ChestLock> all = store.getAll();
-        String playerUuid = p.getUniqueId().toString();
-        
-        // プレイヤーがオーナーのチェストのみフィルタ (OPは全て表示)
         List<Map.Entry<String, ChestLock>> filtered = new ArrayList<>();
         for (Map.Entry<String, ChestLock> e : all.entrySet()) {
-            if (p.isOp() || (e.getValue().getOwner() != null && e.getValue().getOwner().equals(playerUuid))) {
+            if (p.isOp() || (e.getValue().isOwner(p))) {
                 filtered.add(e);
             }
         }
@@ -390,7 +385,7 @@ public class ChestLockUI {
                 lore.add("§7ワールド: §f" + parts[0]);
                 lore.add("§7座標: §f" + parts[1] + ", " + parts[2] + ", " + parts[3]);
             }
-            lore.add("§7オーナー: §f" + getPlayerName(lock.getOwner()));
+            lore.add("§7オーナー: §f" + getPlayerName(lock));
             lore.add("§7メンバー: §f" + lock.getMembers().size() + "人");
             lore.add("");
             lore.add("§7クリックで座標を表示");
@@ -452,6 +447,12 @@ public class ChestLockUI {
             return uuid.length() > 8 ? uuid.substring(0, 8) : uuid;
         }
     }
+
+    private static String getPlayerName(ChestLock lock) {
+        if (lock == null) return "不明";
+        String ownerName = lock.getOwnerName();
+        return ownerName != null ? ownerName : getPlayerName(lock.getOwner());
+    }
     
     // ========== Bedrock対応 ==========
     
@@ -464,8 +465,7 @@ public class ChestLockUI {
         if (lock == null) {
             buttons.add("ロックする (自動名)");
         } else {
-            boolean ownerOrOp = p.isOp() || 
-                (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString()));
+            boolean ownerOrOp = p.isOp() || lock.isOwner(p);
             if (ownerOrOp) buttons.add("ロック解除");
             buttons.add("メンバー管理");
         }
@@ -487,7 +487,7 @@ public class ChestLockUI {
                             }
                         } catch (Exception ignored) {}
                     }
-                    ChestLock newLock = new ChestLock(p.getUniqueId().toString(),
+                    ChestLock newLock = new ChestLock(p.getUniqueId().toString(), p.getName(),
                         "lock-" + UUID.randomUUID().toString().substring(0, 6));
                     for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock())) {
                         store.save(l, newLock);
@@ -503,8 +503,7 @@ public class ChestLockUI {
                 return;
             }
             
-            boolean ownerOrOp = p.isOp() || 
-                (lock.getOwner() != null && lock.getOwner().equals(p.getUniqueId().toString()));
+            boolean ownerOrOp = p.isOp() || lock.isOwner(p);
             int base = 0;
             
             if (ownerOrOp) {
@@ -552,9 +551,8 @@ public class ChestLockUI {
                 List<Player> candidates = new ArrayList<>();
                 for (Player pl : nearby) {
                     if (pl.getUniqueId().equals(p.getUniqueId())) continue;
-                    String su = pl.getUniqueId().toString();
-                    if (lock.isMember(su)) continue;
-                    if (lock.getOwner() != null && lock.getOwner().equals(su)) continue;
+                    if (lock.isMember(pl)) continue;
+                    if (lock.isOwner(pl)) continue;
                     candidates.add(pl);
                     String rawName = pl.getName();
                     String san = sanitizeName(rawName);
@@ -570,7 +568,7 @@ public class ChestLockUI {
                         return;
                     }
                     Player target = candidates.get(aidx);
-                    lock.addMember(target.getUniqueId().toString());
+                    lock.addMember(target);
                     for (Location l : ChestLockModule.getChestRelatedLocations(loc.getBlock())) {
                         store.save(l, lock);
                     }
@@ -613,18 +611,16 @@ public class ChestLockUI {
                                             ChestLockStore store,
                                             org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore shopStore) {
         Map<String, ChestLock> all = store.getAll();
-        String playerUuid = p.getUniqueId().toString();
-        
         List<String> rows = new ArrayList<>();
         List<String> keyList = new ArrayList<>();
         
         for (Map.Entry<String, ChestLock> e : all.entrySet()) {
-            if (!p.isOp() && (e.getValue().getOwner() == null || !e.getValue().getOwner().equals(playerUuid))) {
+            if (!p.isOp() && !e.getValue().isOwner(p)) {
                 continue;
             }
             String key = e.getKey();
             ChestLock lk = e.getValue();
-            String ownerName = getPlayerName(lk.getOwner());
+            String ownerName = getPlayerName(lk);
             rows.add(lk.getName() + " (オーナー: " + ownerName + ")");
             keyList.add(key);
             if (rows.size() >= 50) break;

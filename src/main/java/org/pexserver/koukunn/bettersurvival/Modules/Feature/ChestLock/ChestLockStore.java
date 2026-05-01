@@ -21,12 +21,10 @@ public class ChestLockStore {
     }
 
     private String keyFor(Location loc) {
-        // canonicalize key for single or large chests so that adjacent chest pairs share one key
         List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
         if (related == null || related.isEmpty()) {
             return loc.getWorld().getName() + ":" + loc.getBlockX() + ":" + loc.getBlockY() + ":" + loc.getBlockZ();
         }
-        // pick a deterministic smallest coordinate to represent the set
         Location smallest = related.get(0);
         for (Location l : related) {
             if (compareLocationKey(l, smallest) < 0) smallest = l;
@@ -46,7 +44,6 @@ public class ChestLockStore {
         PEXConfig pc = cfg.loadConfig(path).orElseGet(PEXConfig::new);
         String canonical = keyFor(loc);
         Object obj = pc.get(canonical);
-        // migration: if not found at canonical key, check other related keys and normalize
         if (obj == null) {
             List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
             for (Location l : related) {
@@ -54,7 +51,6 @@ public class ChestLockStore {
                 Object o2 = pc.get(k);
                 if (o2 instanceof Map) {
                     obj = o2;
-                    // migrate to canonical key and remove old keys
                     pc.put(canonical, obj);
                     for (Location rem : related) pc.getData().remove(rem.getWorld().getName() + ":" + rem.getBlockX() + ":" + rem.getBlockY() + ":" + rem.getBlockZ());
                     cfg.saveConfig(path, pc);
@@ -63,16 +59,7 @@ public class ChestLockStore {
             }
         }
         if (obj instanceof Map) {
-            Map<String,Object> map = (Map<String,Object>) obj;
-            ChestLock lock = new ChestLock((String) map.get("owner"), (String) map.get("name"));
-            Object mem = map.get("members");
-            if (mem instanceof List) {
-                List<Object> list = (List<Object>) mem;
-                List<String> members = new ArrayList<>();
-                for (Object o : list) members.add(String.valueOf(o));
-                lock.setMembers(members);
-            }
-            return Optional.of(lock);
+            return Optional.of(readLock((Map<String, Object>) obj));
         }
         return Optional.empty();
     }
@@ -80,13 +67,13 @@ public class ChestLockStore {
     public boolean save(Location loc, ChestLock lock) {
         PEXConfig pc = cfg.loadConfig(path).orElseGet(PEXConfig::new);
         Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("owner", lock.getOwner());
+        entry.put("ownerName", lock.getOwnerName());
+        entry.put("ownerUuids", lock.getOwnerUuids());
         entry.put("name", lock.getName());
-        entry.put("members", lock.getMembers());
-        // always save under canonical set key
+        entry.put("memberUuids", lock.getMemberUuids());
+        entry.put("memberNames", lock.getMemberNames());
         String canonical = keyFor(loc);
         pc.put(canonical, entry);
-        // also remove legacy per-block keys inside the same set to avoid duplicates
         List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
         for (Location l : related) {
             String k = l.getWorld().getName() + ":" + l.getBlockX() + ":" + l.getBlockY() + ":" + l.getBlockZ();
@@ -97,7 +84,6 @@ public class ChestLockStore {
 
     public boolean remove(Location loc) {
         PEXConfig pc = cfg.loadConfig(path).orElseGet(PEXConfig::new);
-        // remove canonical and any legacy per-block keys in the set
         String canonical = keyFor(loc);
         pc.getData().remove(canonical);
         List<Location> related = ChestLockModule.getChestRelatedLocations(loc.getBlock());
@@ -113,18 +99,24 @@ public class ChestLockStore {
         for (Map.Entry<String, Object> e : pc.getData().entrySet()) {
             Object obj = e.getValue();
             if (!(obj instanceof Map)) continue;
-            Map<String, Object> map = (Map<String, Object>) obj;
-            ChestLock lock = new ChestLock((String) map.get("owner"), (String) map.get("name"));
-            Object mem = map.get("members");
-            if (mem instanceof List) {
-                List<Object> list = (List<Object>) mem;
-                List<String> members = new ArrayList<>();
-                for (Object o : list) members.add(String.valueOf(o));
-                lock.setMembers(members);
-            }
-            out.put(e.getKey(), lock);
+            out.put(e.getKey(), readLock((Map<String, Object>) obj));
         }
         return out;
     }
 
+    private ChestLock readLock(Map<String, Object> map) {
+        ChestLock lock = new ChestLock(null, (String) map.get("ownerName"), (String) map.get("name"));
+        lock.setOwnerUuids(readStringList(map.get("ownerUuids")));
+        lock.setMemberUuids(readStringList(map.get("memberUuids")));
+        lock.setMemberNames(readStringList(map.get("memberNames")));
+        return lock;
+    }
+
+    private List<String> readStringList(Object value) {
+        List<String> result = new ArrayList<>();
+        if (!(value instanceof List)) return result;
+        List<Object> list = (List<Object>) value;
+        for (Object o : list) result.add(String.valueOf(o));
+        return result;
+    }
 }
