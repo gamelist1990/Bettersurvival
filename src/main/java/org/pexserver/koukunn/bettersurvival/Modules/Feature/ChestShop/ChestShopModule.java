@@ -42,6 +42,7 @@ import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.NamespacedKey;
+import org.bukkit.ChatColor;
 import org.bukkit.enchantments.Enchantment;
 
 import java.util.*;
@@ -441,16 +442,15 @@ public class ChestShopModule implements Listener {
         if (!acquireListingDialogKey(key))
             return;
 
-        String itemName = draft != null && draft.getDisplayName() != null && !draft.getDisplayName().isEmpty()
-                ? draft.getDisplayName()
-                : ChestShopUI.displayNameForMaterial(sourceItem == null ? null : sourceItem.getType().name());
+        String itemName = resolveSetupItemName(sourceItem, draft);
         int initialCount = Math.max(1, Math.min(64, sourceItem == null ? 1 : sourceItem.getAmount()));
 
         player.sendMessage("§e出品情報が未設定です。表示された入力画面で価格などを設定してください。");
         boolean shown = DialogUI.builder()
                 .title("出品設定")
-                .body(itemName)
+                .body(toInputText(itemName))
                 .body("閉じた場合はキャンセル扱いになり、次回エディタを開いた時に再設定できます")
+                .addTextInput("itemName", "アイテム名 (任意, 色コードは&)", toInputText(itemName), 128, false)
                 .addTextInput("price", "価格 (1-64)", "1")
                 .addTextInput("count", "販売個数 (1-64)", String.valueOf(initialCount))
                 .addTextInput("description", "説明 (任意)", "", 120, true)
@@ -466,6 +466,7 @@ public class ChestShopModule implements Listener {
                     String rawPrice = result.getText("price");
                     String rawCount = result.getText("count");
                     String rawDescription = result.getText("description");
+                        String rawItemName = result.getText("itemName");
                     Bukkit.getLogger().info("[ChestShop] setup dialog result price='" + rawPrice + "' count='"
                             + rawCount + "' desc='" + rawDescription + "'");
                     Integer price = parseBoundedInt(valueOrDefault(rawPrice, "1"), 1, 64);
@@ -477,17 +478,17 @@ public class ChestShopModule implements Listener {
                     }
 
                     ShopListing configured = draft;
+                    String itemNameValue = fromInputText(rawItemName);
                     if (configured == null) {
                         String matName = sourceItem == null ? Material.PAPER.name() : sourceItem.getType().name();
-                        configured = new ShopListing(matName, itemName, price, "", 0);
+                        configured = new ShopListing(matName, itemNameValue, price, "", 0);
                     }
+                    configured.setDisplayName(itemNameValue);
                     configured.setPrice(price);
                     configured.setCount(count);
                     configured.setOriginalCount(count);
                     String desc = rawDescription;
                     configured.setDescription(desc == null ? "" : desc.trim().replace("\r\n", "<br>").replace("\n", "<br>"));
-                    if (configured.getDisplayName() == null || configured.getDisplayName().isEmpty())
-                        configured.setDisplayName(itemName);
 
                     Map<Integer, ShopListing> listings = store.getListings(loc);
                     listings.put(slot, configured);
@@ -495,7 +496,7 @@ public class ChestShopModule implements Listener {
                     updateEditorConfiguredItem(editorInventory, slot, sourceItem, configured);
                     editorSnapshotHash.put(p.getUniqueId(), snapshotHash);
                     editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
-                    p.sendMessage("§a出品を設定しました: " + configured.getDisplayName() + " 価格 " + price + " / 個数 " + count);
+                    p.sendMessage("§a出品を設定しました: " + toInputText(getListingDisplayNameForUi(configured, sourceItem)) + " 価格 " + price + " / 個数 " + count);
                     p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                     if (shop != null && shop.getOwner() != null) {
                         try {
@@ -519,6 +520,52 @@ public class ChestShopModule implements Listener {
             return fallback;
         }
         return value.trim();
+    }
+
+    private String toInputText(String value) {
+        if (value == null)
+            return "";
+        return value.replace('§', '&');
+    }
+
+    private String fromInputText(String value) {
+        if (value == null)
+            return null;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty())
+            return null;
+        return ChatColor.translateAlternateColorCodes('&', trimmed);
+    }
+
+    private String resolveSetupItemName(ItemStack sourceItem, ShopListing draft) {
+        if (sourceItem != null) {
+            ItemMeta meta = sourceItem.getItemMeta();
+            if (meta != null && meta.hasDisplayName()) {
+                String displayName = ComponentUtils.getDisplayName(meta);
+                if (displayName != null && !displayName.isBlank())
+                    return displayName;
+            }
+            return ChestShopUI.displayNameForMaterial(sourceItem.getType().name());
+        }
+        return getListingDisplayNameForUi(draft, null);
+    }
+
+    private String getListingDisplayNameForUi(ShopListing listing, ItemStack sourceItem) {
+        if (listing == null) {
+            if (sourceItem == null)
+                return "";
+            return ChestShopUI.displayNameForMaterial(sourceItem.getType().name());
+        }
+
+        String displayName = listing.getDisplayName();
+        if (displayName == null || displayName.isBlank())
+            return ChestShopUI.displayNameForMaterial(listing.getMaterial());
+
+        Material material = Material.matchMaterial(listing.getMaterial());
+        if (material != null && displayName.equals(material.name()))
+            return ChestShopUI.displayNameForMaterial(listing.getMaterial());
+
+        return displayName;
     }
 
     private Integer parseBoundedInt(String value, int min, int max) {
@@ -595,13 +642,11 @@ public class ChestShopModule implements Listener {
 
     private void openListingClickDialog(Player player, Location loc, ChestShop shop, Inventory editorInventory, int slot,
             ItemStack editorItem, ShopListing listing) {
-        String itemName = listing != null && listing.getDisplayName() != null && !listing.getDisplayName().isEmpty()
-                ? listing.getDisplayName()
-                : ChestShopUI.displayNameForMaterial(editorItem == null ? null : editorItem.getType().name());
+        String itemName = getListingDisplayNameForUi(listing, editorItem);
 
         DialogUI.builder()
                 .title("出品操作")
-                .body(itemName)
+                .body(toInputText(itemName))
                 .body("更新: 価格/個数/説明を変更します")
                 .body("返却: 出品を取り下げて在庫を返します")
                 .body("閉じた場合は何も変更しません")
@@ -620,15 +665,14 @@ public class ChestShopModule implements Listener {
             ItemStack editorItem, ShopListing listing) {
         if (listing == null)
             return;
-        String itemName = listing.getDisplayName() == null || listing.getDisplayName().isEmpty()
-                ? ChestShopUI.displayNameForMaterial(listing.getMaterial())
-                : listing.getDisplayName();
+        String itemName = getListingDisplayNameForUi(listing, editorItem);
         String desc = listing.getDescription() == null ? "" : listing.getDescription().replace("<br>", "\n");
 
         DialogUI.builder()
                 .title("出品更新")
-                .body(itemName)
+                .body(toInputText(itemName))
                 .body("閉じた場合は何も変更しません")
+                .addTextInput("itemName", "アイテム名 (任意, 色コードは&)", toInputText(itemName), 128, false)
                 .addTextInput("price", "価格 (1-64)", String.valueOf(Math.max(1, listing.getPrice())))
                 .addTextInput("count", "販売個数 (1-64)", String.valueOf(Math.max(1, listing.getCount())))
                 .addTextInput("description", "説明 (任意)", desc, 120, true)
@@ -640,6 +684,7 @@ public class ChestShopModule implements Listener {
                     String rawPrice = result.getText("price");
                     String rawCount = result.getText("count");
                     String rawDescription = result.getText("description");
+                    String rawItemName = result.getText("itemName");
                     Bukkit.getLogger().info("[ChestShop] update dialog result price='" + rawPrice + "' count='"
                             + rawCount + "' desc='" + rawDescription + "'");
                     Integer price = parseBoundedInt(valueOrDefault(rawPrice, String.valueOf(Math.max(1, listing.getPrice()))), 1, 64);
@@ -650,6 +695,7 @@ public class ChestShopModule implements Listener {
                         return;
                     }
 
+                    listing.setDisplayName(fromInputText(rawItemName));
                     listing.setPrice(price);
                     listing.setCount(count);
                     listing.setOriginalCount(count);
