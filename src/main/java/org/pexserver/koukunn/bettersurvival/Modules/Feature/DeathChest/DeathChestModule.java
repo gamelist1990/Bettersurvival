@@ -8,6 +8,7 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.Inventory;
@@ -29,7 +30,7 @@ public class DeathChestModule implements Listener {
         this.toggle = toggle;
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerDeath(PlayerDeathEvent event) {
         if (!toggle.getGlobal(FEATURE_KEY)) return;
         if (!toggle.isEnabledFor(event.getPlayer().getUniqueId().toString(), FEATURE_KEY)) return;
@@ -155,8 +156,15 @@ public class DeathChestModule implements Listener {
         applyChestData(placement.second, placement.axis, org.bukkit.block.data.type.Chest.Type.RIGHT);
 
         Inventory primary = getChestInventory(placement.first);
-        if (primary == null) return null;
+        if (primary == null) {
+            clearPlacement(placement);
+            return null;
+        }
         Inventory secondary = primary.getSize() >= 54 ? null : getChestInventory(placement.second);
+        if (primary.getSize() < 54 && secondary == null) {
+            clearPlacement(placement);
+            return null;
+        }
         return new ChestInventories(primary, secondary);
     }
 
@@ -172,6 +180,11 @@ public class DeathChestModule implements Listener {
         BlockState state = block.getState(false);
         if (!(state instanceof org.bukkit.block.Chest)) return null;
         return ((org.bukkit.block.Chest) state).getInventory();
+    }
+
+    private void clearPlacement(ChestPlacement placement) {
+        placement.first.setType(Material.AIR, false);
+        placement.second.setType(Material.AIR, false);
     }
 
     private enum Axis {

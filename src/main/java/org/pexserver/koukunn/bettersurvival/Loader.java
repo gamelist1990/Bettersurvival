@@ -13,6 +13,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoFeed.AutoFeedModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoFishing.AutoFishingModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AnythingFeed.AnythingFeedModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.OreMine.OreMineModule;
@@ -83,6 +84,7 @@ public final class Loader extends JavaPlugin {
         TreeMineModule treemine = new TreeMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(treemine, this);
         getServer().getPluginManager().registerEvents(new AutoFeedModule(toggleModule), this);
+        getServer().getPluginManager().registerEvents(new AutoFishingModule(toggleModule), this);
         // AnythingFeed module (allow edible items on non-breedable mobs)
         getServer().getPluginManager().registerEvents(new AnythingFeedModule(toggleModule), this);
         // AutoPlant モジュール登録
@@ -122,6 +124,8 @@ public final class Loader extends JavaPlugin {
         toggleModule
                 .registerFeature(new ToggleFeature("autofeed", "AutoFeed", "餌を与えると周辺の動物にも自動で餌を与えます", Material.WHEAT));
         toggleModule.registerFeature(
+                new ToggleFeature("autofishing", "AutoFishing", "釣り開始後、動いたり視点を大きく変えるまで自動で釣りを続けます", Material.FISHING_ROD));
+        toggleModule.registerFeature(
                 new ToggleFeature("anythingfeed", "AnythingFeed", "非繁殖動物に任意の食料で反応するようにします", Material.APPLE));
         toggleModule.registerFeature(new ToggleFeature("autoplant", "AutoPlant",
                 "オフハンドに植えたいアイテムを持ちながら耕した土の近くに行くと自動で植え・収穫します", Material.WHEAT_SEEDS));
@@ -147,6 +151,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("autofeed")) {
             toggleModule.setGlobal("autofeed", true);
+        }
+        if (!toggleModule.hasGlobal("autofishing")) {
+            toggleModule.setGlobal("autofishing", false);
         }
         if (!toggleModule.hasGlobal("anythingfeed")) {
             toggleModule.setGlobal("anythingfeed", true);

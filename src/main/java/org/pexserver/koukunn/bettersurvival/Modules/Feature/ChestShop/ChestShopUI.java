@@ -1,13 +1,11 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Material;
@@ -43,22 +41,6 @@ public class ChestShopUI {
     }
 
     public static void openForPlayer(Player p, ChestShop shop, Location loc, ChestShopStore store) {
-        List<Player> nearby = new ArrayList<>();
-        for (Player pl : Bukkit.getOnlinePlayers()) {
-            if (!pl.getWorld().equals(p.getWorld()))
-                continue;
-            if (pl.getUniqueId().equals(p.getUniqueId()))
-                continue;
-            if (pl.getLocation().distance(loc) <= 50.0)
-                nearby.add(pl);
-        }
-        nearby.sort(Comparator.comparingDouble(pl -> pl.getLocation().distance(loc)));
-
-        int size = 9 * ((nearby.size() + 8) / 9);
-        if (size == 0)
-            size = 9;
-        // ensure buyer inventories are at least 27 and at most 54
-        size = Math.min(Math.max(27, size), 54);
         String name = (shop == null ? "(無名)" : shop.getName());
         // if owner, open owner main UI; otherwise buyer UI
         boolean isOwner = shop != null && shop.getOwner() != null && shop.getOwner().equals(p.getUniqueId().toString());
@@ -67,21 +49,6 @@ public class ChestShopUI {
             inv = ComponentUtils.createInventory(null, 27, OWNER_TITLE_PREFIX + name);
         else
             inv = ComponentUtils.createInventory(null, 27, TITLE_PREFIX + name);
-
-        // reserve slot 0 for owner UI control if owner; start heads at 1 for owner
-        int slot = isOwner ? 1 : 0;
-        for (Player pl : nearby) {
-            if (slot >= inv.getSize())
-                break;
-            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-            SkullMeta meta = (SkullMeta) head.getItemMeta();
-            if (meta != null) {
-                meta.setOwningPlayer(pl);
-                ComponentUtils.setDisplayName(meta, pl.getName());
-                head.setItemMeta(meta);
-            }
-            inv.setItem(slot++, head);
-        }
 
         openShops.put(p.getUniqueId(), shop);
 

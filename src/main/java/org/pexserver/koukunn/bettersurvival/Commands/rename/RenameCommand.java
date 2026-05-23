@@ -55,6 +55,7 @@ public class RenameCommand extends BaseCommand {
         String name = String.join(" ", args);
         // ユーザーが要求した /n を改行に変換
         name = name.replace("/n", "\n");
+        name = translateAlternateColorCodes(name);
 
         ItemMeta meta = item.getItemMeta();
         if (meta == null) {
@@ -78,5 +79,27 @@ public class RenameCommand extends BaseCommand {
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         // 補完は特に実装せず空を返す
         return new ArrayList<>();
+    }
+
+    private String translateAlternateColorCodes(String text) {
+        char[] chars = text.toCharArray();
+        for (int i = 0; i < chars.length - 1; i++) {
+            if (chars[i] != '&')
+                continue;
+            char next = chars[i + 1];
+            if (isLegacyColorCode(next)) {
+                chars[i] = '§';
+                chars[i + 1] = Character.toLowerCase(next);
+            }
+        }
+        return new String(chars);
+    }
+
+    private boolean isLegacyColorCode(char c) {
+        char lower = Character.toLowerCase(c);
+        return (lower >= '0' && lower <= '9')
+                || (lower >= 'a' && lower <= 'f')
+                || (lower >= 'k' && lower <= 'o')
+                || lower == 'r';
     }
 }
