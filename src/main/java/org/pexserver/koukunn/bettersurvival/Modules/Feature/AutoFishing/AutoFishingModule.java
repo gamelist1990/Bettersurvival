@@ -33,6 +33,9 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * Paper 26.1.2 系ではプレイヤーの釣竿右クリックをそのまま安全に再現できる公開 API がないため、
  * このモジュールは BITE 検知後にサーバー側で釣果生成を完結させる方式を採用している。
+ * このため、通常の釣りと比べて以下の点で挙動が異なる。
+ * 現状: 上手く機能している為これで完成とするが、将来的にPaper側でAPIが拡張されバニラの動作をそのまま活用できる際には,
+ * このモジュールはリファクタリングする予定。
  *
  * 釣果テーブルは Minecraft 1.21 系の fishing loot table に合わせ、
  * fish / junk / treasure の親テーブル重みを floor(weight + quality * luck) で計算する。
