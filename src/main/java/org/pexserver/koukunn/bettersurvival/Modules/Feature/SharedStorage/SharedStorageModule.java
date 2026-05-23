@@ -27,6 +27,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.EquipmentSlot;
@@ -56,6 +57,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * chest-id / chestsub-id の NameTag とチェストを合成して作る共有ストレージ機能。
@@ -100,6 +102,10 @@ public class SharedStorageModule implements Listener {
     private final NamespacedKey idKey;
     private final Map<String, SharedNetwork> networks = new LinkedHashMap<>();
     private final Map<String, Placement> placements = new LinkedHashMap<>();
+    private final Set<String> scheduledRedistributions = new LinkedHashSet<>();
+    private final Map<String, List<ItemStack>> pendingMainContributions = new LinkedHashMap<>();
+    private final Map<String, List<ItemStack>> pendingInjectedItems = new LinkedHashMap<>();
+    private final Map<UUID, MainInventorySnapshot> mainSnapshots = new LinkedHashMap<>();
 
     public SharedStorageModule(
             Loader plugin,
@@ -233,6 +239,20 @@ public class SharedStorageModule implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true)
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        Placement placement = resolvePlacement(event.getInventory());
+        if (placement == null || !placement.isMain() || !toggle.getGlobal(FEATURE_KEY))
+            return;
+        SharedNetwork network = networks.get(placement.id());
+        if (network == null)
+            return;
+        if (!(event.getPlayer() instanceof Player player))
+            return;
+        mainSnapshots.put(player.getUniqueId(),
+                new MainInventorySnapshot(network.id(), snapshotInventory(event.getInventory())));
+    }
+
+    @EventHandler(ignoreCancelled = true)
     public void onInventoryClose(InventoryCloseEvent event) {
         Placement placement = resolvePlacement(event.getInventory());
         if (placement == null || !placement.isMain() || !toggle.getGlobal(FEATURE_KEY))
@@ -240,7 +260,13 @@ public class SharedStorageModule implements Listener {
         SharedNetwork network = networks.get(placement.id());
         if (network == null)
             return;
+        if (scheduledRedistributions.contains(network.id()))
+            return;
         Player player = event.getPlayer() instanceof Player p ? p : null;
+        MainInventorySnapshot snapshot = player == null ? null : mainSnapshots.remove(player.getUniqueId());
+        if (snapshot != null && Objects.equals(snapshot.networkId(), network.id())
+                && inventoryMatchesSnapshot(event.getInventory(), snapshot.contents()))
+            return;
         redistributeNetwork(network, player, false);
     }
 
@@ -327,9 +353,14 @@ public class SharedStorageModule implements Listener {
                 if (destinationPlacement.isMain()) {
                     ItemStack moved = event.getItem() == null ? null : event.getItem().clone();
                     if (moved != null && moved.getType() != Material.AIR) {
-                        Bukkit.getScheduler().runTaskLater(plugin,
-                                () -> redistributeNetwork(network, null, false, List.of(moved)),
-                                1L);
+                        if (canAcceptItem(event.getDestination(), moved)) {
+                            pendingMainContributions.computeIfAbsent(network.id(), id -> new ArrayList<>()).add(moved);
+                            scheduleRedistribution(network);
+                        } else if (canAcceptSubForHopper(network, moved) && removeFromInventory(event.getSource(), moved)) {
+                            event.setCancelled(true);
+                            pendingInjectedItems.computeIfAbsent(network.id(), id -> new ArrayList<>()).add(moved);
+                            scheduleRedistribution(network);
+                        }
                     }
                 }
             }
@@ -627,10 +658,15 @@ public class SharedStorageModule implements Listener {
     }
 
     private void redistributeNetwork(SharedNetwork network, Player actor, boolean announce) {
-        redistributeNetwork(network, actor, announce, null);
+        redistributeNetwork(network, actor, announce, null, null);
     }
 
     private void redistributeNetwork(SharedNetwork network, Player actor, boolean announce, List<ItemStack> trackedMainItems) {
+        redistributeNetwork(network, actor, announce, trackedMainItems, null);
+    }
+
+    private void redistributeNetwork(SharedNetwork network, Player actor, boolean announce, List<ItemStack> trackedMainItems,
+                                     List<ItemStack> injectedItems) {
         reindexAllPlacements();
         if (network.main() == null)
             return;
@@ -654,6 +690,13 @@ public class SharedStorageModule implements Listener {
         collectItems(items, main.inventory(), true, trackedMainItems);
         for (ResolvedInventory sub : subs)
             collectItems(items, sub.inventory(), false, null);
+        if (injectedItems != null) {
+            for (ItemStack injected : injectedItems) {
+                if (injected == null || injected.getType() == Material.AIR)
+                    continue;
+                items.add(new TrackedItemStack(injected.clone(), injected.getAmount()));
+            }
+        }
         items = sortAndMerge(items);
 
         main.inventory().clear();
@@ -695,7 +738,8 @@ public class SharedStorageModule implements Listener {
                 fillAnyInventory(sub.inventory(), generalItems, transferredSubs, sub.anchor());
             }
 
-            remainingItems = new ArrayList<>(generalItems);
+            remainingItems = new ArrayList<>();
+            remainingItems.addAll(generalItems);
             remainingItems.addAll(filteredItems);
             remainingItems = sortAndMerge(remainingItems);
         } else {
@@ -704,12 +748,28 @@ public class SharedStorageModule implements Listener {
         }
 
         for (int slot = 0; slot < main.inventory().getSize() && !remainingItems.isEmpty(); slot++) {
-            main.inventory().setItem(slot, remainingItems.remove(0).stack());
+            TrackedItemStack tracked = remainingItems.remove(0);
+            main.inventory().setItem(slot, tracked.stack());
+            if (tracked.mainContribution() > 0)
+                transferredSubs.add(main.anchor());
+        }
+
+        if (!remainingItems.isEmpty()) {
+            for (ResolvedInventory sub : subs) {
+                fillAnyIntoEmptySlots(sub.inventory(), remainingItems, transferredSubs, sub.anchor());
+                if (remainingItems.isEmpty())
+                    break;
+            }
         }
 
         if (network.enableTransferParticles()) {
-            for (Location subLocation : transferredSubs)
-                spawnTransferEffect(main.anchor(), subLocation);
+            for (Location subLocation : transferredSubs) {
+                if (subLocation.equals(main.anchor())) {
+                    spawnGlowEffect(main.anchor());
+                } else {
+                    spawnTransferEffect(main.anchor(), subLocation);
+                }
+            }
         }
 
         if (announce && actor != null) {
@@ -881,15 +941,6 @@ public class SharedStorageModule implements Listener {
         }
     }
 
-    private List<ItemStack> cloneItemStacks(List<ItemStack> items) {
-        List<ItemStack> clones = new ArrayList<>();
-        for (ItemStack item : items) {
-            if (item != null && item.getType() != Material.AIR)
-                clones.add(item.clone());
-        }
-        return clones;
-    }
-
     private int consumeTrackedContribution(List<ItemStack> trackedItems, ItemStack item) {
         if (trackedItems == null || trackedItems.isEmpty())
             return item.getAmount();
@@ -912,8 +963,30 @@ public class SharedStorageModule implements Listener {
         return item.getAmount() - remaining;
     }
 
+    private List<ItemStack> cloneItemStacks(List<ItemStack> items) {
+        List<ItemStack> clones = new ArrayList<>();
+        for (ItemStack item : items) {
+            if (item != null && item.getType() != Material.AIR)
+                clones.add(item.clone());
+        }
+        return clones;
+    }
+
     private void fillAnyInventory(Inventory inventory, List<TrackedItemStack> items, Set<Location> transferredSubs, Location subAnchor) {
         for (int slot = 0; slot < inventory.getSize() && !items.isEmpty(); slot++) {
+            TrackedItemStack tracked = items.remove(0);
+            inventory.setItem(slot, tracked.stack());
+            if (tracked.mainContribution() > 0)
+                transferredSubs.add(subAnchor);
+        }
+    }
+
+    private void fillAnyIntoEmptySlots(Inventory inventory, List<TrackedItemStack> items,
+                                       Set<Location> transferredSubs, Location subAnchor) {
+        for (int slot = 0; slot < inventory.getSize() && !items.isEmpty(); slot++) {
+            ItemStack existing = inventory.getItem(slot);
+            if (existing != null && existing.getType() != Material.AIR)
+                continue;
             TrackedItemStack tracked = items.remove(0);
             inventory.setItem(slot, tracked.stack());
             if (tracked.mainContribution() > 0)
@@ -1079,6 +1152,123 @@ public class SharedStorageModule implements Listener {
         }
     }
 
+    private static final class MainInventorySnapshot {
+        private final String networkId;
+        private final List<ItemStack> contents;
+
+        private MainInventorySnapshot(String networkId, List<ItemStack> contents) {
+            this.networkId = networkId;
+            this.contents = contents;
+        }
+
+        private String networkId() {
+            return networkId;
+        }
+
+        private List<ItemStack> contents() {
+            return contents;
+        }
+    }
+
+    private List<ItemStack> snapshotInventory(Inventory inventory) {
+        List<ItemStack> snapshot = new ArrayList<>();
+        for (ItemStack item : inventory.getContents()) {
+            if (item == null || item.getType() == Material.AIR) {
+                snapshot.add(null);
+            } else {
+                snapshot.add(item.clone());
+            }
+        }
+        return snapshot;
+    }
+
+    private boolean inventoryMatchesSnapshot(Inventory inventory, List<ItemStack> snapshot) {
+        if (snapshot == null)
+            return false;
+        ItemStack[] contents = inventory.getContents();
+        if (contents.length != snapshot.size())
+            return false;
+        for (int i = 0; i < contents.length; i++) {
+            if (!sameItem(contents[i], snapshot.get(i)))
+                return false;
+        }
+        return true;
+    }
+
+    private boolean sameItem(ItemStack left, ItemStack right) {
+        if (left == null || left.getType() == Material.AIR)
+            return right == null || right.getType() == Material.AIR;
+        if (right == null || right.getType() == Material.AIR)
+            return false;
+        return canMerge(left, right) && left.getAmount() == right.getAmount();
+    }
+
+    private boolean canAcceptItem(Inventory inventory, ItemStack item) {
+        if (inventory == null || item == null || item.getType() == Material.AIR)
+            return false;
+        int remaining = item.getAmount();
+        for (ItemStack slot : inventory.getContents()) {
+            if (slot == null || slot.getType() == Material.AIR)
+                return true;
+            if (!canMerge(slot, item))
+                continue;
+            int space = slot.getMaxStackSize() - slot.getAmount();
+            if (space <= 0)
+                continue;
+            remaining -= space;
+            if (remaining <= 0)
+                return true;
+        }
+        return false;
+    }
+
+    private boolean canAcceptSubForHopper(SharedNetwork network, ItemStack item) {
+        if (network == null || item == null || item.getType() == Material.AIR)
+            return false;
+        for (Location subLocation : network.subs()) {
+            ResolvedInventory sub = resolveInventory(subLocation);
+            if (sub == null)
+                continue;
+            ItemStack filter = network.enableSubFrameFilter() ? resolveSubFrameFilter(sub) : null;
+            if (filter != null && !matchesFilter(item, filter))
+                continue;
+            if (canAcceptItem(sub.inventory(), item))
+                return true;
+        }
+        return false;
+    }
+
+    private boolean removeFromInventory(Inventory inventory, ItemStack item) {
+        if (inventory == null || item == null || item.getType() == Material.AIR)
+            return false;
+        return inventory.removeItem(item).isEmpty();
+    }
+
+    private void scheduleRedistribution(SharedNetwork network) {
+        String networkId = network.id();
+        if (scheduledRedistributions.contains(networkId))
+            return;
+        scheduledRedistributions.add(networkId);
+        Bukkit.getScheduler().runTaskLater(plugin,
+                () -> {
+                    List<ItemStack> trackedItems = pendingMainContributions.remove(networkId);
+                    List<ItemStack> injectedItems = pendingInjectedItems.remove(networkId);
+                    try {
+                        if ((trackedItems == null || trackedItems.isEmpty())
+                                && (injectedItems == null || injectedItems.isEmpty())) {
+                            redistributeNetwork(network, null, false);
+                        } else {
+                            redistributeNetwork(network, null, false,
+                                    trackedItems == null ? null : cloneItemStacks(trackedItems),
+                                    injectedItems == null ? null : cloneItemStacks(injectedItems));
+                        }
+                    } finally {
+                        scheduledRedistributions.remove(networkId);
+                    }
+                },
+                1L);
+    }
+
     private void spawnTransferEffect(Location from, Location to) {
         World world = from.getWorld();
         if (world == null || !Objects.equals(world, to.getWorld()))
@@ -1100,6 +1290,15 @@ public class SharedStorageModule implements Listener {
         world.spawnParticle(Particle.WAX_ON, end, 10, 0.2D, 0.2D, 0.2D, 0.01D);
         world.playSound(start, Sound.BLOCK_ENDER_CHEST_OPEN, 0.5F, 1.5F);
         world.playSound(end, Sound.ENTITY_ITEM_PICKUP, 0.5F, 1.3F);
+    }
+
+    private void spawnGlowEffect(Location location) {
+        World world = location.getWorld();
+        if (world == null)
+            return;
+        Location center = location.clone().add(0.5D, 0.5D, 0.5D);
+        world.spawnParticle(Particle.GLOW, center, 15, 0.3D, 0.3D, 0.3D, 0.1D);
+        world.playSound(center, Sound.BLOCK_AMETHYST_BLOCK_CHIME, 0.6F, 1.5F);
     }
 
     private SubAccess getSubAccess(Inventory topInventory) {
