@@ -26,6 +26,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Disco
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.EnchantmentSplit.EnchantmentSplitModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.SharedStorageModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.discord.DiscordCommand;
@@ -55,6 +56,8 @@ public final class Loader extends JavaPlugin {
     private PendingWhitelistModule pendingWhitelistModule;
     private EnchantmentSplitModule enchantmentSplitModule;
     private ItemCombineModule itemCombineModule;
+    private ChestSortModule chestSortModule;
+    private SharedStorageModule sharedStorageModule;
 
     @Override
     public void onEnable() {
@@ -106,9 +109,11 @@ public final class Loader extends JavaPlugin {
         // ChestShop module registration
         ChestShopModule chestShop = new ChestShopModule(toggleModule, configManager, chestLock);
         getServer().getPluginManager().registerEvents(chestShop, this);
+        sharedStorageModule = new SharedStorageModule(this, toggleModule, itemCombineModule, chestLock, chestShop);
+        getServer().getPluginManager().registerEvents(sharedStorageModule, this);
         // ChestSort モジュール登録
-        ChestSortModule chestSort = new ChestSortModule(toggleModule, chestLock, chestShop);
-        getServer().getPluginManager().registerEvents(chestSort, this);
+        chestSortModule = new ChestSortModule(this, toggleModule, chestLock, chestShop);
+        getServer().getPluginManager().registerEvents(chestSortModule, this);
         getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
         getServer().getPluginManager().registerEvents(discordWebhookModule, this);
@@ -143,6 +148,8 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("chestshop", "ChestShop", "看板でチェストをショップ化します(>>Shop 名前)", Material.OAK_SIGN, false));
         toggleModule
                 .registerFeature(new ToggleFeature("chestsort", "ChestSort", "スニーク+木の棒でチェスト内を整理します", Material.STICK));
+        toggleModule.registerFeature(
+                new ToggleFeature("sharedstorage", "SharedStorage", "主チェストとsubチェストを使った共有ストレージを有効/無効にします", Material.CHEST, false));
         toggleModule.registerFeature(new ToggleFeature("deathchest", "DeathChest",
                 "死亡時に所持品を死亡地点付近のラージチェストへ保管し座標を通知します", Material.TRAPPED_CHEST));
         toggleModule.registerFeature(new ToggleFeature("home", "Home",
@@ -176,6 +183,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("chestsort")) {
             toggleModule.setGlobal("chestsort", true);
+        }
+        if (!toggleModule.hasGlobal("sharedstorage")) {
+            toggleModule.setGlobal("sharedstorage", false);
         }
         if (!toggleModule.hasGlobal("chestshop")) {
             toggleModule.setGlobal("chestshop", true);
@@ -272,6 +282,9 @@ public final class Loader extends JavaPlugin {
         }
         if (enchantmentSplitModule != null) {
             enchantmentSplitModule.shutdown();
+        }
+        if (chestSortModule != null) {
+            chestSortModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

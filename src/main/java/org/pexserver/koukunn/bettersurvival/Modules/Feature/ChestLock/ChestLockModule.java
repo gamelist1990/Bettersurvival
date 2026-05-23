@@ -10,6 +10,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockPistonEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
@@ -38,9 +40,39 @@ import java.util.*;
  */
 public class ChestLockModule implements Listener {
 
+    @FunctionalInterface
+    public interface ExternalLockResolver {
+        Optional<Location> resolveLinkedLockLocation(Location location);
+    }
+
+    @FunctionalInterface
+    public interface ExternalProtectionResolver {
+        Optional<Boolean> resolve(ProtectionContext context);
+    }
+
+    public enum ProtectionAction {
+        ACCESS,
+        INVENTORY_MOVE_SOURCE,
+        INVENTORY_MOVE_DESTINATION,
+        PISTON_MOVE,
+        EXPLOSION
+    }
+
+    public record ProtectionContext(
+            ProtectionAction action,
+            Player player,
+            Location location,
+            InventoryMoveItemEvent inventoryMoveEvent,
+            BlockPistonEvent pistonEvent,
+            BlockExplodeEvent blockExplodeEvent,
+            EntityExplodeEvent entityExplodeEvent) {
+    }
+
     private final ChestLockStore store;
     private final ToggleModule toggle;
     private final ChestShopStore shopStore;
+    private final List<ExternalLockResolver> externalResolvers = new ArrayList<>();
+    private final List<ExternalProtectionResolver> externalProtectionResolvers = new ArrayList<>();
 
     public ChestLockModule(ToggleModule toggle, ConfigManager manager) {
         this.toggle = toggle;
@@ -70,20 +102,60 @@ public class ChestLockModule implements Listener {
 
     public Optional<ChestLock> getLock(Location loc) { return store.get(loc); }
 
+    public Optional<Location> getEffectiveLockLocation(Location loc) {
+        if (loc == null)
+            return Optional.empty();
+        if (store.get(loc).isPresent())
+            return Optional.of(loc);
+        for (ExternalLockResolver resolver : externalResolvers) {
+            Optional<Location> linked = resolver.resolveLinkedLockLocation(loc);
+            if (linked.isPresent() && store.get(linked.get()).isPresent())
+                return linked;
+        }
+        return Optional.empty();
+    }
+
+    public Optional<ChestLock> getEffectiveLock(Location loc) {
+        Optional<Location> effective = getEffectiveLockLocation(loc);
+        return effective.isPresent() ? store.get(effective.get()) : Optional.empty();
+    }
+
     public void lock(Location loc, ChestLock lock) { store.save(loc, lock); }
 
     public void unlock(Location loc) { store.remove(loc); }
 
+    public void registerExternalResolver(ExternalLockResolver resolver) {
+        if (resolver != null)
+            externalResolvers.add(resolver);
+    }
+
+    public void registerExternalProtectionResolver(ExternalProtectionResolver resolver) {
+        if (resolver != null)
+            externalProtectionResolvers.add(resolver);
+    }
+
     public boolean canAccess(Player p, Location loc) {
         if (!toggle.getGlobal("chestlock")) return true;
-        Optional<ChestLock> opt = store.get(loc);
+        Optional<Location> effectiveLoc = getEffectiveLockLocation(loc);
+        if (!effectiveLoc.isPresent()) return true;
+        Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
+                ProtectionAction.ACCESS,
+                p,
+                effectiveLoc.get(),
+                null,
+                null,
+                null,
+                null));
+        if (external.isPresent())
+            return external.get();
+        Optional<ChestLock> opt = store.get(effectiveLoc.get());
         if (!opt.isPresent()) return true;
         ChestLock lock = opt.get();
         if (p.isOp()) return true;
         boolean allowed = lock.isOwner(p) || lock.isMember(p);
         if (allowed) {
             lock.remember(p);
-            store.save(loc, lock);
+            store.save(effectiveLoc.get(), lock);
         }
         return allowed;
     }
@@ -98,20 +170,29 @@ public class ChestLockModule implements Listener {
         if (!toggle.getGlobal("chestlock")) return;
         Block b = e.getBlock();
         for (Location loc : getChestRelatedLocations(b)) {
-            Optional<ChestLock> opt = store.get(loc);
+            Optional<Location> lockLocOpt = getEffectiveLockLocation(loc);
+            if (!lockLocOpt.isPresent()) continue;
+            Location lockLoc = lockLocOpt.get();
+            Optional<ChestLock> opt = store.get(lockLoc);
             if (!opt.isPresent()) continue;
             ChestLock lock = opt.get();
             Player p = e.getPlayer();
             if (p.isOp()) {
-                for (Location l : getChestRelatedLocations(b)) store.remove(l);
+                if (sameBlock(lockLoc, loc)) {
+                    for (Location l : getChestRelatedLocations(b)) store.remove(l);
+                }
                 p.sendMessage("§aチェストのロックを強制解除しました");
                 return;
             }
 
             if (lock.isOwner(p)) {
                 lock.addOwner(p);
-                for (Location l : getChestRelatedLocations(b)) store.remove(l);
-                p.sendMessage("§aあなたはオーナーのため保護を解除してチェストを壊しました");
+                if (sameBlock(lockLoc, loc)) {
+                    for (Location l : getChestRelatedLocations(b)) store.remove(l);
+                    p.sendMessage("§aあなたはオーナーのため保護を解除してチェストを壊しました");
+                } else {
+                    p.sendMessage("§aあなたはオーナーのため共有先チェストを壊しました");
+                }
                 return;
             }
 
@@ -143,9 +224,11 @@ public class ChestLockModule implements Listener {
         Optional<ChestLock> anyLock = Optional.empty();
         Location lockAt = null;
         for (Location loc : related) {
-            Optional<ChestLock> opt = store.get(loc);
+            Optional<Location> effective = getEffectiveLockLocation(loc);
+            if (!effective.isPresent()) continue;
+            Optional<ChestLock> opt = store.get(effective.get());
             if (!opt.isPresent()) continue;
-            anyLock = opt; lockAt = loc; break;
+            anyLock = opt; lockAt = effective.get(); break;
         }
 
         if (!anyLock.isPresent()) return;
@@ -164,7 +247,8 @@ public class ChestLockModule implements Listener {
         for (Location loc : related) {
             Optional<ChestLock> exist = store.get(loc);
             if (!exist.isPresent()) {
-                store.save(loc, found);
+                if (sameBlock(lockAt, loc))
+                    store.save(loc, found);
             }
         }
     }
@@ -180,13 +264,33 @@ public class ChestLockModule implements Listener {
         if (e.getSource() == null || e.getDestination() == null) return;
         Location srcLoc = (e.getSource().getHolder() instanceof BlockState) ? ((BlockState) e.getSource().getHolder()).getLocation() : null;
         Location dstLoc = (e.getDestination().getHolder() instanceof BlockState) ? ((BlockState) e.getDestination().getHolder()).getLocation() : null;
-        if (srcLoc != null && store.get(srcLoc).isPresent()) {
-            e.setCancelled(true);
-            return;
+        if (srcLoc != null && getEffectiveLock(srcLoc).isPresent()) {
+            Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
+                    ProtectionAction.INVENTORY_MOVE_SOURCE,
+                    null,
+                    srcLoc,
+                    e,
+                    null,
+                    null,
+                    null));
+            if (external.isEmpty() || !external.get()) {
+                e.setCancelled(true);
+                return;
+            }
         }
-        if (dstLoc != null && store.get(dstLoc).isPresent()) {
-            e.setCancelled(true);
-            return;
+        if (dstLoc != null && getEffectiveLock(dstLoc).isPresent()) {
+            Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
+                    ProtectionAction.INVENTORY_MOVE_DESTINATION,
+                    null,
+                    dstLoc,
+                    e,
+                    null,
+                    null,
+                    null));
+            if (external.isEmpty() || !external.get()) {
+                e.setCancelled(true);
+                return;
+            }
         }
     }
 
@@ -194,9 +298,19 @@ public class ChestLockModule implements Listener {
     public void onPistonExtend(BlockPistonExtendEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
         for (Block b : e.getBlocks()) {
-            if (store.get(b.getLocation()).isPresent()) {
-                e.setCancelled(true);
-                return;
+            if (getEffectiveLock(b.getLocation()).isPresent()) {
+                Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
+                        ProtectionAction.PISTON_MOVE,
+                        null,
+                        b.getLocation(),
+                        null,
+                        e,
+                        null,
+                        null));
+                if (external.isEmpty() || !external.get()) {
+                    e.setCancelled(true);
+                    return;
+                }
             }
         }
     }
@@ -205,9 +319,19 @@ public class ChestLockModule implements Listener {
     public void onPistonRetract(BlockPistonRetractEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
         for (Block b : e.getBlocks()) {
-            if (store.get(b.getLocation()).isPresent()) {
-                e.setCancelled(true);
-                return;
+            if (getEffectiveLock(b.getLocation()).isPresent()) {
+                Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
+                        ProtectionAction.PISTON_MOVE,
+                        null,
+                        b.getLocation(),
+                        null,
+                        e,
+                        null,
+                        null));
+                if (external.isEmpty() || !external.get()) {
+                    e.setCancelled(true);
+                    return;
+                }
             }
         }
     }
@@ -227,7 +351,7 @@ public class ChestLockModule implements Listener {
             Block nb = placed.getRelative(face);
             if (nb.getType() != Material.CHEST && nb.getType() != Material.TRAPPED_CHEST) continue;
             Location loc = nb.getLocation();
-            Optional<ChestLock> opt = store.get(loc);
+            Optional<ChestLock> opt = getEffectiveLock(loc);
             if (!opt.isPresent()) continue;
             ChestLock lock = opt.get();
             owners.add(lock.getOwnerKey());
@@ -262,11 +386,52 @@ public class ChestLockModule implements Listener {
         if (!toggle.getGlobal("chestlock")) return;
         List<Block> remove = new ArrayList<>();
         for (Block b : e.blockList()) {
-            if (store.get(b.getLocation()).isPresent()) {
+            if (getEffectiveLock(b.getLocation()).isPresent() && !isExplosionAllowed(b.getLocation(), null, e)) {
                 remove.add(b);
             }
         }
         e.blockList().removeAll(remove);
+    }
+
+    @EventHandler
+    public void onBlockExplode(BlockExplodeEvent e) {
+        if (!toggle.getGlobal("chestlock")) return;
+        List<Block> remove = new ArrayList<>();
+        for (Block b : e.blockList()) {
+            if (getEffectiveLock(b.getLocation()).isPresent() && !isExplosionAllowed(b.getLocation(), e, null)) {
+                remove.add(b);
+            }
+        }
+        e.blockList().removeAll(remove);
+    }
+
+    private Optional<Boolean> resolveExternalProtection(ProtectionContext context) {
+        for (ExternalProtectionResolver resolver : externalProtectionResolvers) {
+            Optional<Boolean> decision = resolver.resolve(context);
+            if (decision.isPresent())
+                return decision;
+        }
+        return Optional.empty();
+    }
+
+    private boolean isExplosionAllowed(Location location, BlockExplodeEvent blockExplodeEvent, EntityExplodeEvent entityExplodeEvent) {
+        Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
+                ProtectionAction.EXPLOSION,
+                null,
+                location,
+                null,
+                null,
+                blockExplodeEvent,
+                entityExplodeEvent));
+        return external.isPresent() && external.get();
+    }
+
+    private boolean sameBlock(Location a, Location b) {
+        return a != null && b != null
+                && Objects.equals(a.getWorld(), b.getWorld())
+                && a.getBlockX() == b.getBlockX()
+                && a.getBlockY() == b.getBlockY()
+                && a.getBlockZ() == b.getBlockZ();
     }
 
     // ========== Inventory Click Handler ==========
