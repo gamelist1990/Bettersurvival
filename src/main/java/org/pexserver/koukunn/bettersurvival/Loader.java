@@ -11,6 +11,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Listeners.CommandBlockerListener;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleListener;
+import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.TreeMine.TreeMineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoFeed.AutoFeedModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoFishing.AutoFishingModule;
@@ -24,6 +25,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest.DeathChes
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.EnchantmentSplit.EnchantmentSplitModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.discord.DiscordCommand;
@@ -51,6 +53,8 @@ public final class Loader extends JavaPlugin {
     private DiscordWebhookModule discordWebhookModule;
     private HomeModule homeModule;
     private PendingWhitelistModule pendingWhitelistModule;
+    private EnchantmentSplitModule enchantmentSplitModule;
+    private ItemCombineModule itemCombineModule;
 
     @Override
     public void onEnable() {
@@ -79,12 +83,16 @@ public final class Loader extends JavaPlugin {
         // Toggle module (GUI)
         toggleModule = new ToggleModule(this);
         getServer().getPluginManager().registerEvents(new ToggleListener(toggleModule), this);
+        itemCombineModule = new ItemCombineModule(this);
+        getServer().getPluginManager().registerEvents(itemCombineModule, this);
 
         // TreeMine モジュール登録
         TreeMineModule treemine = new TreeMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(treemine, this);
         getServer().getPluginManager().registerEvents(new AutoFeedModule(toggleModule), this);
         getServer().getPluginManager().registerEvents(new AutoFishingModule(toggleModule), this);
+        enchantmentSplitModule = new EnchantmentSplitModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(enchantmentSplitModule, this);
         // AnythingFeed module (allow edible items on non-breedable mobs)
         getServer().getPluginManager().registerEvents(new AnythingFeedModule(toggleModule), this);
         // AutoPlant モジュール登録
@@ -143,6 +151,8 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("bedrockskin", "BedrockSkin", "BedrockユーザーのスキンをJavaクライアントに自動反映します", Material.PLAYER_HEAD, false));
         toggleModule.registerFeature(
                 new ToggleFeature("tpa", "TPA", "テレポートリクエスト機能（無効にすると受信拒否）", Material.ENDER_PEARL));
+        toggleModule.registerFeature(
+                new ToggleFeature("enchantsplit", "EnchantSplit", "複数エンチャント本を分離できる専用砥石を有効/無効にします", Material.GRINDSTONE, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -181,6 +191,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("tpa")) {
             toggleModule.setGlobal("tpa", true);
+        }
+        if (!toggleModule.hasGlobal("enchantsplit")) {
+            toggleModule.setGlobal("enchantsplit", false);
         }
 
         getLogger().info("Better Survival Plugin が有効になりました");
@@ -248,10 +261,17 @@ public final class Loader extends JavaPlugin {
         return pendingWhitelistModule;
     }
 
+    public ItemCombineModule getItemCombineModule() {
+        return itemCombineModule;
+    }
+
     @Override
     public void onDisable() {
         if (discordWebhookModule != null) {
             discordWebhookModule.shutdown();
+        }
+        if (enchantmentSplitModule != null) {
+            enchantmentSplitModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }
