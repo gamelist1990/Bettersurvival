@@ -71,11 +71,12 @@ public class SharedStorageStore {
         private final boolean allowMainExtract;
         private final boolean enableTransferParticles;
         private final boolean enableSubFrameFilter;
+        private final String subFrameFilterMode;
 
         public StoredNetwork(String id, Location main, List<Location> subs, boolean allowSubInsert, boolean allowSubExtract,
                               boolean allowSubHopperInsert, boolean allowSubHopperExtract,
                               boolean allowMainInsert, boolean allowMainExtract, boolean enableTransferParticles,
-                              boolean enableSubFrameFilter) {
+                              boolean enableSubFrameFilter, String subFrameFilterMode) {
             this.id = id;
             this.main = main;
             this.subs = subs;
@@ -87,6 +88,7 @@ public class SharedStorageStore {
             this.allowMainExtract = allowMainExtract;
             this.enableTransferParticles = enableTransferParticles;
             this.enableSubFrameFilter = enableSubFrameFilter;
+            this.subFrameFilterMode = subFrameFilterMode;
         }
 
         public String getId() {
@@ -133,6 +135,10 @@ public class SharedStorageStore {
             return enableSubFrameFilter;
         }
 
+        public String getSubFrameFilterMode() {
+            return subFrameFilterMode;
+        }
+
         public Map<String, Object> serialize() {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("main", main == null ? null : toKey(main));
@@ -150,6 +156,7 @@ public class SharedStorageStore {
             data.put("allowMainExtract", allowMainExtract);
             data.put("enableTransferParticles", enableTransferParticles);
             data.put("enableSubFrameFilter", enableSubFrameFilter);
+            data.put("subFrameFilterMode", subFrameFilterMode);
             return data;
         }
 
@@ -177,7 +184,8 @@ public class SharedStorageStore {
             boolean allowMainExtract = !(data.get("allowMainExtract") instanceof Boolean allowed && !allowed);
             boolean enableTransferParticles = !(data.get("enableTransferParticles") instanceof Boolean allowed && !allowed);
             boolean enableSubFrameFilter = data.get("enableSubFrameFilter") instanceof Boolean allowed && allowed;
-            return new StoredNetwork(id, main, subs, allowSubInsert, allowSubExtract, allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract, enableTransferParticles, enableSubFrameFilter);
+            String subFrameFilterMode = data.get("subFrameFilterMode") instanceof String rawMode ? rawMode : "EXACT";
+            return new StoredNetwork(id, main, subs, allowSubInsert, allowSubExtract, allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract, enableTransferParticles, enableSubFrameFilter, subFrameFilterMode);
         }
     }
 }

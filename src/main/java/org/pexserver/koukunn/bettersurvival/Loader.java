@@ -25,6 +25,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest.DeathChes
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.BetterMenu.BetterMenuModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.EnchantmentSplit.EnchantmentSplitModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.SharedStorageModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
@@ -58,6 +59,7 @@ public final class Loader extends JavaPlugin {
     private ItemCombineModule itemCombineModule;
     private ChestSortModule chestSortModule;
     private SharedStorageModule sharedStorageModule;
+    private BetterMenuModule betterMenuModule;
 
     @Override
     public void onEnable() {
@@ -124,6 +126,8 @@ public final class Loader extends JavaPlugin {
         // TPA モジュール登録 (テレポートリクエスト機能)
         tpaModule = new TpaModule(this);
         getServer().getPluginManager().registerEvents(tpaModule, this);
+        betterMenuModule = new BetterMenuModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(betterMenuModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
         InvseeOfflineData.initialize(this);
         getServer().getPluginManager().registerEvents(new InvseeListener(this), this);
@@ -160,6 +164,8 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("tpa", "TPA", "テレポートリクエスト機能（無効にすると受信拒否）", Material.ENDER_PEARL));
         toggleModule.registerFeature(
                 new ToggleFeature("enchantsplit", "EnchantSplit", "複数エンチャント本を分離できる専用砥石を有効/無効にします", Material.GRINDSTONE, false));
+        toggleModule.registerFeature(
+                new ToggleFeature("bettermenu", "BetterMenu", "木の斧GUIツールの生成・起動を有効/無効にします", Material.WOODEN_AXE, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -204,6 +210,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("enchantsplit")) {
             toggleModule.setGlobal("enchantsplit", false);
+        }
+        if (!toggleModule.hasGlobal("bettermenu")) {
+            toggleModule.setGlobal("bettermenu", true);
         }
 
         getLogger().info("Better Survival Plugin が有効になりました");

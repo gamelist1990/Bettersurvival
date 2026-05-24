@@ -37,7 +37,7 @@ public class HomeCommand extends BaseCommand {
 
     @Override
     public String getUsage() {
-        return "/home [add|remove|list|ui|名前] [名前]";
+        return "/home [add|remove|list|ui|unlock|名前] [名前]";
     }
 
     @Override
@@ -86,6 +86,11 @@ public class HomeCommand extends BaseCommand {
                 module.openUI(player);
                 return true;
 
+            case "unlock":
+            case "expand":
+                module.unlockNextSlot(player);
+                return true;
+
             default:
                 module.teleportNamed(player, args[0]);
                 return true;
@@ -102,6 +107,7 @@ public class HomeCommand extends BaseCommand {
             list.add("remove");
             list.add("list");
             list.add("ui");
+            list.add("unlock");
             HomeModule module = getModule();
             if (module != null) {
                 for (HomePoint home : module.getStore().getHomes(player)) {

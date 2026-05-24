@@ -82,16 +82,17 @@ public class SharedStorageModule implements Listener {
     private static final boolean DEFAULT_ALLOW_MAIN_EXTRACT = true;
     private static final boolean DEFAULT_ENABLE_TRANSFER_PARTICLES = true;
     private static final boolean DEFAULT_ENABLE_SUB_FRAME_FILTER = false;
-    private static final int MENU_TOGGLE_SLOT = 11;
-    private static final int MENU_RESET_SLOT = 13;
-    private static final int MENU_EXTRACT_SLOT = 15;
-    private static final int MENU_SUB_HOPPER_INSERT_SLOT = 29;
-    private static final int MENU_SUB_HOPPER_EXTRACT_SLOT = 33;
-    private static final int MENU_MAIN_INSERT_SLOT = 20;
-    private static final int MENU_MAIN_EXTRACT_SLOT = 24;
-    private static final int MENU_PARTICLE_SLOT = 31;
-    private static final int MENU_FRAME_FILTER_SLOT = 30;
-    private static final int MENU_CLOSE_SLOT = 22;
+    private static final int MENU_TOGGLE_SLOT = 10;
+    private static final int MENU_EXTRACT_SLOT = 11;
+    private static final int MENU_SUB_HOPPER_INSERT_SLOT = 12;
+    private static final int MENU_SUB_HOPPER_EXTRACT_SLOT = 13;
+    private static final int MENU_RESET_SLOT = 8;
+    private static final int MENU_MAIN_INSERT_SLOT = 19;
+    private static final int MENU_MAIN_EXTRACT_SLOT = 20;
+    private static final int MENU_FRAME_FILTER_SLOT = 23;
+    private static final int MENU_FRAME_FILTER_MODE_SLOT = 24;
+    private static final int MENU_PARTICLE_SLOT = 29;
+    private static final int MENU_CLOSE_SLOT = 35;
 
     private final Loader plugin;
     private final ToggleModule toggle;
@@ -278,6 +279,7 @@ public class SharedStorageModule implements Listener {
         Inventory top = event.getView().getTopInventory();
         Placement placement = resolvePlacement(top);
         ItemStack subFilter = resolveSubFrameFilter(placement);
+        SubFrameFilterMode filterMode = resolveSubFrameFilterMode(placement);
         int rawSlot = event.getRawSlot();
         if (rawSlot < 0)
             return;
@@ -290,7 +292,7 @@ public class SharedStorageModule implements Listener {
         }
         if (event.isShiftClick() && rawSlot >= top.getSize()) {
             ItemStack current = event.getCurrentItem();
-            if (!access.allowInsert() || (subFilter != null && current != null && current.getType() != Material.AIR && !matchesFilter(current, subFilter)))
+            if (!access.allowInsert() || (subFilter != null && current != null && current.getType() != Material.AIR && !matchesFilter(current, subFilter, filterMode)))
                 event.setCancelled(true);
             return;
         }
@@ -303,7 +305,7 @@ public class SharedStorageModule implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (subFilter != null && insertItem != null && insertItem.getType() != Material.AIR && !matchesFilter(insertItem, subFilter))
+        if (subFilter != null && insertItem != null && insertItem.getType() != Material.AIR && !matchesFilter(insertItem, subFilter, filterMode))
             event.setCancelled(true);
     }
 
@@ -314,6 +316,7 @@ public class SharedStorageModule implements Listener {
             return;
         Placement placement = resolvePlacement(event.getView().getTopInventory());
         ItemStack subFilter = resolveSubFrameFilter(placement);
+        SubFrameFilterMode filterMode = resolveSubFrameFilterMode(placement);
         if (access.allowInsert() && subFilter == null)
             return;
         ItemStack draggedItem = event.getOldCursor();
@@ -321,7 +324,7 @@ public class SharedStorageModule implements Listener {
             return;
         for (int rawSlot : event.getRawSlots()) {
             if (rawSlot < event.getView().getTopInventory().getSize()) {
-                if (!access.allowInsert() || (subFilter != null && !matchesFilter(draggedItem, subFilter)))
+                if (!access.allowInsert() || (subFilter != null && !matchesFilter(draggedItem, subFilter, filterMode)))
                     event.setCancelled(true);
                 return;
             }
@@ -341,7 +344,7 @@ public class SharedStorageModule implements Listener {
                 if (!destinationPlacement.isMain() && network.enableSubFrameFilter()) {
                     ItemStack filter = resolveSubFrameFilter(destinationPlacement);
                     ItemStack moved = event.getItem();
-                    if (filter != null && moved != null && moved.getType() != Material.AIR && !matchesFilter(moved, filter)) {
+                    if (filter != null && moved != null && moved.getType() != Material.AIR && !matchesFilter(moved, filter, network.subFrameFilterMode())) {
                         event.setCancelled(true);
                         return;
                     }
@@ -405,42 +408,50 @@ public class SharedStorageModule implements Listener {
         ChestUI.builder()
                 .title("共有ストレージ " + network.id())
                 .size(36)
-                .addButtonAt(3, "§b共有ストレージ", Material.CHEST,
+                .addButtonAt(4, "§b共有ストレージ", Material.CHEST,
                         "§7ID: " + network.id() + "\n§7sub数: " + countResolvedSubs(network))
+                .addButtonAt(0, "§6sub設定", Material.BOOK, "§7直接操作 / ホッパー設定")
+                .addButtonAt(18, "§6main設定", Material.CHEST, "§7ホッパー搬入 / 搬出設定")
+                .addButtonAt(21, "§6額縁フィルタ", Material.ITEM_FRAME, "§7ON/OFF と一致ルール")
+                .addButtonAt(27, "§6操作 / 演出", Material.BELL, "§7再仕分け / 演出 / 終了")
                 .addButtonAt(MENU_TOGGLE_SLOT,
                         network.allowSubInsert() ? "§asub直接投入: 許可" : "§csub直接投入: 禁止",
                         network.allowSubInsert() ? Material.LIME_DYE : Material.RED_DYE,
-                        "§7クリックで切り替え")
-                .addButtonAt(MENU_RESET_SLOT, "§bReset", Material.HOPPER,
-                        "§7main / sub 全体を再仕分けします")
+                        "§7プレイヤー操作で sub に入れる")
                 .addButtonAt(MENU_EXTRACT_SLOT,
                         network.allowSubExtract() ? "§asub取出し: 許可" : "§csub取出し: 禁止",
                         network.allowSubExtract() ? Material.LIME_CANDLE : Material.RED_CANDLE,
-                        "§7クリックで切り替え")
-                .addButtonAt(MENU_MAIN_INSERT_SLOT,
-                        network.allowMainInsert() ? "§amain搬入: 許可" : "§cmain搬入: 禁止",
-                        network.allowMainInsert() ? Material.HOPPER : Material.BARRIER,
-                        "§7ホッパー等から main に入れる")
-                .addButtonAt(MENU_MAIN_EXTRACT_SLOT,
-                        network.allowMainExtract() ? "§amain搬出: 許可" : "§cmain搬出: 禁止",
-                        network.allowMainExtract() ? Material.DROPPER : Material.BARRIER,
-                        "§7ホッパー等で main から吸い出す")
+                        "§7プレイヤー操作で sub から出せる")
                 .addButtonAt(MENU_SUB_HOPPER_INSERT_SLOT,
-                        network.allowSubHopperInsert() ? "§asub搬入: 許可" : "§csub搬入: 禁止",
+                        network.allowSubHopperInsert() ? "§asubホッパー搬入: 許可" : "§csubホッパー搬入: 禁止",
                         network.allowSubHopperInsert() ? Material.HOPPER : Material.BARRIER,
                         "§7ホッパー等から sub に入れる")
                 .addButtonAt(MENU_SUB_HOPPER_EXTRACT_SLOT,
-                        network.allowSubHopperExtract() ? "§asub搬出: 許可" : "§csub搬出: 禁止",
+                        network.allowSubHopperExtract() ? "§asubホッパー搬出: 許可" : "§csubホッパー搬出: 禁止",
                         network.allowSubHopperExtract() ? Material.DROPPER : Material.BARRIER,
                         "§7ホッパー等で sub から吸い出す")
-                .addButtonAt(MENU_PARTICLE_SLOT,
-                        network.enableTransferParticles() ? "§aParticle演出: ON" : "§cParticle演出: OFF",
-                        network.enableTransferParticles() ? Material.BLAZE_POWDER : Material.GUNPOWDER,
-                        "§7搬送ライン演出の表示切替")
+                .addButtonAt(MENU_MAIN_INSERT_SLOT,
+                        network.allowMainInsert() ? "§amainホッパー搬入: 許可" : "§cmainホッパー搬入: 禁止",
+                        network.allowMainInsert() ? Material.HOPPER : Material.BARRIER,
+                        "§7ホッパー等から main に入れる")
+                .addButtonAt(MENU_MAIN_EXTRACT_SLOT,
+                        network.allowMainExtract() ? "§amainホッパー搬出: 許可" : "§cmainホッパー搬出: 禁止",
+                        network.allowMainExtract() ? Material.DROPPER : Material.BARRIER,
+                        "§7ホッパー等で main から吸い出す")
                 .addButtonAt(MENU_FRAME_FILTER_SLOT,
                         network.enableSubFrameFilter() ? "§a額縁フィルタ: ON" : "§c額縁フィルタ: OFF",
                         network.enableSubFrameFilter() ? Material.ITEM_FRAME : Material.BARRIER,
                         "§7subに額縁のアイテムだけを入れる")
+                .addButtonAt(MENU_FRAME_FILTER_MODE_SLOT,
+                        "§b額縁一致モード: " + network.subFrameFilterMode().label(),
+                        network.enableSubFrameFilter() ? Material.COMPARATOR : Material.GRAY_DYE,
+                        "§7クリックで切り替え\n§7EXACT / MATERIAL / ENCHANT_STATE")
+                .addButtonAt(MENU_PARTICLE_SLOT,
+                        network.enableTransferParticles() ? "§aParticle演出: ON" : "§cParticle演出: OFF",
+                        network.enableTransferParticles() ? Material.BLAZE_POWDER : Material.GUNPOWDER,
+                        "§7搬送ライン演出の表示切替")
+                .addButtonAt(MENU_RESET_SLOT, "§b再仕分け実行", Material.HOPPER,
+                        "§7main / sub 全体を再仕分けします")
                 .addButtonAt(MENU_CLOSE_SLOT, "§7閉じる", Material.BARRIER, "§7UIを閉じます")
                 .then((result, p) -> {
                     if (!result.success || result.slot == null)
@@ -498,6 +509,13 @@ public class SharedStorageModule implements Listener {
                         network.setEnableSubFrameFilter(!network.enableSubFrameFilter());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.enableSubFrameFilter() ? 1.2F : 0.8F);
+                        openMainMenu(p, network);
+                        return;
+                    }
+                    if (result.slot == MENU_FRAME_FILTER_MODE_SLOT) {
+                        network.setSubFrameFilterMode(network.subFrameFilterMode().next());
+                        saveNetworks();
+                        p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, 1.1F);
                         openMainMenu(p, network);
                         return;
                     }
@@ -592,6 +610,7 @@ public class SharedStorageModule implements Listener {
             network.setAllowMainExtract(stored.isAllowMainExtract());
             network.setEnableTransferParticles(stored.isEnableTransferParticles());
             network.setEnableSubFrameFilter(stored.isEnableSubFrameFilter());
+            network.setSubFrameFilterMode(SubFrameFilterMode.fromStored(stored.getSubFrameFilterMode()));
             for (Location sub : stored.getSubs())
                 network.addSub(sub);
             networks.put(network.id(), network);
@@ -613,7 +632,8 @@ public class SharedStorageModule implements Listener {
                     network.allowMainInsert(),
                     network.allowMainExtract(),
                     network.enableTransferParticles(),
-                    network.enableSubFrameFilter()));
+                    network.enableSubFrameFilter(),
+                    network.subFrameFilterMode().name()));
         }
         store.saveAll(data);
     }
@@ -723,7 +743,7 @@ public class SharedStorageModule implements Listener {
             List<TrackedItemStack> filteredItems = new ArrayList<>();
             List<TrackedItemStack> generalItems = new ArrayList<>();
             for (TrackedItemStack tracked : remainingItems) {
-                if (matchesAnyFilter(tracked.stack(), frameFilters.values())) {
+                if (matchesAnyFilter(tracked.stack(), frameFilters.values(), network.subFrameFilterMode())) {
                     filteredItems.add(tracked);
                 } else {
                     generalItems.add(tracked);
@@ -732,7 +752,7 @@ public class SharedStorageModule implements Listener {
 
             for (ResolvedInventory sub : filteredSubs) {
                 ItemStack filter = frameFilters.get(sub);
-                fillMatchingInventory(sub.inventory(), filteredItems, filter, transferredSubs, sub.anchor());
+                fillMatchingInventory(sub.inventory(), filteredItems, filter, network.subFrameFilterMode(), transferredSubs, sub.anchor());
             }
             for (ResolvedInventory sub : regularSubs) {
                 fillAnyInventory(sub.inventory(), generalItems, transferredSubs, sub.anchor());
@@ -994,12 +1014,12 @@ public class SharedStorageModule implements Listener {
         }
     }
 
-    private void fillMatchingInventory(Inventory inventory, List<TrackedItemStack> items, ItemStack filter,
+    private void fillMatchingInventory(Inventory inventory, List<TrackedItemStack> items, ItemStack filter, SubFrameFilterMode mode,
                                        Set<Location> transferredSubs, Location subAnchor) {
         if (filter == null)
             return;
         for (int slot = 0; slot < inventory.getSize(); slot++) {
-            TrackedItemStack tracked = removeFirstMatching(items, filter);
+            TrackedItemStack tracked = removeFirstMatching(items, filter, mode);
             if (tracked == null)
                 break;
             inventory.setItem(slot, tracked.stack());
@@ -1008,10 +1028,10 @@ public class SharedStorageModule implements Listener {
         }
     }
 
-    private TrackedItemStack removeFirstMatching(List<TrackedItemStack> items, ItemStack filter) {
+    private TrackedItemStack removeFirstMatching(List<TrackedItemStack> items, ItemStack filter, SubFrameFilterMode mode) {
         for (int i = 0; i < items.size(); i++) {
             TrackedItemStack tracked = items.get(i);
-            if (!matchesFilter(tracked.stack(), filter))
+            if (!matchesFilter(tracked.stack(), filter, mode))
                 continue;
             items.remove(i);
             return tracked;
@@ -1019,16 +1039,32 @@ public class SharedStorageModule implements Listener {
         return null;
     }
 
-    private boolean matchesAnyFilter(ItemStack item, java.util.Collection<ItemStack> filters) {
+    private boolean matchesAnyFilter(ItemStack item, java.util.Collection<ItemStack> filters, SubFrameFilterMode mode) {
         for (ItemStack filter : filters) {
-            if (matchesFilter(item, filter))
+            if (matchesFilter(item, filter, mode))
                 return true;
         }
         return false;
     }
 
-    private boolean matchesFilter(ItemStack item, ItemStack filter) {
-        return item != null && filter != null && item.getType() != Material.AIR && filter.getType() != Material.AIR && canMerge(item, filter);
+    private boolean matchesFilter(ItemStack item, ItemStack filter, SubFrameFilterMode mode) {
+        if (item == null || filter == null || item.getType() == Material.AIR || filter.getType() == Material.AIR)
+            return false;
+        return switch (mode) {
+            case MATERIAL -> item.getType() == filter.getType();
+            case ENCHANT_STATE -> item.getType() == filter.getType()
+                    && item.getEnchantments().isEmpty() == filter.getEnchantments().isEmpty();
+            case EXACT -> canMerge(item, filter);
+        };
+    }
+
+    private SubFrameFilterMode resolveSubFrameFilterMode(Placement placement) {
+        if (placement == null || placement.isMain())
+            return SubFrameFilterMode.EXACT;
+        SharedNetwork network = networks.get(placement.id());
+        if (network == null)
+            return SubFrameFilterMode.EXACT;
+        return network.subFrameFilterMode();
     }
 
     private ItemStack resolveSubFrameFilter(ResolvedInventory sub) {
@@ -1230,7 +1266,7 @@ public class SharedStorageModule implements Listener {
             if (sub == null)
                 continue;
             ItemStack filter = network.enableSubFrameFilter() ? resolveSubFrameFilter(sub) : null;
-            if (filter != null && !matchesFilter(item, filter))
+            if (filter != null && !matchesFilter(item, filter, network.subFrameFilterMode()))
                 continue;
             if (canAcceptItem(sub.inventory(), item))
                 return true;
@@ -1550,6 +1586,37 @@ public class SharedStorageModule implements Listener {
         }
     }
 
+    private enum SubFrameFilterMode {
+        EXACT("完全一致"),
+        MATERIAL("素材一致"),
+        ENCHANT_STATE("素材+エンチャ有無");
+
+        private final String label;
+
+        SubFrameFilterMode(String label) {
+            this.label = label;
+        }
+
+        private String label() {
+            return label;
+        }
+
+        private SubFrameFilterMode next() {
+            SubFrameFilterMode[] values = values();
+            return values[(ordinal() + 1) % values.length];
+        }
+
+        private static SubFrameFilterMode fromStored(String raw) {
+            if (raw == null || raw.isEmpty())
+                return EXACT;
+            try {
+                return SubFrameFilterMode.valueOf(raw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+                return EXACT;
+            }
+        }
+    }
+
     private record StorageNameTag(String id) {
     }
 
@@ -1577,6 +1644,7 @@ public class SharedStorageModule implements Listener {
         private boolean allowMainExtract = DEFAULT_ALLOW_MAIN_EXTRACT;
         private boolean enableTransferParticles = DEFAULT_ENABLE_TRANSFER_PARTICLES;
         private boolean enableSubFrameFilter = DEFAULT_ENABLE_SUB_FRAME_FILTER;
+        private SubFrameFilterMode subFrameFilterMode = SubFrameFilterMode.EXACT;
 
         private SharedNetwork(String id) {
             this.id = id;
@@ -1688,6 +1756,14 @@ public class SharedStorageModule implements Listener {
 
         private void setEnableSubFrameFilter(boolean enableSubFrameFilter) {
             this.enableSubFrameFilter = enableSubFrameFilter;
+        }
+
+        private SubFrameFilterMode subFrameFilterMode() {
+            return subFrameFilterMode;
+        }
+
+        private void setSubFrameFilterMode(SubFrameFilterMode subFrameFilterMode) {
+            this.subFrameFilterMode = subFrameFilterMode == null ? SubFrameFilterMode.EXACT : subFrameFilterMode;
         }
     }
 
