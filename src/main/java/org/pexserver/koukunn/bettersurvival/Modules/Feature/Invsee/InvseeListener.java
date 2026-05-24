@@ -69,6 +69,8 @@ public class InvseeListener implements Listener {
                 }
             }
         }
+
+        InvseeOfflineData.saveSnapshot(quittingPlayer);
     }
 
     /**
@@ -81,6 +83,8 @@ public class InvseeListener implements Listener {
         
         // 1tick後に実行（プレイヤー完全参加後）
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            InvseeOfflineData.applyPendingEdits(joiningPlayer);
+
             for (Player viewer : Bukkit.getOnlinePlayers()) {
                 if (viewer.equals(joiningPlayer)) continue;
                 

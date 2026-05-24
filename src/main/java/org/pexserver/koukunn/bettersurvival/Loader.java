@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival;
 
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.CommandBlockManager;
 import org.pexserver.koukunn.bettersurvival.Core.Command.CommandManager;
 import org.pexserver.koukunn.bettersurvival.Core.Command.GlobalCommandFilter;
@@ -130,6 +131,9 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(betterMenuModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
         InvseeOfflineData.initialize(this);
+        for (Player onlinePlayer : getServer().getOnlinePlayers()) {
+            InvseeOfflineData.saveSnapshot(onlinePlayer);
+        }
         getServer().getPluginManager().registerEvents(new InvseeListener(this), this);
         // FenceLeash module registration (allow placing a leash knot on fence by
         // right-clicking while holding a lead)
@@ -286,6 +290,9 @@ public final class Loader extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        for (Player onlinePlayer : getServer().getOnlinePlayers()) {
+            InvseeOfflineData.saveSnapshot(onlinePlayer);
+        }
         if (discordWebhookModule != null) {
             discordWebhookModule.shutdown();
         }

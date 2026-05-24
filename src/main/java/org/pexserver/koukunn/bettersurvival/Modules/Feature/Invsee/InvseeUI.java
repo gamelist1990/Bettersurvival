@@ -201,7 +201,18 @@ public class InvseeUI {
     public static void openInventoryUI(Player viewer, OfflinePlayer target, Loader plugin) {
         // Bedrockプレイヤーの場合は専用フォームを開く
         if (FloodgateUtil.isBedrock(viewer)) {
+            if (!target.isOnline() && !InvseeOfflineData.hasData(target)) {
+                viewer.sendMessage("§c[InvSee] §f" + (target.getName() != null ? target.getName() : "Unknown") + " §7のオフライン保存データがありません");
+                viewer.sendMessage("§7対象プレイヤーが一度ログアウトした後に再度お試しください");
+                return;
+            }
             openBedrockInventoryForm(viewer, target, plugin);
+            return;
+        }
+
+        if (!target.isOnline() && !InvseeOfflineData.hasData(target)) {
+            viewer.sendMessage("§c[InvSee] §f" + (target.getName() != null ? target.getName() : "Unknown") + " §7のオフライン保存データがありません");
+            viewer.sendMessage("§7対象プレイヤーが一度ログアウトした後に再度お試しください");
             return;
         }
 
