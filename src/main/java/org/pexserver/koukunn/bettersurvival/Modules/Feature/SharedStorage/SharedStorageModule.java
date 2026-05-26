@@ -1,6 +1,7 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -14,6 +15,7 @@ import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.ItemFrame;
+import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -35,6 +37,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.BlockInventoryHolder;
 import org.bukkit.persistence.PersistentDataType;
@@ -61,6 +64,7 @@ import java.util.UUID;
 
 /**
  * chest-id / chestsub-id の NameTag とチェストを合成して作る共有ストレージ機能。
+ * chestsub-id はチェスト付きトロッコとの合成にも対応する。
  *
  * main と sub は単体チェスト / ラージチェストの両方をサポートし、
  * main から close 時の再仕分けと sort 棒 UI からの設定変更を行う。
@@ -73,7 +77,8 @@ public class SharedStorageModule implements Listener {
     private static final String ROLE_SUB = "sub";
     private static final String MAIN_PREFIX = "chest-";
     private static final String SUB_PREFIX = "chestsub-";
-    private static final double MAX_SUB_DISTANCE = 15.0D;
+    private static final int DEFAULT_SUB_DISTANCE = 15;
+    private static final int MAX_SUB_DISTANCE_LIMIT = 50;
     private static final boolean DEFAULT_ALLOW_SUB_INSERT = false;
     private static final boolean DEFAULT_ALLOW_SUB_EXTRACT = true;
     private static final boolean DEFAULT_ALLOW_SUB_HOPPER_INSERT = false;
@@ -82,6 +87,8 @@ public class SharedStorageModule implements Listener {
     private static final boolean DEFAULT_ALLOW_MAIN_EXTRACT = true;
     private static final boolean DEFAULT_ENABLE_TRANSFER_PARTICLES = true;
     private static final boolean DEFAULT_ENABLE_SUB_FRAME_FILTER = false;
+    private static final boolean DEFAULT_ENABLE_CHEST_PAGE = false;
+    private static final String CLEAR_FILTER_NAME = "chest-clear";
     private static final int MENU_TOGGLE_SLOT = 10;
     private static final int MENU_EXTRACT_SLOT = 11;
     private static final int MENU_SUB_HOPPER_INSERT_SLOT = 12;
@@ -89,10 +96,12 @@ public class SharedStorageModule implements Listener {
     private static final int MENU_RESET_SLOT = 8;
     private static final int MENU_MAIN_INSERT_SLOT = 19;
     private static final int MENU_MAIN_EXTRACT_SLOT = 20;
+    private static final int MENU_CHEST_PAGE_SLOT = 22;
     private static final int MENU_FRAME_FILTER_SLOT = 23;
     private static final int MENU_FRAME_FILTER_MODE_SLOT = 24;
     private static final int MENU_PARTICLE_SLOT = 29;
     private static final int MENU_CLOSE_SLOT = 35;
+    private static final int MENU_RANGE_SLOT = 5;
 
     private final Loader plugin;
     private final ToggleModule toggle;
@@ -142,6 +151,14 @@ public class SharedStorageModule implements Listener {
                 .verticalRadius(2.0D)
                 .allowAirCombine(true)
                 .then(match -> craftSharedChest(match, ROLE_SUB));
+        itemCombineModule.recipe("shared_storage_sub_minecart")
+                .first(this::isPlainChestMinecartItem)
+                .second(this::isSubNameTag)
+                .groundRadius(0.5D)
+                .airRadius(1.5D)
+                .verticalRadius(2.0D)
+                .allowAirCombine(true)
+                .then(this::craftSharedSubMinecart);
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -235,6 +252,12 @@ public class SharedStorageModule implements Listener {
         if (!canUseContainer(event.getPlayer(), clicked.getLocation()))
             return;
 
+        if (event.getAction().isLeftClick() && network.enableChestPage()) {
+            event.setCancelled(true);
+            openChestPageCategoryMenu(event.getPlayer(), network, 0);
+            return;
+        }
+
         event.setCancelled(true);
         openMainMenu(event.getPlayer(), network);
     }
@@ -278,8 +301,9 @@ public class SharedStorageModule implements Listener {
             return;
         Inventory top = event.getView().getTopInventory();
         Placement placement = resolvePlacement(top);
-        ItemStack subFilter = resolveSubFrameFilter(placement);
+        List<ItemStack> subFilters = resolveSubFrameFilters(placement);
         SubFrameFilterMode filterMode = resolveSubFrameFilterMode(placement);
+        boolean hasSubFilters = !subFilters.isEmpty();
         int rawSlot = event.getRawSlot();
         if (rawSlot < 0)
             return;
@@ -292,7 +316,7 @@ public class SharedStorageModule implements Listener {
         }
         if (event.isShiftClick() && rawSlot >= top.getSize()) {
             ItemStack current = event.getCurrentItem();
-            if (!access.allowInsert() || (subFilter != null && current != null && current.getType() != Material.AIR && !matchesFilter(current, subFilter, filterMode)))
+            if (!access.allowInsert() || (hasSubFilters && current != null && current.getType() != Material.AIR && !matchesAnyFilter(current, subFilters, filterMode)))
                 event.setCancelled(true);
             return;
         }
@@ -305,7 +329,7 @@ public class SharedStorageModule implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (subFilter != null && insertItem != null && insertItem.getType() != Material.AIR && !matchesFilter(insertItem, subFilter, filterMode))
+        if (hasSubFilters && insertItem != null && insertItem.getType() != Material.AIR && !matchesAnyFilter(insertItem, subFilters, filterMode))
             event.setCancelled(true);
     }
 
@@ -315,16 +339,16 @@ public class SharedStorageModule implements Listener {
         if (access == null)
             return;
         Placement placement = resolvePlacement(event.getView().getTopInventory());
-        ItemStack subFilter = resolveSubFrameFilter(placement);
+        List<ItemStack> subFilters = resolveSubFrameFilters(placement);
         SubFrameFilterMode filterMode = resolveSubFrameFilterMode(placement);
-        if (access.allowInsert() && subFilter == null)
+        if (access.allowInsert() && subFilters.isEmpty())
             return;
         ItemStack draggedItem = event.getOldCursor();
         if (draggedItem == null || draggedItem.getType() == Material.AIR)
             return;
         for (int rawSlot : event.getRawSlots()) {
             if (rawSlot < event.getView().getTopInventory().getSize()) {
-                if (!access.allowInsert() || (subFilter != null && !matchesFilter(draggedItem, subFilter, filterMode)))
+                if (!access.allowInsert() || (!subFilters.isEmpty() && !matchesAnyFilter(draggedItem, subFilters, filterMode)))
                     event.setCancelled(true);
                 return;
             }
@@ -342,9 +366,9 @@ public class SharedStorageModule implements Listener {
                     return;
                 }
                 if (!destinationPlacement.isMain() && network.enableSubFrameFilter()) {
-                    ItemStack filter = resolveSubFrameFilter(destinationPlacement);
+                    List<ItemStack> filters = resolveSubFrameFilters(destinationPlacement);
                     ItemStack moved = event.getItem();
-                    if (filter != null && moved != null && moved.getType() != Material.AIR && !matchesFilter(moved, filter, network.subFrameFilterMode())) {
+                    if (!filters.isEmpty() && moved != null && moved.getType() != Material.AIR && !matchesAnyFilter(moved, filters, network.subFrameFilterMode())) {
                         event.setCancelled(true);
                         return;
                     }
@@ -410,9 +434,15 @@ public class SharedStorageModule implements Listener {
                 .size(36)
                 .addButtonAt(4, "§b共有ストレージ", Material.CHEST,
                         "§7ID: " + network.id() + "\n§7sub数: " + countResolvedSubs(network))
+                .addButtonAt(MENU_RANGE_SLOT, "§esub接続範囲", Material.SPYGLASS,
+                        "§7現在: " + network.subRange() + "ブロック\n§7設定可能: 1 〜 " + MAX_SUB_DISTANCE_LIMIT)
                 .addButtonAt(0, "§6sub設定", Material.BOOK, "§7直接操作 / ホッパー設定")
                 .addButtonAt(18, "§6main設定", Material.CHEST, "§7ホッパー搬入 / 搬出設定")
                 .addButtonAt(21, "§6額縁フィルタ", Material.ITEM_FRAME, "§7ON/OFF と一致ルール")
+                .addButtonAt(MENU_CHEST_PAGE_SLOT,
+                        network.enableChestPage() ? "§aChestPage: ON" : "§cChestPage: OFF",
+                        network.enableChestPage() ? Material.BOOKSHELF : Material.BARRIER,
+                        "§7スニーク左クリックでsub一覧UIを開く")
                 .addButtonAt(27, "§6操作 / 演出", Material.BELL, "§7再仕分け / 演出 / 終了")
                 .addButtonAt(MENU_TOGGLE_SLOT,
                         network.allowSubInsert() ? "§asub直接投入: 許可" : "§csub直接投入: 禁止",
@@ -512,6 +542,13 @@ public class SharedStorageModule implements Listener {
                         openMainMenu(p, network);
                         return;
                     }
+                    if (result.slot == MENU_CHEST_PAGE_SLOT) {
+                        network.setEnableChestPage(!network.enableChestPage());
+                        saveNetworks();
+                        p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.enableChestPage() ? 1.2F : 0.8F);
+                        openMainMenu(p, network);
+                        return;
+                    }
                     if (result.slot == MENU_FRAME_FILTER_MODE_SLOT) {
                         network.setSubFrameFilterMode(network.subFrameFilterMode().next());
                         saveNetworks();
@@ -524,18 +561,312 @@ public class SharedStorageModule implements Listener {
                         openMainMenu(p, network);
                         return;
                     }
+                    if (result.slot == MENU_RANGE_SLOT) {
+                        p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, 1.2F);
+                        openSubRangeMenu(p, network);
+                        return;
+                    }
                     if (result.slot == MENU_CLOSE_SLOT)
                         ChestUI.closeMenu(p);
                 }).show(player);
     }
 
+    private void openSubRangeMenu(Player player, SharedNetwork network) {
+        String status = "§7現在値: §f" + network.subRange() + " / " + MAX_SUB_DISTANCE_LIMIT;
+        ChestUI.builder()
+                .title("sub接続範囲設定: " + network.id())
+                .size(27)
+                .addButtonAt(10, "§c-10", Material.RED_STAINED_GLASS_PANE, status)
+                .addButtonAt(11, "§c-5", Material.ORANGE_STAINED_GLASS_PANE, status)
+                .addButtonAt(12, "§c-1", Material.PINK_STAINED_GLASS_PANE, status)
+                .addButtonAt(13, "§6現在値", Material.SPYGLASS, status)
+                .addButtonAt(14, "§a+1", Material.LIME_STAINED_GLASS_PANE, status)
+                .addButtonAt(15, "§a+5", Material.GREEN_STAINED_GLASS_PANE, status)
+                .addButtonAt(16, "§a+10", Material.EMERALD_BLOCK, status)
+                .addButtonAt(18, "§b10に設定", Material.WHEAT_SEEDS, status)
+                .addButtonAt(19, "§b15に設定", Material.CARROT, status)
+                .addButtonAt(20, "§b20に設定", Material.POTATO, status)
+                .addButtonAt(21, "§b30に設定", Material.BEETROOT_SEEDS, status)
+                .addButtonAt(22, "§b50に設定", Material.NETHER_WART, status)
+                .addButtonAt(23, "§b最大値に設定", Material.COMPASS, status)
+                .addButtonAt(26, "§e戻る", Material.ARROW, "")
+                .then((result, p) -> {
+                    if (!result.success || result.slot == null)
+                        return;
+                    p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, 1.2F);
+                    int value = network.subRange();
+                    switch (result.slot) {
+                        case 10 -> value -= 10;
+                        case 11 -> value -= 5;
+                        case 12 -> value -= 1;
+                        case 14 -> value += 1;
+                        case 15 -> value += 5;
+                        case 16 -> value += 10;
+                        case 18 -> value = 10;
+                        case 19 -> value = 15;
+                        case 20 -> value = 20;
+                        case 21 -> value = 30;
+                        case 22, 23 -> value = MAX_SUB_DISTANCE_LIMIT;
+                        case 26 -> {
+                            openMainMenu(p, network);
+                            return;
+                        }
+                        default -> {
+                            openSubRangeMenu(p, network);
+                            return;
+                        }
+                    }
+                    network.setSubRange(value);
+                    saveNetworks();
+                    openSubRangeMenu(p, network);
+                })
+                .show(player);
+    }
+
+    private void openChestPageCategoryMenu(Player player, SharedNetwork network, int page) {
+        List<SubCategoryEntry> categories = resolveSubCategoryEntries(network);
+        if (categories.isEmpty()) {
+            player.sendMessage("§esubコンテナが見つかりません");
+            return;
+        }
+        int pageSize = 45;
+        int maxPage = Math.max(0, (categories.size() - 1) / pageSize);
+        int currentPage = Math.max(0, Math.min(maxPage, page));
+        int start = currentPage * pageSize;
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("ChestPage: " + network.id() + " §7(" + (currentPage + 1) + "/" + (maxPage + 1) + ")")
+                .size(54);
+        for (int slot = 0; slot < pageSize; slot++) {
+            int index = start + slot;
+            if (index >= categories.size())
+                break;
+            SubCategoryEntry category = categories.get(index);
+            int subCount = category.subs().size();
+            String lore = "§7カテゴリ内sub: §f" + subCount
+                    + "\n§7クリック: " + (subCount == 1 ? "直接開く" : "カテゴリを開く");
+            builder.addCustomItemAt(slot, category.displayName(), category.icon(), lore);
+        }
+        if (currentPage > 0)
+            builder.addButtonAt(45, "§e前のページ", Material.ARROW, "§7カテゴリ一覧を戻る");
+        builder.addButtonAt(49, "§c戻る", Material.BARRIER, "§7共有ストレージ設定へ戻る");
+        if (currentPage < maxPage)
+            builder.addButtonAt(53, "§e次のページ", Material.ARROW, "§7カテゴリ一覧を進む");
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null)
+                return;
+            if (result.slot == 45) {
+                openChestPageCategoryMenu(p, network, currentPage - 1);
+                return;
+            }
+            if (result.slot == 49) {
+                openMainMenu(p, network);
+                return;
+            }
+            if (result.slot == 53) {
+                openChestPageCategoryMenu(p, network, currentPage + 1);
+                return;
+            }
+            if (result.slot < 0 || result.slot >= pageSize)
+                return;
+            int index = start + result.slot;
+            if (index < 0 || index >= categories.size())
+                return;
+            SubCategoryEntry category = categories.get(index);
+            if (category.subs().size() == 1) {
+                ResolvedInventory sub = category.subs().get(0);
+                if (!canUseSubInventory(p, sub))
+                    return;
+                p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 0.7F, 1.1F);
+                p.openInventory(sub.inventory());
+                return;
+            }
+            openChestPageSubMenu(p, network, category.key(), currentPage, 0);
+        }).show(player);
+    }
+
+    private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage) {
+        List<SubCategoryEntry> categories = resolveSubCategoryEntries(network);
+        SubCategoryEntry category = null;
+        for (SubCategoryEntry entry : categories) {
+            if (entry.key().equals(categoryKey)) {
+                category = entry;
+                break;
+            }
+        }
+        if (category == null || category.subs().isEmpty()) {
+            openChestPageCategoryMenu(player, network, categoryPage);
+            return;
+        }
+        List<ResolvedInventory> subs = category.subs();
+        int pageSize = 45;
+        int maxPage = Math.max(0, (subs.size() - 1) / pageSize);
+        int currentPage = Math.max(0, Math.min(maxPage, subPage));
+        int start = currentPage * pageSize;
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("ChestPage: " + ChatColor.stripColor(category.displayName()) + " §7(" + (currentPage + 1) + "/" + (maxPage + 1) + ")")
+                .size(54);
+        for (int slot = 0; slot < pageSize; slot++) {
+            int index = start + slot;
+            if (index >= subs.size())
+                break;
+            ResolvedInventory sub = subs.get(index);
+            ItemStack icon = createSubEntryIcon(category, sub);
+            String label = category.noFilter()
+                    ? "§bsub #" + (index + 1)
+                    : category.displayName() + " §7#" + (index + 1);
+            String lore = "§7位置: " + formatLocation(sub.anchor()) + "\n§7クリックで開く";
+            builder.addCustomItemAt(slot, label, icon, lore);
+        }
+        if (currentPage > 0)
+            builder.addButtonAt(45, "§e前のページ", Material.ARROW, "§7sub一覧を戻る");
+        builder.addButtonAt(49, "§c戻る", Material.BARRIER, "§7カテゴリ一覧へ戻る");
+        if (currentPage < maxPage)
+            builder.addButtonAt(53, "§e次のページ", Material.ARROW, "§7sub一覧を進む");
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null)
+                return;
+            if (result.slot == 45) {
+                openChestPageSubMenu(p, network, categoryKey, categoryPage, currentPage - 1);
+                return;
+            }
+            if (result.slot == 49) {
+                openChestPageCategoryMenu(p, network, categoryPage);
+                return;
+            }
+            if (result.slot == 53) {
+                openChestPageSubMenu(p, network, categoryKey, categoryPage, currentPage + 1);
+                return;
+            }
+            if (result.slot < 0 || result.slot >= pageSize)
+                return;
+            int index = start + result.slot;
+            if (index < 0 || index >= subs.size())
+                return;
+            ResolvedInventory sub = subs.get(index);
+            if (!canUseSubInventory(p, sub))
+                return;
+            p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 0.7F, 1.1F);
+            p.openInventory(sub.inventory());
+        }).show(player);
+    }
+
+    private List<SubCategoryEntry> resolveSubCategoryEntries(SharedNetwork network) {
+        List<ResolvedInventory> resolvedSubs = resolveAllSubInventories(network);
+        if (resolvedSubs.isEmpty())
+            return List.of();
+        Map<String, MutableSubCategory> categories = new LinkedHashMap<>();
+        for (ResolvedInventory sub : resolvedSubs) {
+            List<ItemStack> filters = resolveSubFrameFilters(sub);
+            if (filters.isEmpty()) {
+                String key = resolveCategoryKey(null);
+                MutableSubCategory category = categories.get(key);
+                if (category == null) {
+                    category = new MutableSubCategory(key, null);
+                    categories.put(key, category);
+                }
+                category.subs.add(sub);
+                continue;
+            }
+            Set<String> usedKeys = new LinkedHashSet<>();
+            for (ItemStack filter : filters) {
+                String key = resolveCategoryKey(filter);
+                if (!usedKeys.add(key))
+                    continue;
+                MutableSubCategory category = categories.get(key);
+                if (category == null) {
+                    category = new MutableSubCategory(key, filter);
+                    categories.put(key, category);
+                }
+                category.subs.add(sub);
+            }
+        }
+        List<SubCategoryEntry> entries = new ArrayList<>();
+        for (MutableSubCategory category : categories.values()) {
+            entries.add(category.toEntry());
+        }
+        entries.sort((left, right) -> {
+            if (left.noFilter() != right.noFilter())
+                return left.noFilter() ? 1 : -1;
+            int priority = Integer.compare(determineCategoryPriority(left.icon().getType()), determineCategoryPriority(right.icon().getType()));
+            if (priority != 0)
+                return priority;
+            int material = left.icon().getType().name().compareTo(right.icon().getType().name());
+            if (material != 0)
+                return material;
+            return ChatColor.stripColor(left.displayName()).compareToIgnoreCase(ChatColor.stripColor(right.displayName()));
+        });
+        return entries;
+    }
+
+    private List<ResolvedInventory> resolveAllSubInventories(SharedNetwork network) {
+        List<ResolvedInventory> resolved = new ArrayList<>();
+        for (Location subLocation : network.subs()) {
+            ResolvedInventory sub = resolveInventory(subLocation);
+            if (sub != null)
+                resolved.add(sub);
+        }
+        resolved.addAll(resolveMinecartSubs(network));
+        return resolved;
+    }
+
+    private String resolveCategoryKey(ItemStack filter) {
+        if (filter == null || filter.getType() == Material.AIR)
+            return "nofilter";
+        if (isClearFrameFilter(filter))
+            return "clear:" + filter.getType().name();
+        return "filter:" + filter.getType().name();
+    }
+
+    private ItemStack createSubEntryIcon(SubCategoryEntry category, ResolvedInventory sub) {
+        ItemStack icon = category.icon().clone();
+        icon.setAmount(1);
+        if (sub.inventory().getHolder() instanceof StorageMinecart) {
+            icon = icon.getType() == Material.AIR ? new ItemStack(Material.CHEST_MINECART) : icon;
+        }
+        return icon;
+    }
+
+    private boolean canUseSubInventory(Player player, ResolvedInventory sub) {
+        if (sub == null || sub.inventory() == null)
+            return false;
+        if (sub.inventory().getHolder() instanceof StorageMinecart)
+            return true;
+        return canUseContainer(player, sub.anchor());
+    }
+
+    private String formatLocation(Location location) {
+        if (location == null || location.getWorld() == null)
+            return "unknown";
+        return location.getWorld().getName() + " "
+                + location.getBlockX() + ","
+                + location.getBlockY() + ","
+                + location.getBlockZ();
+    }
+
+    private String resolveItemDisplayName(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR)
+            return "UNKNOWN";
+        if (item.hasItemMeta()) {
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null && meta.hasDisplayName()) {
+                String displayName = ChatColor.stripColor(meta.getDisplayName());
+                if (displayName != null && !displayName.isBlank())
+                    return displayName;
+            }
+        }
+        return item.getType().name();
+    }
+
     private int countResolvedSubs(SharedNetwork network) {
-        int count = 0;
+        Set<String> keys = new LinkedHashSet<>();
         for (Location subAnchor : network.subs()) {
             if (!resolveContainerLocations(subAnchor).isEmpty())
-                count++;
+                keys.add(SharedStorageStore.toKey(subAnchor));
         }
-        return count;
+        for (ResolvedInventory sub : resolveMinecartSubs(network)) {
+            keys.add("minecart:" + SharedStorageStore.toKey(sub.anchor()));
+        }
+        return keys.size();
     }
 
     private void craftSharedChest(ItemCombineModule.CombineMatch match, String role) {
@@ -548,6 +879,18 @@ public class SharedStorageModule implements Listener {
         Location center = match.center();
         center.getWorld().dropItemNaturally(center, createSharedChestItem(tag.id(), role));
         center.getWorld().playSound(center, Sound.BLOCK_ENDER_CHEST_OPEN, 0.8F, ROLE_MAIN.equals(role) ? 1.0F : 1.3F);
+    }
+
+    private void craftSharedSubMinecart(ItemCombineModule.CombineMatch match) {
+        if (!toggle.getGlobal(FEATURE_KEY))
+            return;
+        StorageNameTag tag = getStorageNameTag(match.second().getItemStack(), ROLE_SUB);
+        if (tag == null)
+            return;
+        match.consumeMatchedItems(1, 1);
+        Location center = match.center();
+        center.getWorld().dropItemNaturally(center, createSharedSubMinecartItem(tag.id()));
+        center.getWorld().playSound(center, Sound.BLOCK_ENDER_CHEST_OPEN, 0.8F, 1.3F);
     }
 
     private PlacementConflict findPlacementConflict(List<Location> footprint, StorageItemData itemData) {
@@ -578,7 +921,7 @@ public class SharedStorageModule implements Listener {
 
         if (network.main() == null)
             return PlacementResult.MAIN_NOT_FOUND;
-        if (containerDistance(resolveContainerLocations(network.main()), footprint) > MAX_SUB_DISTANCE)
+        if (containerDistance(resolveContainerLocations(network.main()), footprint) > network.subRange())
             return PlacementResult.TOO_FAR;
 
         Location matchedSub = findMatchingSub(network, footprint);
@@ -609,8 +952,10 @@ public class SharedStorageModule implements Listener {
             network.setAllowMainInsert(stored.isAllowMainInsert());
             network.setAllowMainExtract(stored.isAllowMainExtract());
             network.setEnableTransferParticles(stored.isEnableTransferParticles());
+            network.setSubRange(stored.getSubRange());
             network.setEnableSubFrameFilter(stored.isEnableSubFrameFilter());
             network.setSubFrameFilterMode(SubFrameFilterMode.fromStored(stored.getSubFrameFilterMode()));
+            network.setEnableChestPage(stored.isEnableChestPage());
             for (Location sub : stored.getSubs())
                 network.addSub(sub);
             networks.put(network.id(), network);
@@ -632,8 +977,10 @@ public class SharedStorageModule implements Listener {
                     network.allowMainInsert(),
                     network.allowMainExtract(),
                     network.enableTransferParticles(),
+                    network.subRange(),
                     network.enableSubFrameFilter(),
-                    network.subFrameFilterMode().name()));
+                    network.subFrameFilterMode().name(),
+                    network.enableChestPage()));
         }
         store.saveAll(data);
     }
@@ -700,9 +1047,10 @@ public class SharedStorageModule implements Listener {
             if (sub != null)
                 subs.add(sub);
         }
+        subs.addAll(resolveMinecartSubs(network));
         if (subs.isEmpty()) {
             if (announce && actor != null)
-                actor.sendMessage("§esubチェストが無いため main のみです");
+                actor.sendMessage("§esubコンテナが無いため main のみです");
             return;
         }
 
@@ -726,15 +1074,29 @@ public class SharedStorageModule implements Listener {
         Set<Location> transferredSubs = new LinkedHashSet<>();
         List<TrackedItemStack> remainingItems = new ArrayList<>(items);
 
+        int disposedAmount = 0;
         if (network.enableSubFrameFilter()) {
-            Map<ResolvedInventory, ItemStack> frameFilters = new LinkedHashMap<>();
+            Map<ResolvedInventory, List<ItemStack>> frameFilters = new LinkedHashMap<>();
+            List<ItemStack> allFrameFilters = new ArrayList<>();
+            List<ItemStack> allClearFilters = new ArrayList<>();
             List<ResolvedInventory> filteredSubs = new ArrayList<>();
             List<ResolvedInventory> regularSubs = new ArrayList<>();
             for (ResolvedInventory sub : subs) {
-                ItemStack filter = resolveSubFrameFilter(sub);
-                if (filter != null) {
-                    frameFilters.put(sub, filter);
-                    filteredSubs.add(sub);
+                List<ItemStack> filters = resolveSubFrameFilters(sub);
+                if (!filters.isEmpty()) {
+                    List<ItemStack> positiveFilters = new ArrayList<>();
+                    for (ItemStack filter : filters) {
+                        if (isClearFrameFilter(filter)) {
+                            allClearFilters.add(filter);
+                        } else {
+                            positiveFilters.add(filter);
+                        }
+                    }
+                    if (!positiveFilters.isEmpty()) {
+                        frameFilters.put(sub, positiveFilters);
+                        allFrameFilters.addAll(positiveFilters);
+                        filteredSubs.add(sub);
+                    }
                 } else {
                     regularSubs.add(sub);
                 }
@@ -743,7 +1105,9 @@ public class SharedStorageModule implements Listener {
             List<TrackedItemStack> filteredItems = new ArrayList<>();
             List<TrackedItemStack> generalItems = new ArrayList<>();
             for (TrackedItemStack tracked : remainingItems) {
-                if (matchesAnyFilter(tracked.stack(), frameFilters.values(), network.subFrameFilterMode())) {
+                if (matchesAnyFilter(tracked.stack(), allClearFilters, network.subFrameFilterMode())) {
+                    disposedAmount += tracked.stack().getAmount();
+                } else if (matchesAnyFilter(tracked.stack(), allFrameFilters, network.subFrameFilterMode())) {
                     filteredItems.add(tracked);
                 } else {
                     generalItems.add(tracked);
@@ -751,8 +1115,8 @@ public class SharedStorageModule implements Listener {
             }
 
             for (ResolvedInventory sub : filteredSubs) {
-                ItemStack filter = frameFilters.get(sub);
-                fillMatchingInventory(sub.inventory(), filteredItems, filter, network.subFrameFilterMode(), transferredSubs, sub.anchor());
+                List<ItemStack> filters = frameFilters.get(sub);
+                fillMatchingInventory(sub.inventory(), filteredItems, filters, network.subFrameFilterMode(), transferredSubs, sub.anchor());
             }
             for (ResolvedInventory sub : regularSubs) {
                 fillAnyInventory(sub.inventory(), generalItems, transferredSubs, sub.anchor());
@@ -794,7 +1158,11 @@ public class SharedStorageModule implements Listener {
 
         if (announce && actor != null) {
             actor.playSound(actor.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_RESONATE, 0.8F, 1.2F);
-            actor.sendMessage("§a共有ストレージ " + network.id() + " を再仕分けしました");
+            if (disposedAmount > 0) {
+                actor.sendMessage("§a共有ストレージ " + network.id() + " を再仕分けしました §7(処分: " + disposedAmount + "個)");
+            } else {
+                actor.sendMessage("§a共有ストレージ " + network.id() + " を再仕分けしました");
+            }
         }
     }
 
@@ -936,6 +1304,13 @@ public class SharedStorageModule implements Listener {
         return placements.get(SharedStorageStore.toKey(location));
     }
 
+    public boolean isSharedStorageContainer(Location location) {
+        if (location == null) {
+            return false;
+        }
+        return resolvePlacement(location) != null;
+    }
+
     private Placement resolvePlacement(Inventory inventory) {
         for (Location location : resolveInventoryHolderLocations(inventory.getHolder())) {
             Placement placement = resolvePlacement(location);
@@ -1014,12 +1389,12 @@ public class SharedStorageModule implements Listener {
         }
     }
 
-    private void fillMatchingInventory(Inventory inventory, List<TrackedItemStack> items, ItemStack filter, SubFrameFilterMode mode,
+    private void fillMatchingInventory(Inventory inventory, List<TrackedItemStack> items, List<ItemStack> filters, SubFrameFilterMode mode,
                                        Set<Location> transferredSubs, Location subAnchor) {
-        if (filter == null)
+        if (filters == null || filters.isEmpty())
             return;
         for (int slot = 0; slot < inventory.getSize(); slot++) {
-            TrackedItemStack tracked = removeFirstMatching(items, filter, mode);
+            TrackedItemStack tracked = removeFirstMatching(items, filters, mode);
             if (tracked == null)
                 break;
             inventory.setItem(slot, tracked.stack());
@@ -1028,10 +1403,10 @@ public class SharedStorageModule implements Listener {
         }
     }
 
-    private TrackedItemStack removeFirstMatching(List<TrackedItemStack> items, ItemStack filter, SubFrameFilterMode mode) {
+    private TrackedItemStack removeFirstMatching(List<TrackedItemStack> items, List<ItemStack> filters, SubFrameFilterMode mode) {
         for (int i = 0; i < items.size(); i++) {
             TrackedItemStack tracked = items.get(i);
-            if (!matchesFilter(tracked.stack(), filter, mode))
+            if (!matchesAnyFilter(tracked.stack(), filters, mode))
                 continue;
             items.remove(i);
             return tracked;
@@ -1040,6 +1415,8 @@ public class SharedStorageModule implements Listener {
     }
 
     private boolean matchesAnyFilter(ItemStack item, java.util.Collection<ItemStack> filters, SubFrameFilterMode mode) {
+        if (filters == null || filters.isEmpty())
+            return false;
         for (ItemStack filter : filters) {
             if (matchesFilter(item, filter, mode))
                 return true;
@@ -1050,12 +1427,50 @@ public class SharedStorageModule implements Listener {
     private boolean matchesFilter(ItemStack item, ItemStack filter, SubFrameFilterMode mode) {
         if (item == null || filter == null || item.getType() == Material.AIR || filter.getType() == Material.AIR)
             return false;
+        if (isClearFrameFilter(filter))
+            return matchesClearFilter(item, filter, mode);
         return switch (mode) {
             case MATERIAL -> item.getType() == filter.getType();
             case ENCHANT_STATE -> item.getType() == filter.getType()
-                    && item.getEnchantments().isEmpty() == filter.getEnchantments().isEmpty();
+                    && hasEnchantState(item) == hasEnchantState(filter);
             case EXACT -> canMerge(item, filter);
         };
+    }
+
+    private boolean matchesClearFilter(ItemStack item, ItemStack filter, SubFrameFilterMode mode) {
+        if (item.getType() != filter.getType())
+            return false;
+        if (mode == SubFrameFilterMode.ENCHANT_STATE)
+            return hasEnchantState(item) == hasEnchantState(filter);
+        return true;
+    }
+
+    private boolean isClearFrameFilter(ItemStack filter) {
+        if (filter == null || filter.getType() == Material.AIR || !filter.hasItemMeta())
+            return false;
+        ItemMeta meta = filter.getItemMeta();
+        if (meta == null || !meta.hasDisplayName())
+            return false;
+        String raw = meta.getDisplayName();
+        if (raw == null)
+            return false;
+        String normalized = ChatColor.stripColor(raw).trim().toLowerCase(Locale.ROOT);
+        return CLEAR_FILTER_NAME.equals(normalized);
+    }
+
+    private boolean hasEnchantState(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR)
+            return false;
+        if (!item.getEnchantments().isEmpty())
+            return true;
+        if (!item.hasItemMeta())
+            return false;
+        ItemMeta meta = item.getItemMeta();
+        if (meta.hasEnchants())
+            return true;
+        if (meta instanceof EnchantmentStorageMeta storageMeta && storageMeta.hasStoredEnchants())
+            return true;
+        return meta.hasEnchantmentGlintOverride() && Boolean.TRUE.equals(meta.getEnchantmentGlintOverride());
     }
 
     private SubFrameFilterMode resolveSubFrameFilterMode(Placement placement) {
@@ -1067,10 +1482,13 @@ public class SharedStorageModule implements Listener {
         return network.subFrameFilterMode();
     }
 
-    private ItemStack resolveSubFrameFilter(ResolvedInventory sub) {
+    private List<ItemStack> resolveSubFrameFilters(ResolvedInventory sub) {
+        List<ItemStack> filters = new ArrayList<>();
+        if (sub == null || sub.anchor() == null)
+            return filters;
         World world = sub.anchor().getWorld();
         if (world == null)
-            return null;
+            return filters;
         Location center = sub.anchor().clone().add(0.5D, 0.5D, 0.5D);
         for (org.bukkit.entity.Entity entity : world.getNearbyEntities(center, 1.5D, 1.5D, 1.5D)) {
             if (!(entity instanceof ItemFrame frame))
@@ -1079,29 +1497,27 @@ public class SharedStorageModule implements Listener {
                 continue;
             ItemStack filter = frame.getItem();
             if (filter != null && filter.getType() != Material.AIR)
-                return filter.clone();
+                filters.add(filter.clone());
         }
-        return null;
+        return filters;
     }
 
-    private ItemStack resolveSubFrameFilter(Placement placement) {
+    private List<ItemStack> resolveSubFrameFilters(Placement placement) {
         if (placement == null || placement.isMain())
-            return null;
+            return List.of();
         SharedNetwork network = networks.get(placement.id());
         if (network == null || !network.enableSubFrameFilter())
-            return null;
+            return List.of();
         ResolvedInventory sub = resolveInventory(placement.anchor());
-        return sub == null ? null : resolveSubFrameFilter(sub);
+        return sub == null ? List.of() : resolveSubFrameFilters(sub);
     }
 
     private boolean isFrameAttachedToFootprint(ItemFrame frame, List<Location> footprint) {
-        BlockFace face = frame.getFacing();
-        if (face == null)
+        BlockFace attachedFace = frame.getAttachedFace();
+        if (attachedFace == null)
             return false;
         Block frameBlock = frame.getLocation().getBlock();
-        if (containsBlock(footprint, frameBlock.getRelative(face).getLocation()))
-            return true;
-        return containsBlock(footprint, frameBlock.getRelative(face.getOppositeFace()).getLocation());
+        return containsBlock(footprint, frameBlock.getRelative(attachedFace).getLocation());
     }
 
     private List<TrackedItemStack> sortAndMerge(List<TrackedItemStack> items) {
@@ -1261,17 +1677,69 @@ public class SharedStorageModule implements Listener {
     private boolean canAcceptSubForHopper(SharedNetwork network, ItemStack item) {
         if (network == null || item == null || item.getType() == Material.AIR)
             return false;
+        List<ResolvedInventory> subs = new ArrayList<>();
         for (Location subLocation : network.subs()) {
             ResolvedInventory sub = resolveInventory(subLocation);
-            if (sub == null)
-                continue;
-            ItemStack filter = network.enableSubFrameFilter() ? resolveSubFrameFilter(sub) : null;
-            if (filter != null && !matchesFilter(item, filter, network.subFrameFilterMode()))
+            if (sub != null)
+                subs.add(sub);
+        }
+        subs.addAll(resolveMinecartSubs(network));
+        for (ResolvedInventory sub : subs) {
+            List<ItemStack> filters = network.enableSubFrameFilter() ? resolveSubFrameFilters(sub) : List.of();
+            if (!filters.isEmpty() && !matchesAnyFilter(item, filters, network.subFrameFilterMode()))
                 continue;
             if (canAcceptItem(sub.inventory(), item))
                 return true;
         }
         return false;
+    }
+
+    private List<ResolvedInventory> resolveMinecartSubs(SharedNetwork network) {
+        if (network == null || network.main() == null || network.main().getWorld() == null)
+            return List.of();
+        World world = network.main().getWorld();
+        List<ResolvedInventory> resolved = new ArrayList<>();
+        Set<UUID> used = new LinkedHashSet<>();
+        for (StorageMinecart minecart : world.getEntitiesByClass(StorageMinecart.class)) {
+            if (minecart == null || !minecart.isValid() || !used.add(minecart.getUniqueId()))
+                continue;
+            String minecartId = resolveMinecartSubId(minecart);
+            if (minecartId == null || !minecartId.equalsIgnoreCase(network.id()))
+                continue;
+            Location cartLocation = minecart.getLocation();
+            if (cartLocation == null || cartLocation.getWorld() == null)
+                continue;
+            if (!Objects.equals(cartLocation.getWorld(), world))
+                continue;
+            double maxDistance = network.subRange();
+            if (cartLocation.distanceSquared(network.main()) > maxDistance * maxDistance)
+                continue;
+            Location anchor = cartLocation.getBlock().getLocation();
+            resolved.add(new ResolvedInventory(anchor, minecart.getInventory(), List.of(anchor)));
+        }
+        return resolved;
+    }
+
+    private String resolveMinecartSubId(StorageMinecart minecart) {
+        String rawName = minecart.getCustomName();
+        if (rawName == null || rawName.isBlank())
+            return null;
+        String normalized = ChatColor.stripColor(rawName).trim();
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        if (lower.startsWith(SUB_PREFIX)) {
+            String id = normalized.substring(SUB_PREFIX.length()).trim();
+            return id.isEmpty() ? null : id;
+        }
+        String token = "[sub:";
+        int tokenIndex = lower.indexOf(token);
+        if (tokenIndex < 0)
+            return null;
+        int idStart = tokenIndex + token.length();
+        int bracketEnd = normalized.indexOf(']', idStart);
+        String id = bracketEnd >= 0
+                ? normalized.substring(idStart, bracketEnd).trim()
+                : normalized.substring(idStart).trim();
+        return id.isEmpty() ? null : id;
     }
 
     private boolean removeFromInventory(Inventory inventory, ItemStack item) {
@@ -1363,6 +1831,15 @@ public class SharedStorageModule implements Listener {
         return stack != null && stack.getType() == Material.CHEST && !isCustomSharedChest(stack);
     }
 
+    private boolean isPlainChestMinecartItem(ItemStack stack) {
+        if (stack == null || stack.getType() != Material.CHEST_MINECART)
+            return false;
+        if (!stack.hasItemMeta())
+            return true;
+        ItemMeta meta = stack.getItemMeta();
+        return !meta.hasDisplayName();
+    }
+
     private boolean hasAdjacentChest(Block block) {
         for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
             Material type = block.getRelative(face).getType();
@@ -1445,6 +1922,18 @@ public class SharedStorageModule implements Listener {
                 "§7同一ID/同一役割ならラージチェスト化できます");
         meta.getPersistentDataContainer().set(roleKey, PersistentDataType.STRING, role);
         meta.getPersistentDataContainer().set(idKey, PersistentDataType.STRING, id);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    private ItemStack createSharedSubMinecartItem(String id) {
+        ItemStack stack = new ItemStack(Material.CHEST_MINECART);
+        ItemMeta meta = stack.getItemMeta();
+        ComponentUtils.setDisplayName(meta, "§b共有ストレージトロッコ §7[sub:" + id + "]");
+        ComponentUtils.setLore(meta,
+                "§7ID: " + id,
+                "§7この名前で設置すると",
+                "§7共有ストレージ sub として扱われます");
         stack.setItemMeta(meta);
         return stack;
     }
@@ -1568,7 +2057,7 @@ public class SharedStorageModule implements Listener {
             return switch (this) {
                 case MAIN_ALREADY_EXISTS -> "§c共有ストレージ " + id + " には既に別の主チェストがあります";
                 case MAIN_NOT_FOUND -> "§c共有ストレージ " + id + " の主チェストが見つかりません";
-                case TOO_FAR -> "§csubチェストは主チェストから15ブロック以内に設置してください";
+                case TOO_FAR -> "§csubチェストは主チェストから接続範囲以内に設置してください";
                 case SUCCESS -> "";
             };
         }
@@ -1632,6 +2121,41 @@ public class SharedStorageModule implements Listener {
     private record ResolvedInventory(Location anchor, Inventory inventory, List<Location> footprint) {
     }
 
+    private final class MutableSubCategory {
+        private final String key;
+        private final ItemStack icon;
+        private final String displayName;
+        private final boolean noFilter;
+        private final List<ResolvedInventory> subs = new ArrayList<>();
+
+        private MutableSubCategory(String key, ItemStack filter) {
+            this.key = key;
+            if (filter == null || filter.getType() == Material.AIR) {
+                this.icon = new ItemStack(Material.CHEST);
+                this.displayName = "§f未分類";
+                this.noFilter = true;
+                return;
+            }
+            ItemStack icon = filter.clone();
+            icon.setAmount(1);
+            this.icon = icon;
+            this.noFilter = false;
+            String name = resolveItemDisplayName(filter);
+            if (key.startsWith("clear:")) {
+                this.displayName = "§c処分: " + name;
+            } else {
+                this.displayName = "§a" + name;
+            }
+        }
+
+        private SubCategoryEntry toEntry() {
+            return new SubCategoryEntry(key, icon, displayName, noFilter, new ArrayList<>(subs));
+        }
+    }
+
+    private record SubCategoryEntry(String key, ItemStack icon, String displayName, boolean noFilter, List<ResolvedInventory> subs) {
+    }
+
     private static class SharedNetwork {
         private final String id;
         private Location main;
@@ -1643,8 +2167,10 @@ public class SharedStorageModule implements Listener {
         private boolean allowMainInsert = DEFAULT_ALLOW_MAIN_INSERT;
         private boolean allowMainExtract = DEFAULT_ALLOW_MAIN_EXTRACT;
         private boolean enableTransferParticles = DEFAULT_ENABLE_TRANSFER_PARTICLES;
+        private int subRange = DEFAULT_SUB_DISTANCE;
         private boolean enableSubFrameFilter = DEFAULT_ENABLE_SUB_FRAME_FILTER;
         private SubFrameFilterMode subFrameFilterMode = SubFrameFilterMode.EXACT;
+        private boolean enableChestPage = DEFAULT_ENABLE_CHEST_PAGE;
 
         private SharedNetwork(String id) {
             this.id = id;
@@ -1750,6 +2276,14 @@ public class SharedStorageModule implements Listener {
             this.enableTransferParticles = enableTransferParticles;
         }
 
+        private int subRange() {
+            return subRange;
+        }
+
+        private void setSubRange(int subRange) {
+            this.subRange = clampSubRange(subRange);
+        }
+
         private boolean enableSubFrameFilter() {
             return enableSubFrameFilter;
         }
@@ -1765,8 +2299,20 @@ public class SharedStorageModule implements Listener {
         private void setSubFrameFilterMode(SubFrameFilterMode subFrameFilterMode) {
             this.subFrameFilterMode = subFrameFilterMode == null ? SubFrameFilterMode.EXACT : subFrameFilterMode;
         }
+
+        private boolean enableChestPage() {
+            return enableChestPage;
+        }
+
+        private void setEnableChestPage(boolean enableChestPage) {
+            this.enableChestPage = enableChestPage;
+        }
     }
 
     private record SubAccess(boolean allowInsert, boolean allowExtract) {
+    }
+
+    private static int clampSubRange(int range) {
+        return Math.max(1, Math.min(MAX_SUB_DISTANCE_LIMIT, range));
     }
 }

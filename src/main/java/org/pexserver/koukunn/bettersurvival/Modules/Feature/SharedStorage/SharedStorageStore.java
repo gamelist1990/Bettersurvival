@@ -70,13 +70,15 @@ public class SharedStorageStore {
         private final boolean allowMainInsert;
         private final boolean allowMainExtract;
         private final boolean enableTransferParticles;
+        private final int subRange;
         private final boolean enableSubFrameFilter;
         private final String subFrameFilterMode;
+        private final boolean enableChestPage;
 
         public StoredNetwork(String id, Location main, List<Location> subs, boolean allowSubInsert, boolean allowSubExtract,
                               boolean allowSubHopperInsert, boolean allowSubHopperExtract,
                               boolean allowMainInsert, boolean allowMainExtract, boolean enableTransferParticles,
-                              boolean enableSubFrameFilter, String subFrameFilterMode) {
+                              int subRange, boolean enableSubFrameFilter, String subFrameFilterMode, boolean enableChestPage) {
             this.id = id;
             this.main = main;
             this.subs = subs;
@@ -87,8 +89,10 @@ public class SharedStorageStore {
             this.allowMainInsert = allowMainInsert;
             this.allowMainExtract = allowMainExtract;
             this.enableTransferParticles = enableTransferParticles;
+            this.subRange = subRange;
             this.enableSubFrameFilter = enableSubFrameFilter;
             this.subFrameFilterMode = subFrameFilterMode;
+            this.enableChestPage = enableChestPage;
         }
 
         public String getId() {
@@ -131,12 +135,20 @@ public class SharedStorageStore {
             return enableTransferParticles;
         }
 
+        public int getSubRange() {
+            return subRange;
+        }
+
         public boolean isEnableSubFrameFilter() {
             return enableSubFrameFilter;
         }
 
         public String getSubFrameFilterMode() {
             return subFrameFilterMode;
+        }
+
+        public boolean isEnableChestPage() {
+            return enableChestPage;
         }
 
         public Map<String, Object> serialize() {
@@ -155,8 +167,10 @@ public class SharedStorageStore {
             data.put("allowMainInsert", allowMainInsert);
             data.put("allowMainExtract", allowMainExtract);
             data.put("enableTransferParticles", enableTransferParticles);
+            data.put("subRange", subRange);
             data.put("enableSubFrameFilter", enableSubFrameFilter);
             data.put("subFrameFilterMode", subFrameFilterMode);
+            data.put("enableChestPage", enableChestPage);
             return data;
         }
 
@@ -183,9 +197,11 @@ public class SharedStorageStore {
             boolean allowMainInsert = !(data.get("allowMainInsert") instanceof Boolean allowed && !allowed);
             boolean allowMainExtract = !(data.get("allowMainExtract") instanceof Boolean allowed && !allowed);
             boolean enableTransferParticles = !(data.get("enableTransferParticles") instanceof Boolean allowed && !allowed);
+            int subRange = data.get("subRange") instanceof Number number ? number.intValue() : 15;
             boolean enableSubFrameFilter = data.get("enableSubFrameFilter") instanceof Boolean allowed && allowed;
             String subFrameFilterMode = data.get("subFrameFilterMode") instanceof String rawMode ? rawMode : "EXACT";
-            return new StoredNetwork(id, main, subs, allowSubInsert, allowSubExtract, allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract, enableTransferParticles, enableSubFrameFilter, subFrameFilterMode);
+            boolean enableChestPage = data.get("enableChestPage") instanceof Boolean allowed && allowed;
+            return new StoredNetwork(id, main, subs, allowSubInsert, allowSubExtract, allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract, enableTransferParticles, subRange, enableSubFrameFilter, subFrameFilterMode, enableChestPage);
         }
     }
 }

@@ -130,9 +130,20 @@ public class ChestSortModule implements Listener {
 
     private boolean isSupportedContainer(Block block) {
         Material type = block.getType();
-        if (type != Material.CHEST && type != Material.TRAPPED_CHEST && type != Material.BARREL)
+        if (!isSupportedContainerType(type))
             return false;
         return block.getState() instanceof InventoryHolder;
+    }
+
+    private boolean isSupportedContainerType(Material type) {
+        if (type == null)
+            return false;
+        if (type == Material.CHEST || type == Material.TRAPPED_CHEST || type == Material.BARREL)
+            return true;
+        String name = type.name();
+        if (name.endsWith("_SHULKER_BOX"))
+            return true;
+        return name.contains("COPPER_CHEST");
     }
 
     private boolean canUseContainer(Player player, Location location) {

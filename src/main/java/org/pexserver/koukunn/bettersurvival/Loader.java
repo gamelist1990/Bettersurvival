@@ -29,6 +29,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockS
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BetterMenu.BetterMenuModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.EnchantmentSplit.EnchantmentSplitModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.SharedStorageModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.CopperGolemModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.discord.DiscordCommand;
@@ -59,8 +60,11 @@ public final class Loader extends JavaPlugin {
     private EnchantmentSplitModule enchantmentSplitModule;
     private ItemCombineModule itemCombineModule;
     private ChestSortModule chestSortModule;
+    private ChestLockModule chestLockModule;
     private SharedStorageModule sharedStorageModule;
+    private ChestShopModule chestShopModule;
     private BetterMenuModule betterMenuModule;
+    private CopperGolemModule copperGolemModule;
 
     @Override
     public void onEnable() {
@@ -107,15 +111,15 @@ public final class Loader extends JavaPlugin {
         OreMineModule oremine = new OreMineModule(toggleModule);
         getServer().getPluginManager().registerEvents(oremine, this);
         // ChestLock module registration
-        ChestLockModule chestLock = new ChestLockModule(toggleModule, configManager);
-        getServer().getPluginManager().registerEvents(chestLock, this);
+        chestLockModule = new ChestLockModule(toggleModule, configManager);
+        getServer().getPluginManager().registerEvents(chestLockModule, this);
         // ChestShop module registration
-        ChestShopModule chestShop = new ChestShopModule(toggleModule, configManager, chestLock);
-        getServer().getPluginManager().registerEvents(chestShop, this);
-        sharedStorageModule = new SharedStorageModule(this, toggleModule, itemCombineModule, chestLock, chestShop);
+        chestShopModule = new ChestShopModule(toggleModule, configManager, chestLockModule);
+        getServer().getPluginManager().registerEvents(chestShopModule, this);
+        sharedStorageModule = new SharedStorageModule(this, toggleModule, itemCombineModule, chestLockModule, chestShopModule);
         getServer().getPluginManager().registerEvents(sharedStorageModule, this);
         // ChestSort モジュール登録
-        chestSortModule = new ChestSortModule(this, toggleModule, chestLock, chestShop);
+        chestSortModule = new ChestSortModule(this, toggleModule, chestLockModule, chestShopModule);
         getServer().getPluginManager().registerEvents(chestSortModule, this);
         getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
@@ -129,6 +133,8 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(tpaModule, this);
         betterMenuModule = new BetterMenuModule(this, toggleModule, itemCombineModule);
         getServer().getPluginManager().registerEvents(betterMenuModule, this);
+        copperGolemModule = new CopperGolemModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(copperGolemModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
         InvseeOfflineData.initialize(this);
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -170,6 +176,8 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("enchantsplit", "EnchantSplit", "複数エンチャント本を分離できる専用砥石を有効/無効にします", Material.GRINDSTONE, false));
         toggleModule.registerFeature(
                 new ToggleFeature("bettermenu", "BetterMenu", "木の斧GUIツールの生成・起動を有効/無効にします", Material.WOODEN_AXE, false));
+        toggleModule.registerFeature(
+                new ToggleFeature("coppergolem", "CopperGolem", "カッパーゴーレムの召喚と作物採取AIを有効/無効にします", Material.COPPER_BLOCK, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -217,6 +225,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("bettermenu")) {
             toggleModule.setGlobal("bettermenu", true);
+        }
+        if (!toggleModule.hasGlobal("coppergolem")) {
+            toggleModule.setGlobal("coppergolem", true);
         }
 
         getLogger().info("Better Survival Plugin が有効になりました");
@@ -288,6 +299,18 @@ public final class Loader extends JavaPlugin {
         return itemCombineModule;
     }
 
+    public ChestLockModule getChestLockModule() {
+        return chestLockModule;
+    }
+
+    public SharedStorageModule getSharedStorageModule() {
+        return sharedStorageModule;
+    }
+
+    public ChestShopModule getChestShopModule() {
+        return chestShopModule;
+    }
+
     @Override
     public void onDisable() {
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -301,6 +324,9 @@ public final class Loader extends JavaPlugin {
         }
         if (chestSortModule != null) {
             chestSortModule.shutdown();
+        }
+        if (copperGolemModule != null) {
+            copperGolemModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

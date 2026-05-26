@@ -2,8 +2,10 @@ package org.pexserver.koukunn.bettersurvival.Core.Util.UI;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -57,6 +59,7 @@ public class ChestUI implements InventoryHolder {
 
     private final int size;
     private final Map<Integer, ButtonInfo> buttons = new HashMap<>();
+    private final Set<Integer> editableSlots = new HashSet<>();
     private Inventory inventory;
     private final Material defaultIcon;
     private String title;
@@ -165,6 +168,7 @@ public class ChestUI implements InventoryHolder {
         private int size = 27;
         private Material defaultIcon = Material.PAPER;
         private final Map<Integer, ButtonInfo> buttons = new HashMap<>();
+        private final Set<Integer> editableSlots = new HashSet<>();
         private String type = null;
         private boolean preserveInventoryOnTransition = false;
 
@@ -226,17 +230,29 @@ public class ChestUI implements InventoryHolder {
         }
 
         /**
-         * 編集可能スロットを設定します（未使用, ダミーメソッド）
+         * 編集可能スロットを設定します。
          */
         public Builder editableSlots(int... slots) {
-            return this; 
+            if (slots == null) {
+                return this;
+            }
+            for (int slot : slots) {
+                if (slot >= 0) {
+                    this.editableSlots.add(slot);
+                }
+            }
+            return this;
         }
 
         /**
-         * 保護されたスロットを設定します（未使用, ダミーメソッド）
+         * 保護されたスロットを設定します。
          */
         public Builder protectedSlots(java.util.Set<Integer> slots) {
-            return this; 
+            if (slots == null) {
+                return this;
+            }
+            this.editableSlots.removeAll(slots);
+            return this;
         }
 
         /**
@@ -351,6 +367,11 @@ public class ChestUI implements InventoryHolder {
             menu.type = this.type;
             menu.preserveInventoryOnTransition = this.preserveInventoryOnTransition;
             menu.buttons.putAll(buttons);
+            for (Integer slot : this.editableSlots) {
+                if (slot != null && slot >= 0 && slot < size) {
+                    menu.editableSlots.add(slot);
+                }
+            }
 
             menu.inventory = Loader.getPlugin(Loader.class).getServer().createInventory(menu, menu.size,
                     ComponentUtils.legacy(menu.title));
@@ -496,6 +517,14 @@ public class ChestUI implements InventoryHolder {
         return type;
     }
 
+    public boolean hasEditableSlots() {
+        return !editableSlots.isEmpty();
+    }
+
+    public boolean isEditableSlot(int slot) {
+        return editableSlots.contains(slot);
+    }
+
 
     /**
      * メニューの操作結果を表すデータオブジェクト。
@@ -562,11 +591,10 @@ public class ChestUI implements InventoryHolder {
          */
         @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
         public void onInventoryClick(InventoryClickEvent event) {
-            if (!(event.getWhoClicked() instanceof Player)) {
+            if (!(event.getWhoClicked() instanceof Player player)) {
                 return;
             }
 
-            Player player = (Player) event.getWhoClicked();
             UUID playerId = player.getUniqueId();
             ChestUI menu = openMenus.get(playerId);
 
@@ -578,28 +606,74 @@ public class ChestUI implements InventoryHolder {
                 return;
             }
 
-            event.setCancelled(true);
-            event.setResult(Event.Result.DENY);
+            int rawSlot = event.getRawSlot();
+            int topSize = menu.getInventory().getSize();
+            boolean inTop = rawSlot >= 0 && rawSlot < topSize;
+            boolean hasEditableSlots = menu.hasEditableSlots();
 
             org.bukkit.inventory.Inventory clickedInventory = event.getClickedInventory();
-            if (clickedInventory == null || clickedInventory != menu.getInventory()) {
+            if (clickedInventory == null) {
+                event.setCancelled(true);
+                event.setResult(Event.Result.DENY);
                 return;
             }
 
-            int slot = event.getRawSlot();
-            if (slot < 0 || slot >= menu.size) {
-                return;
-            }
-
-            BiConsumer<FormResult, Player> handler = handlers.get(playerId);
-            if (handler != null && menu.buttons.containsKey(slot)) {
-                FormResult result = new FormResult(true, false, slot);
-                try {
-                    handler.accept(result, player);
-                } catch (Exception e) {
-                    Loader.getPlugin(Loader.class).getLogger().log(Level.WARNING, "Error handling ChestUI click", e);
+            if (inTop) {
+                if (menu.isEditableSlot(rawSlot)) {
+                    event.setCancelled(false);
+                    event.setResult(Event.Result.ALLOW);
+                    return;
                 }
+
+                event.setCancelled(true);
+                event.setResult(Event.Result.DENY);
+
+                BiConsumer<FormResult, Player> handler = handlers.get(playerId);
+                if (handler != null && menu.buttons.containsKey(rawSlot)) {
+                    FormResult result = new FormResult(true, false, rawSlot);
+                    try {
+                        handler.accept(result, player);
+                    } catch (Exception e) {
+                        Loader.getPlugin(Loader.class).getLogger().log(Level.WARNING, "Error handling ChestUI click", e);
+                    }
+                }
+                return;
             }
+
+            if (!hasEditableSlots) {
+                event.setCancelled(true);
+                event.setResult(Event.Result.DENY);
+                return;
+            }
+
+            if (event.getAction() == org.bukkit.event.inventory.InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                ItemStack source = event.getCurrentItem();
+                if (source == null || source.getType().isAir() || source.getAmount() <= 0) {
+                    event.setCancelled(true);
+                    event.setResult(Event.Result.DENY);
+                    return;
+                }
+
+                int moved = moveToEditableSlots(menu.getInventory(), menu.editableSlots, source);
+                event.setCancelled(true);
+                event.setResult(Event.Result.DENY);
+                if (moved <= 0) {
+                    return;
+                }
+
+                int remain = source.getAmount() - moved;
+                if (remain <= 0) {
+                    clickedInventory.setItem(event.getSlot(), null);
+                } else {
+                    source.setAmount(remain);
+                    clickedInventory.setItem(event.getSlot(), source);
+                }
+                player.updateInventory();
+                return;
+            }
+
+            event.setCancelled(false);
+            event.setResult(Event.Result.ALLOW);
         }
 
         @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -616,11 +690,45 @@ public class ChestUI implements InventoryHolder {
             int topSize = menu.getInventory().getSize();
             for (Integer rawSlot : event.getRawSlots()) {
                 if (rawSlot >= 0 && rawSlot < topSize) {
-                    event.setCancelled(true);
-                    event.setResult(Event.Result.DENY);
-                    return;
+                    if (!menu.isEditableSlot(rawSlot)) {
+                        event.setCancelled(true);
+                        event.setResult(Event.Result.DENY);
+                        return;
+                    }
                 }
             }
+        }
+
+        private int moveToEditableSlots(Inventory topInventory, Set<Integer> editableSlots, ItemStack source) {
+            int remaining = source.getAmount();
+            for (Integer slot : editableSlots) {
+                if (remaining <= 0) {
+                    break;
+                }
+                if (slot == null || slot < 0 || slot >= topInventory.getSize()) {
+                    continue;
+                }
+                ItemStack target = topInventory.getItem(slot);
+                if (target == null || target.getType().isAir()) {
+                    ItemStack placed = source.clone();
+                    placed.setAmount(Math.min(remaining, source.getMaxStackSize()));
+                    topInventory.setItem(slot, placed);
+                    remaining -= placed.getAmount();
+                    continue;
+                }
+                if (!target.isSimilar(source)) {
+                    continue;
+                }
+                int maxStack = target.getMaxStackSize();
+                if (target.getAmount() >= maxStack) {
+                    continue;
+                }
+                int canMove = Math.min(remaining, maxStack - target.getAmount());
+                target.setAmount(target.getAmount() + canMove);
+                topInventory.setItem(slot, target);
+                remaining -= canMove;
+            }
+            return source.getAmount() - remaining;
         }
 
         /**
