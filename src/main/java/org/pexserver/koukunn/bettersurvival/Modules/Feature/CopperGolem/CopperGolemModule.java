@@ -1398,6 +1398,9 @@ public class CopperGolemModule implements Listener {
         if (converted != null) {
             return converted;
         }
+        if (material == Material.SUGAR_CANE) {
+            return Material.SUGAR_CANE;
+        }
         if (!material.isBlock()) {
             return null;
         }
@@ -1417,6 +1420,7 @@ public class CopperGolemModule implements Listener {
             case NETHER_WART -> Material.NETHER_WART;
             case TORCHFLOWER_SEEDS, TORCHFLOWER_CROP -> Material.TORCHFLOWER_CROP;
             case COCOA_BEANS, COCOA -> Material.COCOA;
+            case SUGAR_CANE -> Material.SUGAR_CANE;
             default -> null;
         };
     }

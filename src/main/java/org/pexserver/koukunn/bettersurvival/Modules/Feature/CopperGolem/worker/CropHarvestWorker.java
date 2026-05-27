@@ -133,6 +133,21 @@ public class CropHarvestWorker {
             if (!cropFilters.contains(block.getType())) {
                 continue;
             }
+            if (block.getType() == Material.SUGAR_CANE) {
+                int harvestedSugarCane = harvestSugarCaneColumn(
+                        block,
+                        maxHarvestBlocks - harvestedBlocks,
+                        profile.autoReplant() && allowReplant,
+                        golem,
+                        collected,
+                        collectedCounts);
+                if (harvestedSugarCane <= 0) {
+                    continue;
+                }
+                harvested += harvestedSugarCane;
+                harvestedBlocks += harvestedSugarCane;
+                continue;
+            }
             if (!(block.getBlockData() instanceof Ageable ageable) || ageable.getAge() < ageable.getMaximumAge()) {
                 continue;
             }
@@ -337,6 +352,12 @@ public class CropHarvestWorker {
                     if (!filters.contains(block.getType())) {
                         continue;
                     }
+                    if (block.getType() == Material.SUGAR_CANE) {
+                        if (isSugarCaneBase(block)) {
+                            result.add(block);
+                        }
+                        continue;
+                    }
                     if (!(block.getBlockData() instanceof Ageable ageable)) {
                         continue;
                     }
@@ -496,6 +517,15 @@ public class CropHarvestWorker {
         if (seedType == null) {
             return;
         }
+        if (cropType == Material.SUGAR_CANE) {
+            int canes = collectedCounts.getOrDefault(seedType, 0);
+            if (canes <= 0 || !canReplantSugarCane(harvestedBlock)) {
+                return;
+            }
+            harvestedBlock.setType(Material.SUGAR_CANE, false);
+            collectedCounts.put(seedType, canes - 1);
+            return;
+        }
         int seeds = collectedCounts.getOrDefault(seedType, 0);
         if (seeds <= 0) {
             return;
@@ -562,8 +592,84 @@ public class CropHarvestWorker {
             case POTATOES -> Material.POTATO;
             case NETHER_WART -> Material.NETHER_WART;
             case TORCHFLOWER_CROP -> Material.TORCHFLOWER_SEEDS;
+            case SUGAR_CANE -> Material.SUGAR_CANE;
             default -> null;
         };
+    }
+
+    private int harvestSugarCaneColumn(
+            Block baseBlock,
+            int maxBlocks,
+            boolean allowReplant,
+            CopperGolem golem,
+            List<ItemStack> collected,
+            Map<Material, Integer> collectedCounts) {
+        if (baseBlock == null || baseBlock.getType() != Material.SUGAR_CANE || maxBlocks <= 0) {
+            return 0;
+        }
+
+        List<Block> column = new ArrayList<>();
+        Block current = baseBlock;
+        while (current.getType() == Material.SUGAR_CANE && column.size() < maxBlocks) {
+            column.add(current);
+            current = current.getRelative(0, 1, 0);
+        }
+
+        if (column.isEmpty()) {
+            return 0;
+        }
+
+        for (int index = column.size() - 1; index >= 0; index--) {
+            Block block = column.get(index);
+            Collection<ItemStack> drops = block.getDrops();
+            Material display = Material.SUGAR_CANE;
+            for (ItemStack drop : drops) {
+                if (drop == null || drop.getType().isAir()) {
+                    continue;
+                }
+                ItemStack pickup = drop.clone();
+                collected.add(pickup);
+                Material material = pickup.getType();
+                int currentAmount = collectedCounts.getOrDefault(material, 0);
+                collectedCounts.put(material, currentAmount + pickup.getAmount());
+            }
+            showHarvestAnimation(golem, display, block);
+            block.setType(Material.AIR, false);
+        }
+
+        if (allowReplant && current.getType() != Material.SUGAR_CANE) {
+            tryReplant(baseBlock, Material.SUGAR_CANE, collectedCounts);
+        }
+
+        return column.size();
+    }
+
+    private boolean canReplantSugarCane(Block block) {
+        return block != null
+                && block.getType() == Material.AIR
+                && isSugarCaneSupportBlock(block.getRelative(0, -1, 0).getType())
+                && hasAdjacentWater(block);
+    }
+
+    private boolean isSugarCaneBase(Block block) {
+        return block != null
+                && block.getType() == Material.SUGAR_CANE
+                && isSugarCaneSupportBlock(block.getRelative(0, -1, 0).getType())
+                && hasAdjacentWater(block);
+    }
+
+    private boolean isSugarCaneSupportBlock(Material material) {
+        return switch (material) {
+            case SAND, RED_SAND, DIRT, GRASS_BLOCK, MYCELIUM, PODZOL, COARSE_DIRT, ROOTED_DIRT, MOSS_BLOCK, MUD -> true;
+            default -> false;
+        };
+    }
+
+    private boolean hasAdjacentWater(Block block) {
+        return block.getRelative(BlockFace.NORTH).getType() == Material.WATER
+                || block.getRelative(BlockFace.SOUTH).getType() == Material.WATER
+                || block.getRelative(BlockFace.EAST).getType() == Material.WATER
+                || block.getRelative(BlockFace.WEST).getType() == Material.WATER;
     }
 
     private Material resolveDisplayMaterial(Material cropType, Collection<ItemStack> drops) {
