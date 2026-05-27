@@ -388,11 +388,25 @@ public class SharedStorageFrameFilterRules {
         String resourceFamily = resolveResourceFamily(baseMaterial);
         if (resourceFamily != null)
             return isResourceFamilyMaterial(targetMaterial, resourceFamily);
-        if (target.equals(base) || target.startsWith(base + "_"))
+        if (target.equals(base) || isDirectAllFamilyVariant(target, base))
             return true;
         if (base.contains("_"))
             return target.endsWith("_" + base) || target.contains("_" + base + "_");
-        return matchesSingleTokenAllFamily(target, base) || matchesSingleTokenRecipeFamily(targetMaterial, baseMaterial, base);
+        return matchesSingleTokenAllFamily(target, base);
+    }
+
+    private boolean isDirectAllFamilyVariant(String target, String base) {
+        if (target == null || target.isEmpty() || base == null || base.isEmpty())
+            return false;
+        if (!target.startsWith(base + "_"))
+            return false;
+        String suffix = target.substring(base.length() + 1);
+        if (suffix.isEmpty())
+            return false;
+        return switch (suffix) {
+            case "SLAB", "STAIRS", "WALL", "BUTTON", "PRESSURE_PLATE" -> true;
+            default -> false;
+        };
     }
 
     private boolean matchesSingleTokenAllFamily(String target, String base) {

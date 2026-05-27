@@ -33,7 +33,7 @@ public class CropHarvestWorker {
     private static final double CENTER_STAY_DISTANCE = 2.0D;
     private static final int HELD_ITEM_CYCLES_AFTER_ACTION = 2;
     private static final int MIN_BONE_MEAL_AGE = 1;
-    private static final int MIN_SUGAR_CANE_STACK_HEIGHT = 3;
+    private static final int MIN_SUGAR_CANE_STACK_HEIGHT = 2;
     private static final int HARVEST_NEIGHBOR_RADIUS = 2;
     private static final double MOVE_SPEED_BASE = 1.0D;
     private static final double MOVE_SPEED_PER_POINT = 0.05D;
@@ -611,16 +611,22 @@ public class CropHarvestWorker {
 
         List<Block> column = new ArrayList<>();
         Block current = baseBlock;
-        while (current.getType() == Material.SUGAR_CANE && column.size() < maxBlocks) {
+        while (current.getType() == Material.SUGAR_CANE) {
             column.add(current);
             current = current.getRelative(0, 1, 0);
         }
 
-        if (column.isEmpty()) {
+        if (column.size() < 2) {
             return 0;
         }
 
-        for (int index = column.size() - 1; index >= 0; index--) {
+        int harvestable = Math.min(maxBlocks, column.size() - 1);
+        if (harvestable <= 0) {
+            return 0;
+        }
+
+        int harvested = 0;
+        for (int index = column.size() - 1; index >= 1 && harvested < harvestable; index--) {
             Block block = column.get(index);
             Collection<ItemStack> drops = block.getDrops();
             Material display = Material.SUGAR_CANE;
@@ -636,13 +642,14 @@ public class CropHarvestWorker {
             }
             showHarvestAnimation(golem, display, block);
             block.setType(Material.AIR, false);
+            harvested++;
         }
 
-        if (allowReplant && current.getType() != Material.SUGAR_CANE) {
+        if (allowReplant && baseBlock.getType() == Material.AIR) {
             tryReplant(baseBlock, Material.SUGAR_CANE, collectedCounts);
         }
 
-        return column.size();
+        return harvested;
     }
 
     private boolean canReplantSugarCane(Block block) {
@@ -650,7 +657,7 @@ public class CropHarvestWorker {
             return false;
         }
         Block supportBlock = block.getRelative(0, -1, 0);
-        return isSugarCaneSupportBlock(supportBlock.getType()) && hasAdjacentWater(supportBlock);
+        return isSugarCaneSupportBlock(supportBlock.getType());
     }
 
     private boolean isSugarCaneBase(Block block) {
@@ -658,7 +665,7 @@ public class CropHarvestWorker {
             return false;
         }
         Block supportBlock = block.getRelative(0, -1, 0);
-        return isSugarCaneSupportBlock(supportBlock.getType()) && hasAdjacentWater(supportBlock);
+        return isSugarCaneSupportBlock(supportBlock.getType());
     }
 
     private boolean isHarvestableSugarCaneBase(Block block) {
@@ -680,16 +687,9 @@ public class CropHarvestWorker {
 
     private boolean isSugarCaneSupportBlock(Material material) {
         return switch (material) {
-            case SAND, RED_SAND, DIRT, GRASS_BLOCK, MYCELIUM, PODZOL, COARSE_DIRT, ROOTED_DIRT, MOSS_BLOCK, MUD -> true;
+            case SAND, RED_SAND, SUSPICIOUS_SAND, DIRT, GRASS_BLOCK, MYCELIUM, PODZOL, COARSE_DIRT, ROOTED_DIRT, MOSS_BLOCK, MUD -> true;
             default -> false;
         };
-    }
-
-    private boolean hasAdjacentWater(Block block) {
-        return block.getRelative(BlockFace.NORTH).getType() == Material.WATER
-                || block.getRelative(BlockFace.SOUTH).getType() == Material.WATER
-                || block.getRelative(BlockFace.EAST).getType() == Material.WATER
-                || block.getRelative(BlockFace.WEST).getType() == Material.WATER;
     }
 
     private Material resolveDisplayMaterial(Material cropType, Collection<ItemStack> drops) {

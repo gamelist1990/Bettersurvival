@@ -1,5 +1,7 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -87,7 +89,7 @@ public class ChestShopUI {
                     // 備考: editor/buyer UI の "サンプル" アイテム分 (1) は在庫カウントに含めない
                     total += Math.max(0, sl.getStock());
                     if (sl.getStock() < sl.getCount())
-                        soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
+                        soldOut.add(resolveListingLabel(sl, p));
                 }
                 List<String> lore = new ArrayList<>();
                 lore.add("総在庫: " + total);
@@ -102,8 +104,7 @@ public class ChestShopUI {
                 ItemStack earningsItem = new ItemStack(Material.GOLD_INGOT);
                 ItemMeta em2 = earningsItem.getItemMeta();
                 if (em2 != null) {
-                    String currencyName = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
-                    ComponentUtils.setDisplayName(em2, "§6収益: " + shop.getEarnings() + " " + currencyName);
+                    em2.displayName(buildEarningsDisplayName(shop.getEarnings(), shop.getCurrency(), shop.getCustomCurrencyName()));
                     List<String> lore = new ArrayList<>();
                     lore.add("§aクリックで収益を回収");
                     ComponentUtils.setLore(em2, lore);
@@ -182,37 +183,32 @@ public class ChestShopUI {
                     } catch (Exception ignored) {
                     }
 
-                    String disp = sl.getDisplayName();
-                    if (disp == null || disp.isEmpty())
-                        disp = mat.name();
-                    // displayName is already cleaned by setDisplayName()
-                    ComponentUtils.setDisplayName(im2, disp);
-                    List<String> lore2 = new ArrayList<>();
+                    applyListingDisplayName(im2, sl, mat);
+                    List<Component> lore2 = new ArrayList<>();
                     if (shop == null || shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
-                        lore2.add("§c通貨未設定 (販売不可)");
+                        lore2.add(ComponentUtils.legacy("§c通貨未設定 (販売不可)"));
                     } else if ((long) sl.getPrice() > 64L) {
-                        lore2.add("§c価格が最大を超えています (販売不可)");
+                        lore2.add(ComponentUtils.legacy("§c価格が最大を超えています (販売不可)"));
                     } else {
-                        String curDisplay = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
-                        lore2.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
+                        lore2.add(buildPriceLoreLine(sl.getPrice(), shop.getCurrency(), shop.getCustomCurrencyName()));
                     }
                     if (sl.getStock() < sl.getCount()) {
-                        lore2.add("§c品切れ中");
+                        lore2.add(ComponentUtils.legacy("§c品切れ中"));
                     } else {
-                        lore2.add("在庫: " + sl.getStock());
-                        lore2.add("個数: " + sl.getCount());
+                        lore2.add(ComponentUtils.legacy("在庫: " + sl.getStock()));
+                        lore2.add(ComponentUtils.legacy("個数: " + sl.getCount()));
                     }
                     if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
                         String desc = sl.getDescription().replace("<br>", "\n");
                         String[] lines = desc.split("\\n");
                         // 一行目のみ "説明: " プレフィックスを付け、複数行は続けて表示する
                         if (lines.length > 0) {
-                            lore2.add("説明: " + lines[0]);
+                            lore2.add(ComponentUtils.legacy("説明: " + lines[0]));
                             for (int j = 1; j < lines.length; j++)
-                                lore2.add(lines[j]);
+                                lore2.add(ComponentUtils.legacy(lines[j]));
                         }
                     }
-                    ComponentUtils.setLore(im2, lore2);
+                    ComponentUtils.setLoreComponents(im2, lore2);
                     it.setItemMeta(im2);
                 }
                 inv.setItem(i, it);
@@ -257,98 +253,62 @@ public class ChestShopUI {
      * If customCurrencyName is provided and non-empty, it will be used instead of
      * the material name.
      */
-    public static String displayNameForMaterial(String matName, String customCurrencyName) {
+    public static String displayNameForMaterial(Player viewer, String matName, String customCurrencyName) {
         // If custom currency name is provided, use it
         if (customCurrencyName != null && !customCurrencyName.trim().isEmpty()) {
             return customCurrencyName;
         }
         // Otherwise fall back to default material display name
-        return displayNameForMaterial(matName);
+        return displayNameForMaterial(viewer, matName);
     }
 
-    public static String displayNameForMaterial(String matName) {
+    public static String displayNameForMaterial(Player viewer, String matName) {
         if (matName == null || matName.isEmpty())
             return "未設定";
         Material m = Material.matchMaterial(matName);
         if (m == null)
             return matName;
-        // Try ItemMeta's display/localized name first (resource packs or server
-        // translations)
-        try {
-            ItemStack probe = new ItemStack(m, 1);
-            ItemMeta im = probe.getItemMeta();
-            if (im != null) {
-                if (im.hasCustomName()) {
-                    String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
-                            .serialize(im.customName());
-                    if (name != null && !name.trim().isEmpty())
-                        return name;
-                }
-            }
-        } catch (Throwable ignored) {
-        }
+        Locale locale = viewer == null ? Locale.US : viewer.locale();
+        return ItemNameUtil.localizedPlainText(m, locale);
+    }
 
-        // Fallback: common translations for items often used as currency
-        switch (m) {
-            case EMERALD:
-                return "エメラルド";
-            case EMERALD_BLOCK:
-                return "エメラルドブロック";
-            case DIAMOND:
-                return "ダイヤモンド";
-            case DIAMOND_BLOCK:
-                return "ダイヤブロック";
-            case NETHERITE_INGOT:
-                return "ネザライト";
-            case GOLD_INGOT:
-                return "金の延べ棒";
-            case GOLD_NUGGET:
-                return "金の欠片";
-            case GOLD_BLOCK:
-                return "金ブロック";
-            case IRON_INGOT:
-                return "鉄の延べ棒";
-            case IRON_NUGGET:
-                return "鉄の欠片";
-            case IRON_BLOCK:
-                return "鉄ブロック";
-            case COPPER_INGOT:
-                return "銅の延べ棒";
-            case COPPER_BLOCK:
-                return "銅ブロック";
-            case COAL:
-                return "石炭";
-            case CHARCOAL:
-                return "木炭";
-            case REDSTONE:
-                return "レッドストーン";
-            case LAPIS_LAZULI:
-                return "ラピスラズリ";
-            case ENDER_PEARL:
-                return "エンダーパール";
-            case BLAZE_ROD:
-                return "ブレイズロッド";
-            case SLIME_BALL:
-                return "スライムボール";
-            case BONE:
-                return "骨";
-            case NETHER_STAR:
-                return "ネザースター";
-            case AXOLOTL_BUCKET:
-                return "ウーパールーパー入りバケツ";
-            case PAPER:
-                return "紙";
-            default:
-                String s = m.name().toLowerCase().replace('_', ' ');
-                String[] parts = s.split(" ");
-                StringBuilder sb = new StringBuilder();
-                for (String p : parts) {
-                    if (p == null || p.isEmpty())
-                        continue;
-                    sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1)).append(' ');
-                }
-                return sb.toString().trim();
+    private static String resolveListingLabel(ShopListing listing, Player viewer) {
+        if (listing == null)
+            return "未設定";
+        String display = listing.getDisplayName();
+        if (display != null && !display.isBlank())
+            return display;
+        return displayNameForMaterial(viewer, listing.getMaterial());
+    }
+
+    private static void applyListingDisplayName(ItemMeta meta, ShopListing listing, Material material) {
+        if (meta == null || material == null)
+            return;
+        String display = listing == null ? null : listing.getDisplayName();
+        if (display == null || display.isBlank() || display.equals(material.name())) {
+            meta.displayName(ItemNameUtil.localizedComponent(material));
+            return;
         }
+        ComponentUtils.setDisplayName(meta, display);
+    }
+
+    private static Component buildPriceLoreLine(int price, String currencyMaterialName, String customCurrencyName) {
+        return ComponentUtils.legacy("§a販売中 - 価格: " + price + " ")
+                .append(buildCurrencyNameComponent(currencyMaterialName, customCurrencyName));
+    }
+
+    private static Component buildEarningsDisplayName(int earnings, String currencyMaterialName, String customCurrencyName) {
+        return ComponentUtils.legacy("§6収益: " + earnings + " ")
+                .append(buildCurrencyNameComponent(currencyMaterialName, customCurrencyName));
+    }
+
+    private static Component buildCurrencyNameComponent(String currencyMaterialName, String customCurrencyName) {
+        if (customCurrencyName != null && !customCurrencyName.trim().isEmpty())
+            return Component.text(customCurrencyName);
+        Material currency = Material.matchMaterial(currencyMaterialName);
+        if (currency == null)
+            return Component.text(currencyMaterialName == null ? "未設定" : currencyMaterialName);
+        return ItemNameUtil.localizedComponent(currency);
     }
 
     // open a dedicated delete page where owner can view and delete items from
@@ -384,8 +344,7 @@ public class ChestShopUI {
         ItemStack earningsItem = new ItemStack(Material.GOLD_INGOT);
         ItemMeta em = earningsItem.getItemMeta();
         if (em != null) {
-            String currencyName = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
-            ComponentUtils.setDisplayName(em, "§6収益: " + shop.getEarnings() + " " + currencyName);
+            em.displayName(buildEarningsDisplayName(shop.getEarnings(), shop.getCurrency(), shop.getCustomCurrencyName()));
             List<String> lore = new ArrayList<>();
             lore.add("§aクリックで収益を回収");
             ComponentUtils.setLore(em, lore);
@@ -407,7 +366,7 @@ public class ChestShopUI {
                 // サンプル本体の個数を含めず、実際の在庫のみ合計する
                 total += Math.max(0, sl.getStock());
                 if (sl.getStock() < sl.getCount())
-                    soldOut.add(sl.getDisplayName() == null ? sl.getMaterial() : sl.getDisplayName());
+                    soldOut.add(resolveListingLabel(sl, p));
             }
             List<String> lore = new ArrayList<>();
             lore.add("総在庫: " + total);
@@ -484,35 +443,31 @@ public class ChestShopUI {
                 } catch (Exception ignored) {
                 }
 
-                String disp = sl.getDisplayName();
-                if (disp == null || disp.isEmpty())
-                    disp = mat.name();
-                ComponentUtils.setDisplayName(im, disp);
-                List<String> lore = new ArrayList<>();
+                applyListingDisplayName(im, sl, mat);
+                List<Component> lore = new ArrayList<>();
                 if (shop.getCurrency() == null || shop.getCurrency().isEmpty()) {
-                    lore.add("§c通貨未設定 (販売不可)");
+                    lore.add(ComponentUtils.legacy("§c通貨未設定 (販売不可)"));
                 } else if ((long) sl.getPrice() > 64L) {
-                    lore.add("§c価格が最大を超えています (販売不可)");
+                    lore.add(ComponentUtils.legacy("§c価格が最大を超えています (販売不可)"));
                 } else {
-                    String curDisplay = displayNameForMaterial(shop.getCurrency(), shop.getCustomCurrencyName());
-                    lore.add("§a販売中 - 価格: " + sl.getPrice() + " " + curDisplay);
+                    lore.add(buildPriceLoreLine(sl.getPrice(), shop.getCurrency(), shop.getCustomCurrencyName()));
                 }
                 if (sl.getStock() < sl.getCount()) {
-                    lore.add("§c品切れ中");
+                    lore.add(ComponentUtils.legacy("§c品切れ中"));
                 } else {
-                    lore.add("在庫: " + sl.getStock());
-                    lore.add("個数: " + sl.getCount());
+                    lore.add(ComponentUtils.legacy("在庫: " + sl.getStock()));
+                    lore.add(ComponentUtils.legacy("個数: " + sl.getCount()));
                 }
                 if (sl.getDescription() != null && !sl.getDescription().isEmpty()) {
                     String desc = sl.getDescription().replace("<br>", "\n");
                     String[] lines = desc.split("\\\\n");
                     if (lines.length > 0) {
-                        lore.add("説明: " + lines[0]);
+                        lore.add(ComponentUtils.legacy("説明: " + lines[0]));
                         for (int j = 1; j < lines.length; j++)
-                            lore.add(lines[j]);
+                            lore.add(ComponentUtils.legacy(lines[j]));
                     }
                 }
-                ComponentUtils.setLore(im, lore);
+                ComponentUtils.setLoreComponents(im, lore);
                 it.setItemMeta(im);
             }
             inv.setItem(i, it);

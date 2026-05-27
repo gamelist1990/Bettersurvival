@@ -1,5 +1,8 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.translation.GlobalTranslator;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -574,7 +577,7 @@ public class SharedStorageModule implements Listener {
     }
 
     private void openChestPageCategoryMenu(Player player, SharedNetwork network, int page) {
-        List<SubCategoryEntry> categories = resolveSubCategoryEntries(network);
+        List<SubCategoryEntry> categories = resolveSubCategoryEntries(network, player);
         if (categories.isEmpty()) {
             player.sendMessage("§esubコンテナが見つかりません");
             return;
@@ -610,7 +613,7 @@ public class SharedStorageModule implements Listener {
     }
 
     private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage) {
-        List<SubCategoryEntry> categories = resolveSubCategoryEntries(network);
+        List<SubCategoryEntry> categories = resolveSubCategoryEntries(network, player);
         SubCategoryEntry category = null;
         for (SubCategoryEntry entry : categories) {
             if (entry.key().equals(categoryKey)) {
@@ -637,7 +640,7 @@ public class SharedStorageModule implements Listener {
         }
         SharedStorageChestPageUi.openSubMenu(
                 player,
-                ChatColor.stripColor(category.displayName()),
+                category.useDefaultItemLabel() ? "アイテム" : ChatColor.stripColor(category.displayName()),
                 subPage,
                 entries,
                 (p, nextPage) -> openChestPageSubMenu(p, network, categoryKey, categoryPage, nextPage),
@@ -651,7 +654,7 @@ public class SharedStorageModule implements Listener {
                 });
     }
 
-    private List<SubCategoryEntry> resolveSubCategoryEntries(SharedNetwork network) {
+    private List<SubCategoryEntry> resolveSubCategoryEntries(SharedNetwork network, Player viewer) {
         List<ResolvedInventory> resolvedSubs = resolveAllSubInventories(network);
         if (resolvedSubs.isEmpty())
             return List.of();
@@ -662,7 +665,7 @@ public class SharedStorageModule implements Listener {
                 String key = resolveCategoryKey(null);
                 MutableSubCategory category = categories.get(key);
                 if (category == null) {
-                    category = new MutableSubCategory(key, null);
+                    category = new MutableSubCategory(key, null, viewer);
                     categories.put(key, category);
                 }
                 category.subs.add(sub);
@@ -675,7 +678,7 @@ public class SharedStorageModule implements Listener {
                     continue;
                 MutableSubCategory category = categories.get(key);
                 if (category == null) {
-                    category = new MutableSubCategory(key, filter);
+                    category = new MutableSubCategory(key, filter, viewer);
                     categories.put(key, category);
                 }
                 category.subs.add(sub);
@@ -766,8 +769,35 @@ public class SharedStorageModule implements Listener {
                 + location.getBlockZ();
     }
 
+    /**
+     * サーバー側で扱う表示用文字列を返します。
+     * クライアントローカライズ表示が必要な UI では resolveLocalizedMaterialName を使います。
+     */
     private String resolveItemDisplayName(ItemStack item) {
         return ItemNameUtil.serverReadableName(item);
+    }
+
+    /**
+     * 表示先プレイヤーの locale で Material 名を翻訳し、プレーン文字列として返します。
+     */
+    private String resolveLocalizedMaterialName(Player viewer, Material material) {
+        if (material == null || material == Material.AIR)
+            return "UNKNOWN";
+        Locale locale = viewer == null ? Locale.US : viewer.locale();
+        Component translated = GlobalTranslator.render(ItemNameUtil.localizedComponent(material), locale);
+        String plain = PlainTextComponentSerializer.plainText().serialize(translated);
+        if (plain == null || plain.isBlank())
+            return ItemNameUtil.serverReadableName(material);
+        return plain;
+    }
+
+    private Material resolveMaterialFromCategoryKey(String key) {
+        if (key == null)
+            return null;
+        int separator = key.indexOf(':');
+        if (separator < 0 || separator >= key.length() - 1)
+            return null;
+        return Material.matchMaterial(key.substring(separator + 1));
     }
 
     private String resolveSubEntryLabel(SubCategoryEntry category, int subNumber) {
@@ -1903,7 +1933,7 @@ public class SharedStorageModule implements Listener {
         private final boolean useDefaultItemLabel;
         private final List<ResolvedInventory> subs = new ArrayList<>();
 
-        private MutableSubCategory(String key, ItemStack filter) {
+        private MutableSubCategory(String key, ItemStack filter, Player viewer) {
             this.key = key;
             if (filter == null || filter.getType() == Material.AIR) {
                 this.icon = new ItemStack(Material.CHEST);
@@ -1921,9 +1951,15 @@ public class SharedStorageModule implements Listener {
             this.icon = icon;
             this.noFilter = false;
             this.useDefaultItemLabel = SharedStorageCategoryDisplayHelper.isDefaultItemLabelCategory(key);
-            String name = resolveItemDisplayName(filter);
+            String name;
+            if (this.useDefaultItemLabel || key.startsWith("clear:")) {
+                Material categoryMaterial = resolveMaterialFromCategoryKey(key);
+                name = resolveLocalizedMaterialName(viewer, categoryMaterial == null ? filter.getType() : categoryMaterial);
+            } else {
+                name = resolveItemDisplayName(filter);
+            }
             if (key.startsWith("clear:")) {
-                this.displayName = "§c処分: " + name;
+                this.displayName = "§c処分";
                 this.menuLabel = this.displayName;
             } else {
                 this.displayName = "§a" + name;

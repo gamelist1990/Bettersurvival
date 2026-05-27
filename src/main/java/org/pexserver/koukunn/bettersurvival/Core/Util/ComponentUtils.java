@@ -59,6 +59,10 @@ public final class ComponentUtils {
         meta.lore(legacyList(lore));
     }
 
+    public static void setLoreComponents(ItemMeta meta, List<Component> lore) {
+        meta.lore(lore);
+    }
+
     public static void setLore(ItemMeta meta, String... lore) {
         setLore(meta, Arrays.asList(lore));
     }

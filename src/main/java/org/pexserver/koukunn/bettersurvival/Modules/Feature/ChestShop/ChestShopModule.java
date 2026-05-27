@@ -1,6 +1,8 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -221,8 +223,7 @@ public class ChestShopModule implements Listener {
                                             giveOrMergeToPlayer(p, giveBack);
                                         }
                                         markRemovalHandled(p, loc, idx);
-                                        p.sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: " + giveBack.getType().toString()
-                                                + " x" + amountToGive);
+                                        sendItemAmountMessage(p, "§a出品をエディターから取り出しました、在庫を返却しました: ", giveBack, amountToGive);
                                         p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                                     } catch (Exception ignored) {
                                     }
@@ -442,15 +443,14 @@ public class ChestShopModule implements Listener {
         if (!acquireListingDialogKey(key))
             return;
 
-        String itemName = resolveSetupItemName(sourceItem, draft);
         int initialCount = Math.max(1, Math.min(64, sourceItem == null ? 1 : sourceItem.getAmount()));
 
         player.sendMessage("§e出品情報が未設定です。表示された入力画面で価格などを設定してください。");
         boolean shown = DialogUI.builder()
                 .title("出品設定")
-                .body(toInputText(itemName))
+                .body(ComponentUtils.legacy("対象: ").append(resolveListingDisplayComponent(draft, sourceItem)))
                 .body("閉じた場合はキャンセル扱いになり、次回エディタを開いた時に再設定できます")
-                .addTextInput("itemName", "アイテム名 (任意, 色コードは&)", toInputText(itemName), 128, false)
+                .addTextInput("itemName", "アイテム名 (任意, 色コードは&)", toInputText(resolveEditableItemName(draft, sourceItem)), 128, false)
                 .addTextInput("price", "価格 (1-64)", "1")
                 .addTextInput("count", "販売個数 (1-64)", String.valueOf(initialCount))
                 .addTextInput("description", "説明 (任意)", "", 120, true)
@@ -496,7 +496,7 @@ public class ChestShopModule implements Listener {
                     updateEditorConfiguredItem(editorInventory, slot, sourceItem, configured);
                     editorSnapshotHash.put(p.getUniqueId(), snapshotHash);
                     editorLastSavedTick.put(p.getUniqueId(), System.currentTimeMillis());
-                    p.sendMessage("§a出品を設定しました: " + toInputText(getListingDisplayNameForUi(configured, sourceItem)) + " 価格 " + price + " / 個数 " + count);
+                    p.sendMessage("§a出品を設定しました: " + toInputText(getListingDisplayNameForUi(p, configured, sourceItem)) + " 価格 " + price + " / 個数 " + count);
                     p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                     if (shop != null && shop.getOwner() != null) {
                         try {
@@ -537,33 +537,23 @@ public class ChestShopModule implements Listener {
         return ChatColor.translateAlternateColorCodes('&', trimmed);
     }
 
-    private String resolveSetupItemName(ItemStack sourceItem, ShopListing draft) {
-        if (sourceItem != null) {
-            ItemMeta meta = sourceItem.getItemMeta();
-            if (meta != null && meta.hasDisplayName()) {
-                String displayName = ComponentUtils.getDisplayName(meta);
-                if (displayName != null && !displayName.isBlank())
-                    return displayName;
-            }
-            return ChestShopUI.displayNameForMaterial(sourceItem.getType().name());
-        }
-        return getListingDisplayNameForUi(draft, null);
-    }
-
-    private String getListingDisplayNameForUi(ShopListing listing, ItemStack sourceItem) {
+    private String getListingDisplayNameForUi(Player viewer, ShopListing listing, ItemStack sourceItem) {
+        Locale locale = viewer == null ? Locale.US : viewer.locale();
         if (listing == null) {
             if (sourceItem == null)
                 return "";
-            return ChestShopUI.displayNameForMaterial(sourceItem.getType().name());
+            return ItemNameUtil.localizedPlainText(sourceItem, locale);
         }
 
         String displayName = listing.getDisplayName();
-        if (displayName == null || displayName.isBlank())
-            return ChestShopUI.displayNameForMaterial(listing.getMaterial());
+        if (displayName == null || displayName.isBlank()) {
+            Material material = Material.matchMaterial(listing.getMaterial());
+            return material == null ? listing.getMaterial() : ItemNameUtil.localizedPlainText(material, locale);
+        }
 
         Material material = Material.matchMaterial(listing.getMaterial());
         if (material != null && displayName.equals(material.name()))
-            return ChestShopUI.displayNameForMaterial(listing.getMaterial());
+            return ItemNameUtil.localizedPlainText(material, locale);
 
         return displayName;
     }
@@ -588,17 +578,19 @@ public class ChestShopModule implements Listener {
     }
 
     private void removePendingEditorItem(Inventory editorInventory, int slot, ItemStack sourceItem, Player player) {
+        ItemStack returnItem = sourceItem == null ? null : sourceItem.clone();
         if (editorInventory != null && slot >= 0 && slot < editorInventory.getSize()) {
             ItemStack current = editorInventory.getItem(slot);
             boolean stillOpen = player != null && player.getOpenInventory() != null
                     && player.getOpenInventory().getTopInventory() == editorInventory;
             if (stillOpen && current != null && current.getType() != Material.AIR) {
+                if (returnItem == null)
+                    returnItem = current.clone();
                 editorInventory.setItem(slot, null);
-                return;
             }
         }
-        if (sourceItem != null && player != null)
-            giveOrMergeToPlayer(player, sanitizeReturnedItem(sourceItem.clone()));
+        if (returnItem != null && player != null)
+            giveOrMergeToPlayer(player, sanitizeReturnedItem(returnItem));
     }
 
     private ItemStack createEditorDisplayItem(ItemStack sourceItem, ShopListing listing) {
@@ -642,11 +634,9 @@ public class ChestShopModule implements Listener {
 
     private void openListingClickDialog(Player player, Location loc, ChestShop shop, Inventory editorInventory, int slot,
             ItemStack editorItem, ShopListing listing) {
-        String itemName = getListingDisplayNameForUi(listing, editorItem);
-
         DialogUI.builder()
                 .title("出品操作")
-                .body(toInputText(itemName))
+                .body(ComponentUtils.legacy("対象: ").append(resolveListingDisplayComponent(listing, editorItem)))
                 .body("更新: 価格/個数/説明を変更します")
                 .body("返却: 出品を取り下げて在庫を返します")
                 .body("閉じた場合は何も変更しません")
@@ -665,12 +655,12 @@ public class ChestShopModule implements Listener {
             ItemStack editorItem, ShopListing listing) {
         if (listing == null)
             return;
-        String itemName = getListingDisplayNameForUi(listing, editorItem);
+        String itemName = resolveEditableItemName(listing, editorItem);
         String desc = listing.getDescription() == null ? "" : listing.getDescription().replace("<br>", "\n");
 
         DialogUI.builder()
                 .title("出品更新")
-                .body(toInputText(itemName))
+                .body(ComponentUtils.legacy("対象: ").append(resolveListingDisplayComponent(listing, editorItem)))
                 .body("閉じた場合は何も変更しません")
                 .addTextInput("itemName", "アイテム名 (任意, 色コードは&)", toInputText(itemName), 128, false)
                 .addTextInput("price", "価格 (1-64)", String.valueOf(Math.max(1, listing.getPrice())))
@@ -740,7 +730,9 @@ public class ChestShopModule implements Listener {
             editorLastSavedTick.put(player.getUniqueId(), System.currentTimeMillis());
         }
 
-        player.sendMessage("§a出品を返却しました: " + giveBack.getType() + " x" + amountToGive);
+        player.sendMessage(ComponentUtils.legacy("§a出品を返却しました: ")
+                .append(ItemNameUtil.localizedComponent(giveBack))
+                .append(ComponentUtils.legacy(" x" + amountToGive)));
         player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
         if (shop != null && shop.getOwner() != null) {
             try {
@@ -766,6 +758,54 @@ public class ChestShopModule implements Listener {
             item = new ItemStack(material == null ? Material.PAPER : material);
         }
         return sanitizeReturnedItem(item);
+    }
+
+    private String resolveEditableItemName(ShopListing listing, ItemStack sourceItem) {
+        if (listing != null && listing.getDisplayName() != null && !listing.getDisplayName().isBlank())
+            return listing.getDisplayName();
+        if (sourceItem != null) {
+            ItemMeta meta = sourceItem.getItemMeta();
+            if (meta != null && meta.displayName() != null) {
+                String display = ComponentUtils.legacyText(meta.displayName());
+                if (display != null && !display.isBlank())
+                    return display;
+            }
+        }
+        return "";
+    }
+
+    private Component resolveListingDisplayComponent(ShopListing listing, ItemStack sourceItem) {
+        if (listing != null) {
+            String display = listing.getDisplayName();
+            Material material = Material.matchMaterial(listing.getMaterial());
+            if (display != null && !display.isBlank() && (material == null || !display.equals(material.name())))
+                return ComponentUtils.legacy(display);
+            if (material != null)
+                return ItemNameUtil.localizedComponent(material);
+            if (listing.getMaterial() != null && !listing.getMaterial().isBlank())
+                return Component.text(listing.getMaterial());
+        }
+        if (sourceItem != null)
+            return ItemNameUtil.localizedComponent(sourceItem);
+        return Component.text("未設定");
+    }
+
+    private Component resolveCurrencyDisplayComponent(String currencyMaterialName, String customCurrencyName) {
+        if (customCurrencyName != null && !customCurrencyName.trim().isEmpty())
+            return Component.text(customCurrencyName);
+        Material currency = Material.matchMaterial(currencyMaterialName);
+        if (currency != null)
+            return ItemNameUtil.localizedComponent(currency);
+        return Component.text(currencyMaterialName == null || currencyMaterialName.isBlank() ? "未設定" : currencyMaterialName);
+    }
+
+    private void sendItemAmountMessage(Player player, String prefix, ItemStack item, int amount) {
+        if (player == null)
+            return;
+        ItemStack target = item == null ? new ItemStack(Material.PAPER) : item;
+        player.sendMessage(ComponentUtils.legacy(prefix)
+                .append(ItemNameUtil.localizedComponent(target))
+                .append(ComponentUtils.legacy(" x" + Math.max(1, amount))));
     }
 
     private int buildEditorSnapshotHash(Inventory inventory) {
@@ -1516,7 +1556,7 @@ public class ChestShopModule implements Listener {
                     }
                 }
                 if (applied) {
-                    p.sendMessage("§a仕入れを補充しました: " + supply.getType().toString() + " x" + supply.getAmount());
+                    sendItemAmountMessage(p, "§a仕入れを補充しました: ", supply, supply.getAmount());
                     p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                 } else {
                     // return the supplied item back to player's inventory (or drop if full)
@@ -1579,9 +1619,8 @@ public class ChestShopModule implements Listener {
                         }
                         shop.setEarnings(0);
                         store.save(loc, shop);
-                        String curDisplayName = ChestShopUI.displayNameForMaterial(shop.getCurrency(),
-                                shop.getCustomCurrencyName());
-                        p.sendMessage("§a収益を回収しました: " + give.getAmount() + " " + curDisplayName);
+                        p.sendMessage(ComponentUtils.legacy("§a収益を回収しました: " + give.getAmount() + " ")
+                                .append(resolveCurrencyDisplayComponent(shop.getCurrency(), shop.getCustomCurrencyName())));
                         p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                         // update UI
                         ChestShopUI.openForPlayer(p, shop, loc, store);
@@ -1626,8 +1665,7 @@ public class ChestShopModule implements Listener {
                             sl.setStock(sl.getStock() + supplyNow.getAmount());
                             store.saveListings(locInner, listings);
                             invnow.setItem(10, null);
-                            p.sendMessage(
-                                    "§a仕入れを補充しました: " + supplyNow.getType().toString() + " x" + supplyNow.getAmount());
+                            sendItemAmountMessage(p, "§a仕入れを補充しました: ", supplyNow, supplyNow.getAmount());
                             p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                             applied = true;
                             break;
@@ -1724,8 +1762,7 @@ public class ChestShopModule implements Listener {
                                         sl.setStock(sl.getStock() + supNow.getAmount());
                                         store.saveListings(locMove, listingsNow);
                                         top.setItem(10, null);
-                                        ((Player) e.getWhoClicked()).sendMessage("§a仕入れを補充しました: "
-                                                + supNow.getType().toString() + " x" + supNow.getAmount());
+                                        sendItemAmountMessage((Player) e.getWhoClicked(), "§a仕入れを補充しました: ", supNow, supNow.getAmount());
                                         ((Player) e.getWhoClicked()).playSound(
                                                 ((Player) e.getWhoClicked()).getLocation(), Sound.ENTITY_ITEM_PICKUP,
                                                 1.0f, 1.0f);
@@ -1798,10 +1835,9 @@ public class ChestShopModule implements Listener {
                                                 .dropItemNaturally(((Player) e.getWhoClicked()).getLocation(), drop);
                                     }
                                 }
-                                String oldCurDisplayName = ChestShopUI.displayNameForMaterial(oldCurrency,
-                                        rrMove.shop.getCustomCurrencyName());
                                 ((Player) e.getWhoClicked()).sendMessage(
-                                        "§a通貨変更のため収益を自動回収しました: " + rrMove.shop.getEarnings() + " " + oldCurDisplayName);
+                                        ComponentUtils.legacy("§a通貨変更のため収益を自動回収しました: " + rrMove.shop.getEarnings() + " ")
+                                                .append(resolveCurrencyDisplayComponent(oldCurrency, rrMove.shop.getCustomCurrencyName())));
                                 ((Player) e.getWhoClicked()).playSound(((Player) e.getWhoClicked()).getLocation(),
                                         Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                                 rrMove.shop.setEarnings(0);
@@ -1818,8 +1854,8 @@ public class ChestShopModule implements Listener {
                             }
                             // Update openShops map with the updated shop object
                             ChestShopUI.registerOpen(((Player) e.getWhoClicked()).getUniqueId(), rrMove.shop, locMove);
-                            ((Player) e.getWhoClicked()).sendMessage("§a通貨を設定しました: "
-                                    + (curDisplay != null ? curDisplay : ChestShopUI.displayNameForMaterial(curMat)));
+                            ((Player) e.getWhoClicked()).sendMessage(ComponentUtils.legacy("§a通貨を設定しました: ")
+                                    .append(resolveCurrencyDisplayComponent(curMat, curDisplay)));
                             ((Player) e.getWhoClicked()).playSound(((Player) e.getWhoClicked()).getLocation(),
                                     Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                             // Update earnings display and info in real-time
@@ -1874,9 +1910,8 @@ public class ChestShopModule implements Listener {
                                     p.getWorld().dropItemNaturally(p.getLocation(), drop);
                                 }
                             }
-                            String oldCurDisplayName = ChestShopUI.displayNameForMaterial(oldCurrency,
-                                    shopInner.getCustomCurrencyName());
-                            p.sendMessage("§a通貨変更のため収益を自動回収しました: " + shopInner.getEarnings() + " " + oldCurDisplayName);
+                            p.sendMessage(ComponentUtils.legacy("§a通貨変更のため収益を自動回収しました: " + shopInner.getEarnings() + " ")
+                                    .append(resolveCurrencyDisplayComponent(oldCurrency, shopInner.getCustomCurrencyName())));
                             p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                             shopInner.setEarnings(0);
                         }
@@ -1892,9 +1927,8 @@ public class ChestShopModule implements Listener {
                         }
                         // Update openShops map with the updated shop object
                         ChestShopUI.registerOpen(p.getUniqueId(), shopInner, locInner);
-                        p.sendMessage(curMat == null ? "§e通貨設定を解除しました"
-                                : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay
-                                        : ChestShopUI.displayNameForMaterial(curMat))));
+                        p.sendMessage(curMat == null ? ComponentUtils.legacy("§e通貨設定を解除しました")
+                                : ComponentUtils.legacy("§a通貨を設定しました: ").append(resolveCurrencyDisplayComponent(curMat, curDisplay)));
                         p.playSound(p.getLocation(), curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP,
                                 1.0f, 1.0f);
                         // if owner UI is open, reflect change immediately
@@ -2168,8 +2202,7 @@ public class ChestShopModule implements Listener {
 
                             if (viewNow != null && viewNow.getTopInventory() != null)
                                 viewNow.getTopInventory().setItem(clickedSlot, null);
-                            receiver.sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: " + give.getType().toString() + " x"
-                                    + amountToGive);
+                            sendItemAmountMessage(receiver, "§a出品をエディターから取り出しました、在庫を返却しました: ", give, amountToGive);
                             receiver.playSound(receiver.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                         } catch (Exception ignored) {
                         }
@@ -2264,8 +2297,8 @@ public class ChestShopModule implements Listener {
                                     store.saveListings(locLater, listingsLater);
 
                                     // inform and play sound
-                                    clicker.sendMessage("§a出品をエディターから取り出しました、在庫を返却しました: "
-                                            + giveBack.getType().toString() + " x" + amountToGive);
+                                    sendItemAmountMessage(clicker, "§a出品をエディターから取り出しました、在庫を返却しました: ",
+                                            giveBack, amountToGive);
                                     clicker.playSound(clicker.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                                     // ensure editor UI shows cleared slot
                                     if (editorInv.getItem(clickedSlot) != null)
@@ -2362,15 +2395,10 @@ public class ChestShopModule implements Listener {
                         // add to earnings
                         shop.setEarnings(shop.getEarnings() + cost);
                         store.save(loc, shop);
-                        String dispName = sl.getDisplayName();
-                        if (dispName == null || dispName.isEmpty()) {
-                            Material mm = Material.matchMaterial(sl.getMaterial());
-                            dispName = mm == null ? sl.getMaterial() : mm.name();
-                        }
-                        dispName = dispName.replaceAll("\\{[^}]*\\}", "").replaceAll("｛[^｝]*｝", "").trim();
-                        String currencyDisplay = ChestShopUI.displayNameForMaterial(shop.getCurrency(),
-                                shop.getCustomCurrencyName());
-                        p.sendMessage("§a購入しました: " + dispName + " で " + cost + " " + currencyDisplay);
+                        p.sendMessage(ComponentUtils.legacy("§a購入しました: ")
+                                .append(resolveListingDisplayComponent(sl, null))
+                                .append(ComponentUtils.legacy(" で " + cost + " "))
+                                .append(resolveCurrencyDisplayComponent(shop.getCurrency(), shop.getCustomCurrencyName())));
                         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
                         // update owner info if owner online
                         try {
@@ -2498,8 +2526,7 @@ public class ChestShopModule implements Listener {
                                     store.saveListings(loc, listings);
                                     invnow.setItem(10, null);
                                     if (p != null) {
-                                        p.sendMessage("§a仕入れを補充しました: " + supplyNow.getType().toString() + " x"
-                                                + supplyNow.getAmount());
+                                        sendItemAmountMessage(p, "§a仕入れを補充しました: ", supplyNow, supplyNow.getAmount());
                                         p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                                     }
                                     applied = true;
@@ -2536,9 +2563,9 @@ public class ChestShopModule implements Listener {
                             if (p != null) {
                                 // Update openShops map with the updated shop object
                                 ChestShopUI.registerOpen(p.getUniqueId(), rr.shop, loc);
-                                p.sendMessage(curMat == null ? "§e通貨設定を解除しました"
-                                        : ("§a通貨を設定しました: " + (curDisplay != null ? curDisplay
-                                                : ChestShopUI.displayNameForMaterial(curMat))));
+                                p.sendMessage(curMat == null ? ComponentUtils.legacy("§e通貨設定を解除しました")
+                                        : ComponentUtils.legacy("§a通貨を設定しました: ")
+                                                .append(resolveCurrencyDisplayComponent(curMat, curDisplay)));
                                 p.playSound(p.getLocation(),
                                         curMat == null ? Sound.UI_BUTTON_CLICK : Sound.ENTITY_ITEM_PICKUP, 1.0f, 1.0f);
                             }
