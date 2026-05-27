@@ -42,10 +42,27 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.BlockInventoryHolder;
 import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.filter.SharedStorageFrameFilterRules;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.FilteredSubTarget;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.MainInventorySnapshot;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.Placement;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.PlacementConflict;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.PlacementResult;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.ResolvedInventory;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.SharedNetwork;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.StorageItemData;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.StorageNameTag;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.SubAccess;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.SubFrameFilterMode;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.TrackedItemStack;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.ui.SharedStorageCategoryDisplayHelper;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.ui.SharedStorageChestPageUi;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.ui.SharedStorageSettingsUi;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
@@ -77,18 +94,7 @@ public class SharedStorageModule implements Listener {
     private static final String ROLE_SUB = "sub";
     private static final String MAIN_PREFIX = "chest-";
     private static final String SUB_PREFIX = "chestsub-";
-    private static final int DEFAULT_SUB_DISTANCE = 15;
     private static final int MAX_SUB_DISTANCE_LIMIT = 50;
-    private static final boolean DEFAULT_ALLOW_SUB_INSERT = false;
-    private static final boolean DEFAULT_ALLOW_SUB_EXTRACT = true;
-    private static final boolean DEFAULT_ALLOW_SUB_HOPPER_INSERT = false;
-    private static final boolean DEFAULT_ALLOW_SUB_HOPPER_EXTRACT = true;
-    private static final boolean DEFAULT_ALLOW_MAIN_INSERT = true;
-    private static final boolean DEFAULT_ALLOW_MAIN_EXTRACT = true;
-    private static final boolean DEFAULT_ENABLE_TRANSFER_PARTICLES = true;
-    private static final boolean DEFAULT_ENABLE_SUB_FRAME_FILTER = false;
-    private static final boolean DEFAULT_ENABLE_CHEST_PAGE = false;
-    private static final String CLEAR_FILTER_NAME = "chest-clear";
     private static final int MENU_TOGGLE_SLOT = 10;
     private static final int MENU_EXTRACT_SLOT = 11;
     private static final int MENU_SUB_HOPPER_INSERT_SLOT = 12;
@@ -110,6 +116,7 @@ public class SharedStorageModule implements Listener {
     private final SharedStorageStore store;
     private final NamespacedKey roleKey;
     private final NamespacedKey idKey;
+    private final SharedStorageFrameFilterRules frameFilterRules = new SharedStorageFrameFilterRules();
     private final Map<String, SharedNetwork> networks = new LinkedHashMap<>();
     private final Map<String, Placement> placements = new LinkedHashMap<>();
     private final Set<String> scheduledRedistributions = new LinkedHashSet<>();
@@ -429,173 +436,117 @@ public class SharedStorageModule implements Listener {
     }
 
     private void openMainMenu(Player player, SharedNetwork network) {
-        ChestUI.builder()
-                .title("共有ストレージ " + network.id())
-                .size(36)
-                .addButtonAt(4, "§b共有ストレージ", Material.CHEST,
-                        "§7ID: " + network.id() + "\n§7sub数: " + countResolvedSubs(network))
-                .addButtonAt(MENU_RANGE_SLOT, "§esub接続範囲", Material.SPYGLASS,
-                        "§7現在: " + network.subRange() + "ブロック\n§7設定可能: 1 〜 " + MAX_SUB_DISTANCE_LIMIT)
-                .addButtonAt(0, "§6sub設定", Material.BOOK, "§7直接操作 / ホッパー設定")
-                .addButtonAt(18, "§6main設定", Material.CHEST, "§7ホッパー搬入 / 搬出設定")
-                .addButtonAt(21, "§6額縁フィルタ", Material.ITEM_FRAME, "§7ON/OFF と一致ルール")
-                .addButtonAt(MENU_CHEST_PAGE_SLOT,
-                        network.enableChestPage() ? "§aChestPage: ON" : "§cChestPage: OFF",
-                        network.enableChestPage() ? Material.BOOKSHELF : Material.BARRIER,
-                        "§7スニーク左クリックでsub一覧UIを開く")
-                .addButtonAt(27, "§6操作 / 演出", Material.BELL, "§7再仕分け / 演出 / 終了")
-                .addButtonAt(MENU_TOGGLE_SLOT,
-                        network.allowSubInsert() ? "§asub直接投入: 許可" : "§csub直接投入: 禁止",
-                        network.allowSubInsert() ? Material.LIME_DYE : Material.RED_DYE,
-                        "§7プレイヤー操作で sub に入れる")
-                .addButtonAt(MENU_EXTRACT_SLOT,
-                        network.allowSubExtract() ? "§asub取出し: 許可" : "§csub取出し: 禁止",
-                        network.allowSubExtract() ? Material.LIME_CANDLE : Material.RED_CANDLE,
-                        "§7プレイヤー操作で sub から出せる")
-                .addButtonAt(MENU_SUB_HOPPER_INSERT_SLOT,
-                        network.allowSubHopperInsert() ? "§asubホッパー搬入: 許可" : "§csubホッパー搬入: 禁止",
-                        network.allowSubHopperInsert() ? Material.HOPPER : Material.BARRIER,
-                        "§7ホッパー等から sub に入れる")
-                .addButtonAt(MENU_SUB_HOPPER_EXTRACT_SLOT,
-                        network.allowSubHopperExtract() ? "§asubホッパー搬出: 許可" : "§csubホッパー搬出: 禁止",
-                        network.allowSubHopperExtract() ? Material.DROPPER : Material.BARRIER,
-                        "§7ホッパー等で sub から吸い出す")
-                .addButtonAt(MENU_MAIN_INSERT_SLOT,
-                        network.allowMainInsert() ? "§amainホッパー搬入: 許可" : "§cmainホッパー搬入: 禁止",
-                        network.allowMainInsert() ? Material.HOPPER : Material.BARRIER,
-                        "§7ホッパー等から main に入れる")
-                .addButtonAt(MENU_MAIN_EXTRACT_SLOT,
-                        network.allowMainExtract() ? "§amainホッパー搬出: 許可" : "§cmainホッパー搬出: 禁止",
-                        network.allowMainExtract() ? Material.DROPPER : Material.BARRIER,
-                        "§7ホッパー等で main から吸い出す")
-                .addButtonAt(MENU_FRAME_FILTER_SLOT,
-                        network.enableSubFrameFilter() ? "§a額縁フィルタ: ON" : "§c額縁フィルタ: OFF",
-                        network.enableSubFrameFilter() ? Material.ITEM_FRAME : Material.BARRIER,
-                        "§7subに額縁のアイテムだけを入れる")
-                .addButtonAt(MENU_FRAME_FILTER_MODE_SLOT,
-                        "§b額縁一致モード: " + network.subFrameFilterMode().label(),
-                        network.enableSubFrameFilter() ? Material.COMPARATOR : Material.GRAY_DYE,
-                        "§7クリックで切り替え\n§7EXACT / MATERIAL / ENCHANT_STATE")
-                .addButtonAt(MENU_PARTICLE_SLOT,
-                        network.enableTransferParticles() ? "§aParticle演出: ON" : "§cParticle演出: OFF",
-                        network.enableTransferParticles() ? Material.BLAZE_POWDER : Material.GUNPOWDER,
-                        "§7搬送ライン演出の表示切替")
-                .addButtonAt(MENU_RESET_SLOT, "§b再仕分け実行", Material.HOPPER,
-                        "§7main / sub 全体を再仕分けします")
-                .addButtonAt(MENU_CLOSE_SLOT, "§7閉じる", Material.BARRIER, "§7UIを閉じます")
-                .then((result, p) -> {
-                    if (!result.success || result.slot == null)
-                        return;
-                    if (result.slot == MENU_TOGGLE_SLOT) {
+        SharedStorageSettingsUi.openMainMenu(player, new SharedStorageSettingsUi.MainMenuState(
+                        network.id(),
+                        countResolvedSubs(network),
+                        network.subRange(),
+                        MAX_SUB_DISTANCE_LIMIT,
+                        network.allowSubInsert(),
+                        network.allowSubExtract(),
+                        network.allowSubHopperInsert(),
+                        network.allowSubHopperExtract(),
+                        network.allowMainInsert(),
+                        network.allowMainExtract(),
+                        network.enableSubFrameFilter(),
+                        network.subFrameFilterMode().label(),
+                        network.enableChestPage(),
+                        network.enableTransferParticles()),
+                (p, slot) -> {
+                    if (slot == MENU_TOGGLE_SLOT) {
                         network.setAllowSubInsert(!network.allowSubInsert());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.allowSubInsert() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_EXTRACT_SLOT) {
+                    if (slot == MENU_EXTRACT_SLOT) {
                         network.setAllowSubExtract(!network.allowSubExtract());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.allowSubExtract() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_MAIN_INSERT_SLOT) {
+                    if (slot == MENU_MAIN_INSERT_SLOT) {
                         network.setAllowMainInsert(!network.allowMainInsert());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.allowMainInsert() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_MAIN_EXTRACT_SLOT) {
+                    if (slot == MENU_MAIN_EXTRACT_SLOT) {
                         network.setAllowMainExtract(!network.allowMainExtract());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.allowMainExtract() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_SUB_HOPPER_INSERT_SLOT) {
+                    if (slot == MENU_SUB_HOPPER_INSERT_SLOT) {
                         network.setAllowSubHopperInsert(!network.allowSubHopperInsert());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.allowSubHopperInsert() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_SUB_HOPPER_EXTRACT_SLOT) {
+                    if (slot == MENU_SUB_HOPPER_EXTRACT_SLOT) {
                         network.setAllowSubHopperExtract(!network.allowSubHopperExtract());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.allowSubHopperExtract() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_PARTICLE_SLOT) {
+                    if (slot == MENU_PARTICLE_SLOT) {
                         network.setEnableTransferParticles(!network.enableTransferParticles());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.enableTransferParticles() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_FRAME_FILTER_SLOT) {
+                    if (slot == MENU_FRAME_FILTER_SLOT) {
                         network.setEnableSubFrameFilter(!network.enableSubFrameFilter());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.enableSubFrameFilter() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_CHEST_PAGE_SLOT) {
+                    if (slot == MENU_CHEST_PAGE_SLOT) {
                         network.setEnableChestPage(!network.enableChestPage());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, network.enableChestPage() ? 1.2F : 0.8F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_FRAME_FILTER_MODE_SLOT) {
+                    if (slot == MENU_FRAME_FILTER_MODE_SLOT) {
                         network.setSubFrameFilterMode(network.subFrameFilterMode().next());
                         saveNetworks();
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, 1.1F);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_RESET_SLOT) {
+                    if (slot == MENU_RESET_SLOT) {
                         redistributeNetwork(network, p, true);
                         openMainMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_RANGE_SLOT) {
+                    if (slot == MENU_RANGE_SLOT) {
                         p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, 1.2F);
                         openSubRangeMenu(p, network);
                         return;
                     }
-                    if (result.slot == MENU_CLOSE_SLOT)
+                    if (slot == MENU_CLOSE_SLOT)
                         ChestUI.closeMenu(p);
-                }).show(player);
+                });
     }
 
     private void openSubRangeMenu(Player player, SharedNetwork network) {
-        String status = "§7現在値: §f" + network.subRange() + " / " + MAX_SUB_DISTANCE_LIMIT;
-        ChestUI.builder()
-                .title("sub接続範囲設定: " + network.id())
-                .size(27)
-                .addButtonAt(10, "§c-10", Material.RED_STAINED_GLASS_PANE, status)
-                .addButtonAt(11, "§c-5", Material.ORANGE_STAINED_GLASS_PANE, status)
-                .addButtonAt(12, "§c-1", Material.PINK_STAINED_GLASS_PANE, status)
-                .addButtonAt(13, "§6現在値", Material.SPYGLASS, status)
-                .addButtonAt(14, "§a+1", Material.LIME_STAINED_GLASS_PANE, status)
-                .addButtonAt(15, "§a+5", Material.GREEN_STAINED_GLASS_PANE, status)
-                .addButtonAt(16, "§a+10", Material.EMERALD_BLOCK, status)
-                .addButtonAt(18, "§b10に設定", Material.WHEAT_SEEDS, status)
-                .addButtonAt(19, "§b15に設定", Material.CARROT, status)
-                .addButtonAt(20, "§b20に設定", Material.POTATO, status)
-                .addButtonAt(21, "§b30に設定", Material.BEETROOT_SEEDS, status)
-                .addButtonAt(22, "§b50に設定", Material.NETHER_WART, status)
-                .addButtonAt(23, "§b最大値に設定", Material.COMPASS, status)
-                .addButtonAt(26, "§e戻る", Material.ARROW, "")
-                .then((result, p) -> {
-                    if (!result.success || result.slot == null)
-                        return;
+        SharedStorageSettingsUi.openSubRangeMenu(
+                player,
+                network.id(),
+                network.subRange(),
+                MAX_SUB_DISTANCE_LIMIT,
+                (p, slot) -> {
                     p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.7F, 1.2F);
                     int value = network.subRange();
-                    switch (result.slot) {
+                    switch (slot) {
                         case 10 -> value -= 10;
                         case 11 -> value -= 5;
                         case 12 -> value -= 1;
@@ -619,8 +570,7 @@ public class SharedStorageModule implements Listener {
                     network.setSubRange(value);
                     saveNetworks();
                     openSubRangeMenu(p, network);
-                })
-                .show(player);
+                });
     }
 
     private void openChestPageCategoryMenu(Player player, SharedNetwork network, int page) {
@@ -629,60 +579,34 @@ public class SharedStorageModule implements Listener {
             player.sendMessage("§esubコンテナが見つかりません");
             return;
         }
-        int pageSize = 45;
-        int maxPage = Math.max(0, (categories.size() - 1) / pageSize);
-        int currentPage = Math.max(0, Math.min(maxPage, page));
-        int start = currentPage * pageSize;
-        ChestUI.Builder builder = ChestUI.builder()
-                .title("ChestPage: " + network.id() + " §7(" + (currentPage + 1) + "/" + (maxPage + 1) + ")")
-                .size(54);
-        for (int slot = 0; slot < pageSize; slot++) {
-            int index = start + slot;
-            if (index >= categories.size())
-                break;
-            SubCategoryEntry category = categories.get(index);
-            int subCount = category.subs().size();
-            String lore = "§7カテゴリ内sub: §f" + subCount
-                    + "\n§7カテゴリ合計: §f" + formatAmount(category.totalAmount()) + "個"
-                    + "\n§7クリック: " + (subCount == 1 ? "直接開く" : "カテゴリを開く");
-            builder.addCustomItemAt(slot, category.displayName(), category.icon(), lore);
+        List<SharedStorageChestPageUi.CategoryPageEntry> entries = new ArrayList<>(categories.size());
+        for (SubCategoryEntry category : categories) {
+            entries.add(new SharedStorageChestPageUi.CategoryPageEntry(
+                    category.key(),
+                    category.menuLabel(),
+                    category.icon(),
+                    category.subs().size(),
+                    formatAmount(category.totalAmount())));
         }
-        if (currentPage > 0)
-            builder.addButtonAt(45, "§e前のページ", Material.ARROW, "§7カテゴリ一覧を戻る");
-        builder.addButtonAt(49, "§c戻る", Material.BARRIER, "§7共有ストレージ設定へ戻る");
-        if (currentPage < maxPage)
-            builder.addButtonAt(53, "§e次のページ", Material.ARROW, "§7カテゴリ一覧を進む");
-        builder.then((result, p) -> {
-            if (!result.success || result.slot == null)
-                return;
-            if (result.slot == 45) {
-                openChestPageCategoryMenu(p, network, currentPage - 1);
-                return;
-            }
-            if (result.slot == 49) {
-                openMainMenu(p, network);
-                return;
-            }
-            if (result.slot == 53) {
-                openChestPageCategoryMenu(p, network, currentPage + 1);
-                return;
-            }
-            if (result.slot < 0 || result.slot >= pageSize)
-                return;
-            int index = start + result.slot;
-            if (index < 0 || index >= categories.size())
-                return;
-            SubCategoryEntry category = categories.get(index);
-            if (category.subs().size() == 1) {
-                ResolvedInventory sub = category.subs().get(0);
-                if (!canUseSubInventory(p, sub))
-                    return;
-                p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 0.7F, 1.1F);
-                p.openInventory(sub.inventory());
-                return;
-            }
-            openChestPageSubMenu(p, network, category.key(), currentPage, 0);
-        }).show(player);
+        SharedStorageChestPageUi.openCategoryMenu(
+                player,
+                network.id(),
+                page,
+                entries,
+                (p, nextPage) -> openChestPageCategoryMenu(p, network, nextPage),
+                p -> openMainMenu(p, network),
+                (p, index) -> {
+                    SubCategoryEntry category = categories.get(index);
+                    if (category.subs().size() == 1) {
+                        ResolvedInventory sub = category.subs().get(0);
+                        if (!canUseSubInventory(p, sub))
+                            return;
+                        p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 0.7F, 1.1F);
+                        p.openInventory(sub.inventory());
+                        return;
+                    }
+                    openChestPageSubMenu(p, network, category.key(), index / 45, 0);
+                });
     }
 
     private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage) {
@@ -699,60 +623,32 @@ public class SharedStorageModule implements Listener {
             return;
         }
         List<ResolvedInventory> subs = category.subs();
-        int pageSize = 45;
-        int maxPage = Math.max(0, (subs.size() - 1) / pageSize);
-        int currentPage = Math.max(0, Math.min(maxPage, subPage));
-        int start = currentPage * pageSize;
-        ChestUI.Builder builder = ChestUI.builder()
-                .title("ChestPage: " + ChatColor.stripColor(category.displayName()) + " §7(" + (currentPage + 1) + "/" + (maxPage + 1) + ")")
-                .size(54);
-        for (int slot = 0; slot < pageSize; slot++) {
-            int index = start + slot;
-            if (index >= subs.size())
-                break;
+        List<SharedStorageChestPageUi.SubPageEntry> entries = new ArrayList<>(subs.size());
+        for (int index = 0; index < subs.size(); index++) {
             ResolvedInventory sub = subs.get(index);
             ItemStack icon = createSubEntryIcon(category, sub);
-            String label = category.noFilter()
-                    ? "§bsub #" + (index + 1)
-                    : category.displayName() + " §7#" + (index + 1);
             int subAmount = countCategoryAmountInInventory(category.key(), sub.inventory());
-            String lore = "§7位置: " + formatLocation(sub.anchor())
-                    + "\n§7このチェスト内: §f" + formatAmount(subAmount) + "個"
-                    + "\n§7カテゴリ合計: §f" + formatAmount(category.totalAmount()) + "個"
-                    + "\n§7クリックで開く";
-            builder.addCustomItemAt(slot, label, icon, lore);
+            entries.add(new SharedStorageChestPageUi.SubPageEntry(
+                    resolveSubEntryLabel(category, index + 1),
+                    icon,
+                    formatLocation(sub.anchor()),
+                    formatAmount(subAmount),
+                    formatAmount(category.totalAmount())));
         }
-        if (currentPage > 0)
-            builder.addButtonAt(45, "§e前のページ", Material.ARROW, "§7sub一覧を戻る");
-        builder.addButtonAt(49, "§c戻る", Material.BARRIER, "§7カテゴリ一覧へ戻る");
-        if (currentPage < maxPage)
-            builder.addButtonAt(53, "§e次のページ", Material.ARROW, "§7sub一覧を進む");
-        builder.then((result, p) -> {
-            if (!result.success || result.slot == null)
-                return;
-            if (result.slot == 45) {
-                openChestPageSubMenu(p, network, categoryKey, categoryPage, currentPage - 1);
-                return;
-            }
-            if (result.slot == 49) {
-                openChestPageCategoryMenu(p, network, categoryPage);
-                return;
-            }
-            if (result.slot == 53) {
-                openChestPageSubMenu(p, network, categoryKey, categoryPage, currentPage + 1);
-                return;
-            }
-            if (result.slot < 0 || result.slot >= pageSize)
-                return;
-            int index = start + result.slot;
-            if (index < 0 || index >= subs.size())
-                return;
-            ResolvedInventory sub = subs.get(index);
-            if (!canUseSubInventory(p, sub))
-                return;
-            p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 0.7F, 1.1F);
-            p.openInventory(sub.inventory());
-        }).show(player);
+        SharedStorageChestPageUi.openSubMenu(
+                player,
+                ChatColor.stripColor(category.displayName()),
+                subPage,
+                entries,
+                (p, nextPage) -> openChestPageSubMenu(p, network, categoryKey, categoryPage, nextPage),
+                p -> openChestPageCategoryMenu(p, network, categoryPage),
+                (p, index) -> {
+                    ResolvedInventory sub = subs.get(index);
+                    if (!canUseSubInventory(p, sub))
+                        return;
+                    p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 0.7F, 1.1F);
+                    p.openInventory(sub.inventory());
+                });
     }
 
     private List<SubCategoryEntry> resolveSubCategoryEntries(SharedNetwork network) {
@@ -819,11 +715,7 @@ public class SharedStorageModule implements Listener {
     }
 
     private String resolveCategoryKey(ItemStack filter) {
-        if (filter == null || filter.getType() == Material.AIR)
-            return "nofilter";
-        if (isClearFrameFilter(filter))
-            return "clear:" + filter.getType().name();
-        return "filter:" + filter.getType().name();
+        return frameFilterRules.resolveCategoryKey(filter);
     }
 
     private ItemStack createSubEntryIcon(SubCategoryEntry category, ResolvedInventory sub) {
@@ -838,30 +730,19 @@ public class SharedStorageModule implements Listener {
     private int countCategoryAmountInInventory(String categoryKey, Inventory inventory) {
         if (inventory == null)
             return 0;
-        Material material = resolveCategoryMaterial(categoryKey);
         int total = 0;
         for (ItemStack item : inventory.getContents()) {
             if (item == null || item.getType() == Material.AIR)
                 continue;
-            if (material != null && item.getType() != material)
+            if (!matchesCategoryKey(item, categoryKey))
                 continue;
             total += item.getAmount();
         }
         return total;
     }
 
-    private Material resolveCategoryMaterial(String categoryKey) {
-        if (categoryKey == null || categoryKey.equals("nofilter"))
-            return null;
-        int separator = categoryKey.indexOf(':');
-        if (separator < 0 || separator >= categoryKey.length() - 1)
-            return null;
-        String materialName = categoryKey.substring(separator + 1);
-        try {
-            return Material.valueOf(materialName);
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
+    private boolean matchesCategoryKey(ItemStack item, String categoryKey) {
+        return frameFilterRules.matchesCategoryKey(item, categoryKey);
     }
 
     private String formatAmount(int amount) {
@@ -886,37 +767,15 @@ public class SharedStorageModule implements Listener {
     }
 
     private String resolveItemDisplayName(ItemStack item) {
-        if (item == null || item.getType() == Material.AIR)
-            return "UNKNOWN";
-        if (item.hasItemMeta()) {
-            ItemMeta meta = item.getItemMeta();
-            if (meta != null && meta.hasDisplayName()) {
-                String displayName = ChatColor.stripColor(meta.getDisplayName());
-                if (displayName != null && !displayName.isBlank())
-                    return displayName;
-            }
-        }
-        String i18nName = item.getI18NDisplayName();
-        if (i18nName != null && !i18nName.isBlank())
-            return i18nName;
-        return formatMaterialEnumName(item.getType());
+        return ItemNameUtil.serverReadableName(item);
     }
 
-    private String formatMaterialEnumName(Material material) {
-        if (material == null)
-            return "UNKNOWN";
-        String[] parts = material.name().toLowerCase(Locale.ROOT).split("_");
-        StringBuilder builder = new StringBuilder();
-        for (String part : parts) {
-            if (part.isEmpty())
-                continue;
-            if (!builder.isEmpty())
-                builder.append(' ');
-            builder.append(Character.toUpperCase(part.charAt(0)));
-            if (part.length() > 1)
-                builder.append(part.substring(1));
-        }
-        return builder.isEmpty() ? material.name() : builder.toString();
+    private String resolveSubEntryLabel(SubCategoryEntry category, int subNumber) {
+        return SharedStorageCategoryDisplayHelper.resolveSubEntryLabel(
+                category.noFilter(),
+                category.useDefaultItemLabel(),
+                category.displayName(),
+                subNumber);
     }
 
     private int countResolvedSubs(SharedNetwork network) {
@@ -1138,10 +997,9 @@ public class SharedStorageModule implements Listener {
 
         int disposedAmount = 0;
         if (network.enableSubFrameFilter()) {
-            Map<ResolvedInventory, List<ItemStack>> frameFilters = new LinkedHashMap<>();
             List<ItemStack> allFrameFilters = new ArrayList<>();
             List<ItemStack> allClearFilters = new ArrayList<>();
-            List<ResolvedInventory> filteredSubs = new ArrayList<>();
+            List<FilteredSubTarget> filteredSubs = new ArrayList<>();
             List<ResolvedInventory> regularSubs = new ArrayList<>();
             for (ResolvedInventory sub : subs) {
                 List<ItemStack> filters = resolveSubFrameFilters(sub);
@@ -1155,9 +1013,8 @@ public class SharedStorageModule implements Listener {
                         }
                     }
                     if (!positiveFilters.isEmpty()) {
-                        frameFilters.put(sub, positiveFilters);
                         allFrameFilters.addAll(positiveFilters);
-                        filteredSubs.add(sub);
+                        filteredSubs.add(new FilteredSubTarget(sub, positiveFilters, resolveFilterPriority(positiveFilters)));
                     }
                 } else {
                     regularSubs.add(sub);
@@ -1176,9 +1033,9 @@ public class SharedStorageModule implements Listener {
                 }
             }
 
-            for (ResolvedInventory sub : filteredSubs) {
-                List<ItemStack> filters = frameFilters.get(sub);
-                fillMatchingInventory(sub.inventory(), filteredItems, filters, network.subFrameFilterMode(), transferredSubs, sub.anchor());
+            filteredSubs.sort((left, right) -> Integer.compare(right.priority(), left.priority()));
+            for (FilteredSubTarget sub : filteredSubs) {
+                fillMatchingInventory(sub.inventory().inventory(), filteredItems, sub.filters(), network.subFrameFilterMode(), transferredSubs, sub.inventory().anchor());
             }
             for (ResolvedInventory sub : regularSubs) {
                 fillAnyInventory(sub.inventory(), generalItems, transferredSubs, sub.anchor());
@@ -1477,47 +1334,15 @@ public class SharedStorageModule implements Listener {
     }
 
     private boolean matchesAnyFilter(ItemStack item, java.util.Collection<ItemStack> filters, SubFrameFilterMode mode) {
-        if (filters == null || filters.isEmpty())
-            return false;
-        for (ItemStack filter : filters) {
-            if (matchesFilter(item, filter, mode))
-                return true;
-        }
-        return false;
-    }
-
-    private boolean matchesFilter(ItemStack item, ItemStack filter, SubFrameFilterMode mode) {
-        if (item == null || filter == null || item.getType() == Material.AIR || filter.getType() == Material.AIR)
-            return false;
-        if (isClearFrameFilter(filter))
-            return matchesClearFilter(item, filter, mode);
-        return switch (mode) {
-            case MATERIAL -> item.getType() == filter.getType();
-            case ENCHANT_STATE -> item.getType() == filter.getType()
-                    && hasEnchantState(item) == hasEnchantState(filter);
-            case EXACT -> canMerge(item, filter);
-        };
-    }
-
-    private boolean matchesClearFilter(ItemStack item, ItemStack filter, SubFrameFilterMode mode) {
-        if (item.getType() != filter.getType())
-            return false;
-        if (mode == SubFrameFilterMode.ENCHANT_STATE)
-            return hasEnchantState(item) == hasEnchantState(filter);
-        return true;
+        return frameFilterRules.matchesAnyFilter(item, filters, mode, this::canMerge, this::hasEnchantState);
     }
 
     private boolean isClearFrameFilter(ItemStack filter) {
-        if (filter == null || filter.getType() == Material.AIR || !filter.hasItemMeta())
-            return false;
-        ItemMeta meta = filter.getItemMeta();
-        if (meta == null || !meta.hasDisplayName())
-            return false;
-        String raw = meta.getDisplayName();
-        if (raw == null)
-            return false;
-        String normalized = ChatColor.stripColor(raw).trim().toLowerCase(Locale.ROOT);
-        return CLEAR_FILTER_NAME.equals(normalized);
+        return frameFilterRules.isClearFrameFilter(filter);
+    }
+
+    private int resolveFilterPriority(List<ItemStack> filters) {
+        return frameFilterRules.resolveFilterPriority(filters);
     }
 
     private boolean hasEnchantState(ItemStack item) {
@@ -1642,46 +1467,6 @@ public class SharedStorageModule implements Listener {
                 result.add(tracked);
         }
         return result;
-    }
-
-    private static final class TrackedItemStack {
-        private final ItemStack stack;
-        private int mainContribution;
-
-        private TrackedItemStack(ItemStack stack, int mainContribution) {
-            this.stack = stack;
-            this.mainContribution = mainContribution;
-        }
-
-        private ItemStack stack() {
-            return stack;
-        }
-
-        private int mainContribution() {
-            return mainContribution;
-        }
-
-        private void addMainContribution(int amount) {
-            this.mainContribution += amount;
-        }
-    }
-
-    private static final class MainInventorySnapshot {
-        private final String networkId;
-        private final List<ItemStack> contents;
-
-        private MainInventorySnapshot(String networkId, List<ItemStack> contents) {
-            this.networkId = networkId;
-            this.contents = contents;
-        }
-
-        private String networkId() {
-            return networkId;
-        }
-
-        private List<ItemStack> contents() {
-            return contents;
-        }
     }
 
     private List<ItemStack> snapshotInventory(Inventory inventory) {
@@ -2109,85 +1894,13 @@ public class SharedStorageModule implements Listener {
                 && first.getBlockZ() == second.getBlockZ();
     }
 
-    private enum PlacementResult {
-        SUCCESS,
-        MAIN_ALREADY_EXISTS,
-        MAIN_NOT_FOUND,
-        TOO_FAR;
-
-        private String message(String id) {
-            return switch (this) {
-                case MAIN_ALREADY_EXISTS -> "§c共有ストレージ " + id + " には既に別の主チェストがあります";
-                case MAIN_NOT_FOUND -> "§c共有ストレージ " + id + " の主チェストが見つかりません";
-                case TOO_FAR -> "§csubチェストは主チェストから接続範囲以内に設置してください";
-                case SUCCESS -> "";
-            };
-        }
-    }
-
-    private enum PlacementConflict {
-        NONE,
-        OTHER_NETWORK;
-
-        private String message(String id) {
-            return switch (this) {
-                case OTHER_NETWORK -> "§cこの接続先には別の共有ストレージが存在します";
-                case NONE -> "";
-            };
-        }
-    }
-
-    private enum SubFrameFilterMode {
-        EXACT("完全一致"),
-        MATERIAL("素材一致"),
-        ENCHANT_STATE("素材+エンチャ有無");
-
-        private final String label;
-
-        SubFrameFilterMode(String label) {
-            this.label = label;
-        }
-
-        private String label() {
-            return label;
-        }
-
-        private SubFrameFilterMode next() {
-            SubFrameFilterMode[] values = values();
-            return values[(ordinal() + 1) % values.length];
-        }
-
-        private static SubFrameFilterMode fromStored(String raw) {
-            if (raw == null || raw.isEmpty())
-                return EXACT;
-            try {
-                return SubFrameFilterMode.valueOf(raw.toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException ignored) {
-                return EXACT;
-            }
-        }
-    }
-
-    private record StorageNameTag(String id) {
-    }
-
-    private record StorageItemData(String id, String role) {
-    }
-
-    private record Placement(String id, String role, Location anchor) {
-        private boolean isMain() {
-            return ROLE_MAIN.equals(role);
-        }
-    }
-
-    private record ResolvedInventory(Location anchor, Inventory inventory, List<Location> footprint) {
-    }
-
     private final class MutableSubCategory {
         private final String key;
         private final ItemStack icon;
         private final String displayName;
+        private final String menuLabel;
         private final boolean noFilter;
+        private final boolean useDefaultItemLabel;
         private final List<ResolvedInventory> subs = new ArrayList<>();
 
         private MutableSubCategory(String key, ItemStack filter) {
@@ -2195,186 +1908,35 @@ public class SharedStorageModule implements Listener {
             if (filter == null || filter.getType() == Material.AIR) {
                 this.icon = new ItemStack(Material.CHEST);
                 this.displayName = "§f未分類";
+                this.menuLabel = "§f未分類";
                 this.noFilter = true;
+                this.useDefaultItemLabel = false;
                 return;
             }
             ItemStack icon = filter.clone();
             icon.setAmount(1);
+            if (SharedStorageCategoryDisplayHelper.isDefaultItemLabelCategory(key)) {
+                icon = SharedStorageCategoryDisplayHelper.stripCustomDisplayName(icon);
+            }
             this.icon = icon;
             this.noFilter = false;
+            this.useDefaultItemLabel = SharedStorageCategoryDisplayHelper.isDefaultItemLabelCategory(key);
             String name = resolveItemDisplayName(filter);
             if (key.startsWith("clear:")) {
                 this.displayName = "§c処分: " + name;
+                this.menuLabel = this.displayName;
             } else {
                 this.displayName = "§a" + name;
+                this.menuLabel = this.useDefaultItemLabel ? null : this.displayName;
             }
         }
 
         private SubCategoryEntry toEntry(int totalAmount) {
-            return new SubCategoryEntry(key, icon, displayName, noFilter, new ArrayList<>(subs), totalAmount);
+            return new SubCategoryEntry(key, icon, displayName, menuLabel, noFilter, useDefaultItemLabel, new ArrayList<>(subs), totalAmount);
         }
     }
 
-    private record SubCategoryEntry(String key, ItemStack icon, String displayName, boolean noFilter, List<ResolvedInventory> subs, int totalAmount) {
+    private record SubCategoryEntry(String key, ItemStack icon, String displayName, String menuLabel, boolean noFilter, boolean useDefaultItemLabel, List<ResolvedInventory> subs, int totalAmount) {
     }
 
-    private static class SharedNetwork {
-        private final String id;
-        private Location main;
-        private final List<Location> subs = new ArrayList<>();
-        private boolean allowSubInsert = DEFAULT_ALLOW_SUB_INSERT;
-        private boolean allowSubExtract = DEFAULT_ALLOW_SUB_EXTRACT;
-        private boolean allowSubHopperInsert = DEFAULT_ALLOW_SUB_HOPPER_INSERT;
-        private boolean allowSubHopperExtract = DEFAULT_ALLOW_SUB_HOPPER_EXTRACT;
-        private boolean allowMainInsert = DEFAULT_ALLOW_MAIN_INSERT;
-        private boolean allowMainExtract = DEFAULT_ALLOW_MAIN_EXTRACT;
-        private boolean enableTransferParticles = DEFAULT_ENABLE_TRANSFER_PARTICLES;
-        private int subRange = DEFAULT_SUB_DISTANCE;
-        private boolean enableSubFrameFilter = DEFAULT_ENABLE_SUB_FRAME_FILTER;
-        private SubFrameFilterMode subFrameFilterMode = SubFrameFilterMode.EXACT;
-        private boolean enableChestPage = DEFAULT_ENABLE_CHEST_PAGE;
-
-        private SharedNetwork(String id) {
-            this.id = id;
-        }
-
-        private String id() {
-            return id;
-        }
-
-        private Location main() {
-            return main;
-        }
-
-        private void setMain(Location main) {
-            this.main = main;
-        }
-
-        private List<Location> subs() {
-            return subs;
-        }
-
-        private void addSub(Location location) {
-            if (!hasSub(location))
-                subs.add(location);
-        }
-
-        private void removeSub(Location location) {
-            subs.removeIf(existing -> Objects.equals(existing.getWorld(), location.getWorld())
-                    && existing.getBlockX() == location.getBlockX()
-                    && existing.getBlockY() == location.getBlockY()
-                    && existing.getBlockZ() == location.getBlockZ());
-        }
-
-        private void replaceSubs(List<Location> newSubs) {
-            subs.clear();
-            subs.addAll(newSubs);
-        }
-
-        private boolean hasSub(Location location) {
-            for (Location existing : subs) {
-                if (Objects.equals(existing.getWorld(), location.getWorld())
-                        && existing.getBlockX() == location.getBlockX()
-                        && existing.getBlockY() == location.getBlockY()
-                        && existing.getBlockZ() == location.getBlockZ())
-                    return true;
-            }
-            return false;
-        }
-
-        private boolean allowSubInsert() {
-            return allowSubInsert;
-        }
-
-        private void setAllowSubInsert(boolean allowSubInsert) {
-            this.allowSubInsert = allowSubInsert;
-        }
-
-        private boolean allowSubExtract() {
-            return allowSubExtract;
-        }
-
-        private void setAllowSubExtract(boolean allowSubExtract) {
-            this.allowSubExtract = allowSubExtract;
-        }
-
-        private boolean allowSubHopperInsert() {
-            return allowSubHopperInsert;
-        }
-
-        private void setAllowSubHopperInsert(boolean allowSubHopperInsert) {
-            this.allowSubHopperInsert = allowSubHopperInsert;
-        }
-
-        private boolean allowSubHopperExtract() {
-            return allowSubHopperExtract;
-        }
-
-        private void setAllowSubHopperExtract(boolean allowSubHopperExtract) {
-            this.allowSubHopperExtract = allowSubHopperExtract;
-        }
-
-        private boolean allowMainInsert() {
-            return allowMainInsert;
-        }
-
-        private void setAllowMainInsert(boolean allowMainInsert) {
-            this.allowMainInsert = allowMainInsert;
-        }
-
-        private boolean allowMainExtract() {
-            return allowMainExtract;
-        }
-
-        private void setAllowMainExtract(boolean allowMainExtract) {
-            this.allowMainExtract = allowMainExtract;
-        }
-
-        private boolean enableTransferParticles() {
-            return enableTransferParticles;
-        }
-
-        private void setEnableTransferParticles(boolean enableTransferParticles) {
-            this.enableTransferParticles = enableTransferParticles;
-        }
-
-        private int subRange() {
-            return subRange;
-        }
-
-        private void setSubRange(int subRange) {
-            this.subRange = clampSubRange(subRange);
-        }
-
-        private boolean enableSubFrameFilter() {
-            return enableSubFrameFilter;
-        }
-
-        private void setEnableSubFrameFilter(boolean enableSubFrameFilter) {
-            this.enableSubFrameFilter = enableSubFrameFilter;
-        }
-
-        private SubFrameFilterMode subFrameFilterMode() {
-            return subFrameFilterMode;
-        }
-
-        private void setSubFrameFilterMode(SubFrameFilterMode subFrameFilterMode) {
-            this.subFrameFilterMode = subFrameFilterMode == null ? SubFrameFilterMode.EXACT : subFrameFilterMode;
-        }
-
-        private boolean enableChestPage() {
-            return enableChestPage;
-        }
-
-        private void setEnableChestPage(boolean enableChestPage) {
-            this.enableChestPage = enableChestPage;
-        }
-    }
-
-    private record SubAccess(boolean allowInsert, boolean allowExtract) {
-    }
-
-    private static int clampSubRange(int range) {
-        return Math.max(1, Math.min(MAX_SUB_DISTANCE_LIMIT, range));
-    }
 }

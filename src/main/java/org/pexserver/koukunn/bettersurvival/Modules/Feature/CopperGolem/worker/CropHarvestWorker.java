@@ -33,6 +33,7 @@ public class CropHarvestWorker {
     private static final double CENTER_STAY_DISTANCE = 2.0D;
     private static final int HELD_ITEM_CYCLES_AFTER_ACTION = 2;
     private static final int MIN_BONE_MEAL_AGE = 1;
+    private static final int MIN_SUGAR_CANE_STACK_HEIGHT = 3;
     private static final int HARVEST_NEIGHBOR_RADIUS = 2;
     private static final double MOVE_SPEED_BASE = 1.0D;
     private static final double MOVE_SPEED_PER_POINT = 0.05D;
@@ -137,7 +138,7 @@ public class CropHarvestWorker {
                 int harvestedSugarCane = harvestSugarCaneColumn(
                         block,
                         maxHarvestBlocks - harvestedBlocks,
-                        profile.autoReplant() && allowReplant,
+                        true,
                         golem,
                         collected,
                         collectedCounts);
@@ -349,13 +350,13 @@ public class CropHarvestWorker {
             for (int dz = -range; dz <= range; dz++) {
                 for (int dy = -2; dy <= 2; dy++) {
                     Block block = base.getRelative(dx, dy, dz);
-                    if (!filters.contains(block.getType())) {
-                        continue;
-                    }
                     if (block.getType() == Material.SUGAR_CANE) {
-                        if (isSugarCaneBase(block)) {
+                        if (filters.contains(Material.SUGAR_CANE) && isHarvestableSugarCaneBase(block)) {
                             result.add(block);
                         }
+                        continue;
+                    }
+                    if (!filters.contains(block.getType())) {
                         continue;
                     }
                     if (!(block.getBlockData() instanceof Ageable ageable)) {
@@ -658,6 +659,23 @@ public class CropHarvestWorker {
         }
         Block supportBlock = block.getRelative(0, -1, 0);
         return isSugarCaneSupportBlock(supportBlock.getType()) && hasAdjacentWater(supportBlock);
+    }
+
+    private boolean isHarvestableSugarCaneBase(Block block) {
+        if (!isSugarCaneBase(block)) {
+            return false;
+        }
+        return sugarCaneColumnHeight(block) >= MIN_SUGAR_CANE_STACK_HEIGHT;
+    }
+
+    private int sugarCaneColumnHeight(Block baseBlock) {
+        int height = 0;
+        Block current = baseBlock;
+        while (current.getType() == Material.SUGAR_CANE) {
+            height++;
+            current = current.getRelative(0, 1, 0);
+        }
+        return height;
     }
 
     private boolean isSugarCaneSupportBlock(Material material) {

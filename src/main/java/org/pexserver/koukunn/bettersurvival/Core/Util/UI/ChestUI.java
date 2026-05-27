@@ -128,7 +128,9 @@ public class ChestUI implements InventoryHolder {
 
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
-                meta.displayName(ComponentUtils.legacy(button.label));
+                if (hasCustomLabel(button.label)) {
+                    meta.displayName(ComponentUtils.legacy(button.label));
+                }
                 if (button.lore != null && !button.lore.isEmpty()) {
                     meta.lore(toLoreComponents(button.lore));
                 }
@@ -390,7 +392,9 @@ public class ChestUI implements InventoryHolder {
 
                     ItemMeta meta = item.getItemMeta();
                     if (meta != null) {
-                        meta.displayName(ComponentUtils.legacy(button.label));
+                        if (hasCustomLabel(button.label)) {
+                            meta.displayName(ComponentUtils.legacy(button.label));
+                        }
                         if (button.lore != null && !button.lore.isEmpty()) {
                             meta.lore(toLoreComponents(button.lore));
                         }
@@ -825,6 +829,10 @@ public class ChestUI implements InventoryHolder {
             components.add(ComponentUtils.legacy(line));
         }
         return components;
+    }
+
+    private static boolean hasCustomLabel(String label) {
+        return label != null && !label.isBlank();
     }
 
     /**
