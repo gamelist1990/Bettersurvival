@@ -645,17 +645,19 @@ public class CropHarvestWorker {
     }
 
     private boolean canReplantSugarCane(Block block) {
-        return block != null
-                && block.getType() == Material.AIR
-                && isSugarCaneSupportBlock(block.getRelative(0, -1, 0).getType())
-                && hasAdjacentWater(block);
+        if (block == null || block.getType() != Material.AIR) {
+            return false;
+        }
+        Block supportBlock = block.getRelative(0, -1, 0);
+        return isSugarCaneSupportBlock(supportBlock.getType()) && hasAdjacentWater(supportBlock);
     }
 
     private boolean isSugarCaneBase(Block block) {
-        return block != null
-                && block.getType() == Material.SUGAR_CANE
-                && isSugarCaneSupportBlock(block.getRelative(0, -1, 0).getType())
-                && hasAdjacentWater(block);
+        if (block == null || block.getType() != Material.SUGAR_CANE) {
+            return false;
+        }
+        Block supportBlock = block.getRelative(0, -1, 0);
+        return isSugarCaneSupportBlock(supportBlock.getType()) && hasAdjacentWater(supportBlock);
     }
 
     private boolean isSugarCaneSupportBlock(Material material) {
