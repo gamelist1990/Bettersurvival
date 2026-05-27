@@ -643,6 +643,7 @@ public class SharedStorageModule implements Listener {
             SubCategoryEntry category = categories.get(index);
             int subCount = category.subs().size();
             String lore = "§7カテゴリ内sub: §f" + subCount
+                    + "\n§7カテゴリ合計: §f" + formatAmount(category.totalAmount()) + "個"
                     + "\n§7クリック: " + (subCount == 1 ? "直接開く" : "カテゴリを開く");
             builder.addCustomItemAt(slot, category.displayName(), category.icon(), lore);
         }
@@ -714,7 +715,11 @@ public class SharedStorageModule implements Listener {
             String label = category.noFilter()
                     ? "§bsub #" + (index + 1)
                     : category.displayName() + " §7#" + (index + 1);
-            String lore = "§7位置: " + formatLocation(sub.anchor()) + "\n§7クリックで開く";
+            int subAmount = countCategoryAmountInInventory(category.key(), sub.inventory());
+            String lore = "§7位置: " + formatLocation(sub.anchor())
+                    + "\n§7このチェスト内: §f" + formatAmount(subAmount) + "個"
+                    + "\n§7カテゴリ合計: §f" + formatAmount(category.totalAmount()) + "個"
+                    + "\n§7クリックで開く";
             builder.addCustomItemAt(slot, label, icon, lore);
         }
         if (currentPage > 0)
@@ -782,7 +787,11 @@ public class SharedStorageModule implements Listener {
         }
         List<SubCategoryEntry> entries = new ArrayList<>();
         for (MutableSubCategory category : categories.values()) {
-            entries.add(category.toEntry());
+            int totalAmount = 0;
+            for (ResolvedInventory sub : category.subs) {
+                totalAmount += countCategoryAmountInInventory(category.key, sub.inventory());
+            }
+            entries.add(category.toEntry(totalAmount));
         }
         entries.sort((left, right) -> {
             if (left.noFilter() != right.noFilter())
@@ -826,6 +835,39 @@ public class SharedStorageModule implements Listener {
         return icon;
     }
 
+    private int countCategoryAmountInInventory(String categoryKey, Inventory inventory) {
+        if (inventory == null)
+            return 0;
+        Material material = resolveCategoryMaterial(categoryKey);
+        int total = 0;
+        for (ItemStack item : inventory.getContents()) {
+            if (item == null || item.getType() == Material.AIR)
+                continue;
+            if (material != null && item.getType() != material)
+                continue;
+            total += item.getAmount();
+        }
+        return total;
+    }
+
+    private Material resolveCategoryMaterial(String categoryKey) {
+        if (categoryKey == null || categoryKey.equals("nofilter"))
+            return null;
+        int separator = categoryKey.indexOf(':');
+        if (separator < 0 || separator >= categoryKey.length() - 1)
+            return null;
+        String materialName = categoryKey.substring(separator + 1);
+        try {
+            return Material.valueOf(materialName);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private String formatAmount(int amount) {
+        return String.format(Locale.US, "%,d", amount);
+    }
+
     private boolean canUseSubInventory(Player player, ResolvedInventory sub) {
         if (sub == null || sub.inventory() == null)
             return false;
@@ -854,7 +896,27 @@ public class SharedStorageModule implements Listener {
                     return displayName;
             }
         }
-        return item.getType().name();
+        String i18nName = item.getI18NDisplayName();
+        if (i18nName != null && !i18nName.isBlank())
+            return i18nName;
+        return formatMaterialEnumName(item.getType());
+    }
+
+    private String formatMaterialEnumName(Material material) {
+        if (material == null)
+            return "UNKNOWN";
+        String[] parts = material.name().toLowerCase(Locale.ROOT).split("_");
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty())
+                continue;
+            if (!builder.isEmpty())
+                builder.append(' ');
+            builder.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1)
+                builder.append(part.substring(1));
+        }
+        return builder.isEmpty() ? material.name() : builder.toString();
     }
 
     private int countResolvedSubs(SharedNetwork network) {
@@ -2148,12 +2210,12 @@ public class SharedStorageModule implements Listener {
             }
         }
 
-        private SubCategoryEntry toEntry() {
-            return new SubCategoryEntry(key, icon, displayName, noFilter, new ArrayList<>(subs));
+        private SubCategoryEntry toEntry(int totalAmount) {
+            return new SubCategoryEntry(key, icon, displayName, noFilter, new ArrayList<>(subs), totalAmount);
         }
     }
 
-    private record SubCategoryEntry(String key, ItemStack icon, String displayName, boolean noFilter, List<ResolvedInventory> subs) {
+    private record SubCategoryEntry(String key, ItemStack icon, String displayName, boolean noFilter, List<ResolvedInventory> subs, int totalAmount) {
     }
 
     private static class SharedNetwork {

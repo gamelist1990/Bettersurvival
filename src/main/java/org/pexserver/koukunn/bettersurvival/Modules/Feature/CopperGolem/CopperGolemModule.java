@@ -53,6 +53,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.Cro
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.ModeExecutionContext;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.ModeWorker;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.ContainerTarget;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.CropRouteMode;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.GolemMode;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.GolemProfile;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.PendingTargetSelection;
@@ -431,7 +432,7 @@ public class CopperGolemModule implements Listener {
         CopperGolem golem = spawnLocation.getWorld().spawn(spawnLocation, CopperGolem.class);
         golem.setPersistent(true);
 
-        GolemProfile profile = new GolemProfile(golemId, "", golem.getUniqueId(), 0, 0, 0, 0, 0, 0, 0, 0, 1, false, false, GolemMode.IDLE);
+        GolemProfile profile = new GolemProfile(golemId, "", golem.getUniqueId(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, false, false, CropRouteMode.NEAR_ORIGIN, GolemMode.IDLE);
         profiles.put(golemId, profile);
         applyProfileToEntity(golem, profile);
 
@@ -596,6 +597,33 @@ public class CopperGolemModule implements Listener {
                             saveProfiles();
                             p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7F, 1.4F);
                         }
+                        openMainMenu(p, profile);
+                    }
+
+                    @Override
+                    public void onUpgradeMoveSpeed(Player p) {
+                        if (!profiles.containsKey(profile.id())) {
+                            return;
+                        }
+                        playUiClick(p);
+                        if (!spendPoints(profile, 1)) {
+                            p.sendMessage("§cポイントが不足しています");
+                        } else {
+                            profile.setMoveSpeedPoints(profile.moveSpeedPoints() + 1);
+                            saveProfiles();
+                            p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7F, 1.4F);
+                        }
+                        openMainMenu(p, profile);
+                    }
+
+                    @Override
+                    public void onToggleCropRouteMode(Player p) {
+                        if (!profiles.containsKey(profile.id())) {
+                            return;
+                        }
+                        playUiClick(p);
+                        profile.setCropRouteMode(profile.cropRouteMode().next());
+                        saveProfiles();
                         openMainMenu(p, profile);
                     }
 
@@ -1493,9 +1521,11 @@ public class CopperGolemModule implements Listener {
                     Math.max(0, entry.getReplantPoints()),
                     Math.max(0, entry.getBoneMealPoints()),
                     Math.max(0, entry.getCombatHealthPoints()),
+                    Math.max(0, entry.getMoveSpeedPoints()),
                     Math.max(1, entry.getRange()),
                     entry.isAutoReplant(),
                     entry.isAutoBoneMeal(),
+                    CropRouteMode.from(entry.getCropRouteMode()),
                     mode);
             profile.setRange(Math.max(1, Math.min(profile.range(), maxRangeByPoints(profile))));
             profile.setCombatMainHand(entry.getCombatMainHand());
@@ -1595,9 +1625,11 @@ public class CopperGolemModule implements Listener {
                     profile.replantPoints(),
                     profile.boneMealPoints(),
                     profile.combatHealthPoints(),
+                    profile.moveSpeedPoints(),
                     profile.range(),
                     profile.autoReplant(),
                     profile.autoBoneMeal(),
+                    profile.cropRouteMode().name(),
                     profile.mode().name(),
                     containers,
                     boneMealContainers,

@@ -12,6 +12,7 @@ import org.bukkit.entity.CopperGolem;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.ContainerTarget;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.CropRouteMode;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.GolemProfile;
 
 import java.util.ArrayList;
@@ -32,6 +33,10 @@ public class CropHarvestWorker {
     private static final double CENTER_STAY_DISTANCE = 2.0D;
     private static final int HELD_ITEM_CYCLES_AFTER_ACTION = 2;
     private static final int MIN_BONE_MEAL_AGE = 1;
+    private static final int HARVEST_NEIGHBOR_RADIUS = 2;
+    private static final double MOVE_SPEED_BASE = 1.0D;
+    private static final double MOVE_SPEED_PER_POINT = 0.05D;
+    private static final double MOVE_SPEED_MAX = 1.8D;
     private final Map<UUID, Integer> heldItemCycles = new HashMap<>();
 
     @SuppressWarnings("null")
@@ -54,10 +59,14 @@ public class CropHarvestWorker {
             clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
             return 0;
         }
-        int maxHarvestBlocks = blocksPerCycleFromCapacity(capacity);
+        int maxHarvestBlocks = blocksPerCycleFromCapacity(capacity, profile.harvestPoints());
+        int harvestSweepRadius = harvestSweepRadiusFromPoints(profile.harvestPoints());
+        double moveSpeed = cropMoveSpeed(profile.moveSpeedPoints());
+        CropRouteMode routeMode = profile.cropRouteMode();
 
         int range = Math.max(1, Math.min(profile.range(), maxRange));
         profile.setRange(range);
+        Set<Material> cropFilters = Set.copyOf(profile.cropFilters());
 
         Location searchCenter = resolveSearchCenter(profile.targets(), golem.getLocation());
         if (searchCenter.getWorld() == null || golem.getLocation().getWorld() == null) {
@@ -74,22 +83,22 @@ public class CropHarvestWorker {
         double allowedDistance = range + RANGE_RETURN_MARGIN;
         if (golem.getLocation().distanceSquared(searchCenter) > (allowedDistance * allowedDistance)) {
             clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
-            golem.getPathfinder().moveTo(searchCenter, 1.1D);
+            golem.getPathfinder().moveTo(searchCenter, moveSpeed);
             golem.setGolemState(CopperGolem.State.GETTING_NO_ITEM);
             return 0;
         }
 
-        List<Block> targets = findRipeCrops(searchCenter, range, Set.copyOf(profile.cropFilters()));
-        if (targets.isEmpty()) {
+        List<Block> ripeCrops = findRipeCrops(searchCenter, range, cropFilters);
+        if (ripeCrops.isEmpty()) {
             if (allowBoneMeal && profile.autoBoneMeal() && !profile.boneMealSources().isEmpty()) {
-                int fertilized = runBoneMealWorker(profile, golem, searchCenter, range, maxHarvestBlocks);
+                int fertilized = runBoneMealWorker(profile, golem, searchCenter, range, maxHarvestBlocks, moveSpeed);
                 if (fertilized > 0) {
                     return 0;
                 }
             }
             clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
             if (golem.getLocation().distanceSquared(searchCenter) > (CENTER_STAY_DISTANCE * CENTER_STAY_DISTANCE)) {
-                golem.getPathfinder().moveTo(searchCenter, 1.0D);
+                golem.getPathfinder().moveTo(searchCenter, Math.max(0.8D, moveSpeed - 0.1D));
                 golem.setGolemState(CopperGolem.State.GETTING_NO_ITEM);
             } else {
                 golem.getPathfinder().stopPathfinding();
@@ -98,24 +107,34 @@ public class CropHarvestWorker {
             return 0;
         }
 
+        Block primaryTarget = selectPrimaryHarvestTarget(ripeCrops, searchCenter, range, routeMode);
+        if (primaryTarget == null) {
+            clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
+            golem.getPathfinder().stopPathfinding();
+            return 0;
+        }
+        Location harvestPoint = primaryTarget.getLocation().add(0.5D, 0.0D, 0.5D);
+        if (golem.getLocation().distanceSquared(harvestPoint) > (HARVEST_REACH_DISTANCE * HARVEST_REACH_DISTANCE)) {
+            clearHeldItem(golem, CopperGolem.State.GETTING_ITEM);
+            golem.getPathfinder().moveTo(harvestPoint, moveSpeed);
+            golem.setGolemState(CopperGolem.State.GETTING_ITEM);
+            return 0;
+        }
+        List<Block> harvestTargets = collectHarvestBatchTargets(primaryTarget, ripeCrops, maxHarvestBlocks, harvestSweepRadius, searchCenter, routeMode);
+
         List<ItemStack> collected = new ArrayList<>();
         Map<Material, Integer> collectedCounts = new LinkedHashMap<>();
         int harvested = 0;
         int harvestedBlocks = 0;
-        for (Block block : targets) {
+        for (Block block : harvestTargets) {
             if (harvestedBlocks >= maxHarvestBlocks) {
                 break;
             }
-
-            Location harvestPoint = block.getLocation().add(0.5D, 0.0D, 0.5D);
-            if (golem.getLocation().distanceSquared(harvestPoint) > (HARVEST_REACH_DISTANCE * HARVEST_REACH_DISTANCE)) {
-                if (harvestedBlocks == 0) {
-                    clearHeldItem(golem, CopperGolem.State.GETTING_ITEM);
-                    golem.getPathfinder().moveTo(harvestPoint, 1.05D);
-                    golem.setGolemState(CopperGolem.State.GETTING_ITEM);
-                    return 0;
-                }
-                break;
+            if (!cropFilters.contains(block.getType())) {
+                continue;
+            }
+            if (!(block.getBlockData() instanceof Ageable ageable) || ageable.getAge() < ageable.getMaximumAge()) {
+                continue;
             }
 
             Material cropType = block.getType();
@@ -156,7 +175,8 @@ public class CropHarvestWorker {
             CopperGolem golem,
             Location searchCenter,
             int range,
-            int maxActions) {
+            int maxActions,
+            double moveSpeed) {
         List<Block> growable = findGrowableCrops(searchCenter, range, Set.copyOf(profile.cropFilters()));
         if (growable.isEmpty()) {
             return 0;
@@ -166,7 +186,7 @@ public class CropHarvestWorker {
         Location firstPoint = first.getLocation().add(0.5D, 0.0D, 0.5D);
         if (golem.getLocation().distanceSquared(firstPoint) > (HARVEST_REACH_DISTANCE * HARVEST_REACH_DISTANCE)) {
             clearHeldItem(golem, CopperGolem.State.GETTING_ITEM);
-            golem.getPathfinder().moveTo(firstPoint, 1.05D);
+            golem.getPathfinder().moveTo(firstPoint, moveSpeed);
             golem.setGolemState(CopperGolem.State.GETTING_ITEM);
             return 0;
         }
@@ -202,9 +222,18 @@ public class CropHarvestWorker {
         return used;
     }
 
-    private int blocksPerCycleFromCapacity(int capacity) {
-        int blocks = 1 + (capacity / 25);
-        return Math.max(1, Math.min(12, blocks));
+    private int blocksPerCycleFromCapacity(int capacity, int harvestPoints) {
+        int blocks = 1 + (capacity / 25) + Math.max(0, harvestPoints / 2);
+        return Math.max(1, Math.min(24, blocks));
+    }
+
+    private int harvestSweepRadiusFromPoints(int harvestPoints) {
+        return Math.max(0, Math.min(6, harvestPoints / 3));
+    }
+
+    private double cropMoveSpeed(int moveSpeedPoints) {
+        int points = Math.max(0, moveSpeedPoints);
+        return Math.min(MOVE_SPEED_MAX, MOVE_SPEED_BASE + (points * MOVE_SPEED_PER_POINT));
     }
 
     private Location resolveSearchCenter(List<ContainerTarget> targets, Location fallback) {
@@ -311,8 +340,112 @@ public class CropHarvestWorker {
                 }
             }
         }
-        result.sort(Comparator.comparingDouble(block -> block.getLocation().distanceSquared(center)));
         return result;
+    }
+
+    private Block selectPrimaryHarvestTarget(List<Block> ripeCrops, Location center, int range, CropRouteMode routeMode) {
+        if (ripeCrops.isEmpty()) {
+            return null;
+        }
+        Map<Long, Block> byKey = new HashMap<>();
+        for (Block block : ripeCrops) {
+            byKey.put(toBlockKey(block.getX(), block.getY(), block.getZ()), block);
+        }
+
+        Block best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (Block candidate : ripeCrops) {
+            int denseCount = countRipeNeighbors(candidate, byKey, HARVEST_NEIGHBOR_RADIUS);
+            double distanceFromCenter = Math.sqrt(candidate.getLocation().distanceSquared(center));
+            double routeScore;
+            if (routeMode == CropRouteMode.BALANCED) {
+                double preferred = Math.max(1.0D, range * 0.6D);
+                routeScore = -Math.abs(distanceFromCenter - preferred) * 0.45D;
+            } else {
+                routeScore = -distanceFromCenter * 0.85D;
+            }
+            double score = (denseCount * 4.0D) + routeScore;
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private List<Block> collectHarvestBatchTargets(
+            Block primaryTarget,
+            List<Block> ripeCrops,
+            int maxHarvestBlocks,
+            int sweepRadius,
+            Location center,
+            CropRouteMode routeMode) {
+        if (primaryTarget == null || ripeCrops.isEmpty() || maxHarvestBlocks <= 0) {
+            return List.of();
+        }
+        List<Block> sorted = new ArrayList<>(ripeCrops);
+        double radiusSquared = sweepRadius <= 0 ? 0.0D : (double) sweepRadius * sweepRadius;
+        sorted.sort((left, right) -> {
+            boolean leftInSweep = left.getLocation().distanceSquared(primaryTarget.getLocation()) <= radiusSquared;
+            boolean rightInSweep = right.getLocation().distanceSquared(primaryTarget.getLocation()) <= radiusSquared;
+            if (leftInSweep != rightInSweep) {
+                return leftInSweep ? -1 : 1;
+            }
+
+            double leftPrimary = left.getLocation().distanceSquared(primaryTarget.getLocation());
+            double rightPrimary = right.getLocation().distanceSquared(primaryTarget.getLocation());
+            int primaryCompare = Double.compare(leftPrimary, rightPrimary);
+            if (primaryCompare != 0) {
+                return primaryCompare;
+            }
+            if (routeMode == CropRouteMode.BALANCED) {
+                return Double.compare(
+                        Math.abs(Math.sqrt(left.getLocation().distanceSquared(center))),
+                        Math.abs(Math.sqrt(right.getLocation().distanceSquared(center))));
+            }
+            return Double.compare(left.getLocation().distanceSquared(center), right.getLocation().distanceSquared(center));
+        });
+
+        List<Block> result = new ArrayList<>();
+        long primaryKey = toBlockKey(primaryTarget.getX(), primaryTarget.getY(), primaryTarget.getZ());
+        for (Block block : sorted) {
+            if (result.size() >= maxHarvestBlocks) {
+                break;
+            }
+            if (sweepRadius > 0) {
+                double distancePrimary = block.getLocation().distanceSquared(primaryTarget.getLocation());
+                if (distancePrimary > radiusSquared && toBlockKey(block.getX(), block.getY(), block.getZ()) != primaryKey) {
+                    continue;
+                }
+            }
+            result.add(block);
+        }
+        if (result.isEmpty()) {
+            result.add(primaryTarget);
+        }
+        return result;
+    }
+
+    private int countRipeNeighbors(Block centerBlock, Map<Long, Block> ripeByKey, int radius) {
+        int count = 0;
+        int baseX = centerBlock.getX();
+        int baseY = centerBlock.getY();
+        int baseZ = centerBlock.getZ();
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    long key = toBlockKey(baseX + dx, baseY + dy, baseZ + dz);
+                    if (ripeByKey.containsKey(key)) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    private long toBlockKey(int x, int y, int z) {
+        return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);
     }
 
     private List<Block> findGrowableCrops(Location center, int range, Set<Material> filters) {

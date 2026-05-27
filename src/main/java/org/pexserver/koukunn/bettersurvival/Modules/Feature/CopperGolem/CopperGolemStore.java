@@ -80,9 +80,11 @@ public class CopperGolemStore {
         private final int replantPoints;
         private final int boneMealPoints;
         private final int combatHealthPoints;
+        private final int moveSpeedPoints;
         private final int range;
         private final boolean autoReplant;
         private final boolean autoBoneMeal;
+        private final String cropRouteMode;
         private final String mode;
         private final List<List<String>> targetContainers;
         private final List<List<String>> boneMealSourceContainers;
@@ -106,9 +108,11 @@ public class CopperGolemStore {
                 int replantPoints,
                 int boneMealPoints,
                 int combatHealthPoints,
+                int moveSpeedPoints,
                 int range,
                 boolean autoReplant,
                 boolean autoBoneMeal,
+                String cropRouteMode,
                 String mode,
                 List<List<String>> targetContainers,
                 List<List<String>> boneMealSourceContainers,
@@ -130,9 +134,11 @@ public class CopperGolemStore {
             this.replantPoints = replantPoints;
             this.boneMealPoints = boneMealPoints;
             this.combatHealthPoints = combatHealthPoints;
+            this.moveSpeedPoints = moveSpeedPoints;
             this.range = range;
             this.autoReplant = autoReplant;
             this.autoBoneMeal = autoBoneMeal;
+            this.cropRouteMode = cropRouteMode;
             this.mode = mode;
             this.targetContainers = targetContainers;
             this.boneMealSourceContainers = boneMealSourceContainers;
@@ -189,6 +195,10 @@ public class CopperGolemStore {
             return combatHealthPoints;
         }
 
+        public int getMoveSpeedPoints() {
+            return moveSpeedPoints;
+        }
+
         public int getRange() {
             return range;
         }
@@ -199,6 +209,10 @@ public class CopperGolemStore {
 
         public boolean isAutoBoneMeal() {
             return autoBoneMeal;
+        }
+
+        public String getCropRouteMode() {
+            return cropRouteMode;
         }
 
         public String getMode() {
@@ -253,9 +267,11 @@ public class CopperGolemStore {
             data.put("replantPoints", replantPoints);
             data.put("boneMealPoints", boneMealPoints);
             data.put("combatHealthPoints", combatHealthPoints);
+            data.put("moveSpeedPoints", moveSpeedPoints);
             data.put("range", range);
             data.put("autoReplant", autoReplant);
             data.put("autoBoneMeal", autoBoneMeal);
+            data.put("cropRouteMode", cropRouteMode);
             data.put("mode", mode);
             data.put("targetContainers", targetContainers);
             data.put("boneMealSourceContainers", boneMealSourceContainers);
@@ -280,9 +296,11 @@ public class CopperGolemStore {
             int replantPoints = data.get("replantPoints") instanceof Number number ? number.intValue() : 0;
             int boneMealPoints = data.get("boneMealPoints") instanceof Number number ? number.intValue() : 0;
             int combatHealthPoints = data.get("combatHealthPoints") instanceof Number number ? number.intValue() : 0;
+            int moveSpeedPoints = data.get("moveSpeedPoints") instanceof Number number ? number.intValue() : 0;
             int range = data.get("range") instanceof Number number ? number.intValue() : 1;
             boolean autoReplant = data.get("autoReplant") instanceof Boolean bool && bool;
             boolean autoBoneMeal = data.get("autoBoneMeal") instanceof Boolean bool && bool;
+            String cropRouteMode = data.get("cropRouteMode") instanceof String rawRouteMode ? rawRouteMode : "NEAR_ORIGIN";
             String mode = data.get("mode") instanceof String rawMode ? rawMode : "IDLE";
 
             List<List<String>> targetContainers = new ArrayList<>();
@@ -341,9 +359,11 @@ public class CopperGolemStore {
                     replantPoints,
                     boneMealPoints,
                     combatHealthPoints,
+                    moveSpeedPoints,
                     range,
                     autoReplant,
                     autoBoneMeal,
+                    cropRouteMode,
                     mode,
                     targetContainers,
                     boneMealSourceContainers,

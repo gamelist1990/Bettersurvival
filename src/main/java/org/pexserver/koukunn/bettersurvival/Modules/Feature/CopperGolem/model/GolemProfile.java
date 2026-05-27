@@ -19,9 +19,11 @@ public class GolemProfile {
     private int replantPoints;
     private int boneMealPoints;
     private int combatHealthPoints;
+    private int moveSpeedPoints;
     private int range;
     private boolean autoReplant;
     private boolean autoBoneMeal;
+    private CropRouteMode cropRouteMode;
     private GolemMode mode;
     private final List<ContainerTarget> targets = new ArrayList<>();
     private final List<ContainerTarget> boneMealSources = new ArrayList<>();
@@ -45,9 +47,11 @@ public class GolemProfile {
             int replantPoints,
             int boneMealPoints,
             int combatHealthPoints,
+            int moveSpeedPoints,
             int range,
             boolean autoReplant,
             boolean autoBoneMeal,
+            CropRouteMode cropRouteMode,
             GolemMode mode) {
         this.id = id;
         this.ownerUuid = ownerUuid;
@@ -60,9 +64,11 @@ public class GolemProfile {
         this.replantPoints = replantPoints;
         this.boneMealPoints = boneMealPoints;
         this.combatHealthPoints = combatHealthPoints;
+        this.moveSpeedPoints = moveSpeedPoints;
         this.range = range;
         this.autoReplant = autoReplant;
         this.autoBoneMeal = autoBoneMeal;
+        this.cropRouteMode = cropRouteMode == null ? CropRouteMode.NEAR_ORIGIN : cropRouteMode;
         this.mode = mode;
     }
 
@@ -162,12 +168,28 @@ public class GolemProfile {
         this.combatHealthPoints = combatHealthPoints;
     }
 
+    public int moveSpeedPoints() {
+        return moveSpeedPoints;
+    }
+
+    public void setMoveSpeedPoints(int moveSpeedPoints) {
+        this.moveSpeedPoints = moveSpeedPoints;
+    }
+
     public boolean autoBoneMeal() {
         return autoBoneMeal;
     }
 
     public void setAutoBoneMeal(boolean autoBoneMeal) {
         this.autoBoneMeal = autoBoneMeal;
+    }
+
+    public CropRouteMode cropRouteMode() {
+        return cropRouteMode;
+    }
+
+    public void setCropRouteMode(CropRouteMode cropRouteMode) {
+        this.cropRouteMode = cropRouteMode == null ? CropRouteMode.NEAR_ORIGIN : cropRouteMode;
     }
 
     public GolemMode mode() {

@@ -15,6 +15,8 @@ public final class CopperGolemMainMenuUI {
         void onEditRange(Player player);
         void onUpgradeHarvest(Player player);
         void onUpgradeRange(Player player);
+        void onUpgradeMoveSpeed(Player player);
+        void onToggleCropRouteMode(Player player);
         void onConfigureCombatWeapon(Player player);
         void onUnlockReplant(Player player);
         void onUnlockBoneMeal(Player player);
@@ -99,7 +101,9 @@ public final class CopperGolemMainMenuUI {
                 + "\n§7Mode: §f" + profile.mode().getDisplayName()
                 + "\n§7行動範囲: §f" + profile.range() + " / " + maxRange
                 + "\n§7採取速度強化: §f" + profile.harvestPoints()
+                + "\n§7移動速度強化: §f" + profile.moveSpeedPoints()
                 + "\n§7範囲拡張: §f" + profile.rangePoints()
+                + "\n§7行動モード: §f" + profile.cropRouteMode().getDisplayName()
                 + "\n§7植え直し解放: " + (replantUnlocked ? "§a済" : "§c未")
                 + "\n§7骨粉機能解放: " + (boneMealUnlocked ? "§a済" : "§c未")
                 + "\n§7保管先: §f" + profile.targets().size() + "件";
@@ -123,8 +127,10 @@ public final class CopperGolemMainMenuUI {
                         "§7必要ポイント: " + replantUnlockCost + "\n§7状態: " + (replantUnlocked ? "解放済み" : "未解放"))
                 .addButtonAt(48, "§6機能解放:骨粉", Material.BONE_MEAL,
                         "§7必要ポイント: " + boneMealUnlockCost + "\n§7状態: " + (boneMealUnlocked ? "解放済み" : "未解放"))
-                .addButtonAt(49, "§7機能スロット", Material.GRAY_STAINED_GLASS_PANE, "§7今後の拡張用")
-                .addButtonAt(50, "§7機能スロット", Material.GRAY_STAINED_GLASS_PANE, "§7今後の拡張用")
+                .addButtonAt(49, "§6行動アルゴリズム", Material.RECOVERY_COMPASS,
+                        "§7現在: " + profile.cropRouteMode().getDisplayName() + "\n§7密集地優先 + 行動モード切替")
+                .addButtonAt(50, "§6移動速度強化 +1", Material.SUGAR,
+                        "§7必要ポイント: 1\n§7現在: " + profile.moveSpeedPoints() + "\n§7移動速度が上がります")
                 .addButtonAt(51, "§7機能スロット", Material.GRAY_STAINED_GLASS_PANE, "§7今後の拡張用")
                 .addButtonAt(53, "§c閉じる", Material.BARRIER, "")
                 .then((result, p) -> {
@@ -143,6 +149,8 @@ public final class CopperGolemMainMenuUI {
                         case 24 -> handler.onToggleBoneMeal(p);
                         case 47 -> handler.onUnlockReplant(p);
                         case 48 -> handler.onUnlockBoneMeal(p);
+                        case 49 -> handler.onToggleCropRouteMode(p);
+                        case 50 -> handler.onUpgradeMoveSpeed(p);
                         case 53 -> handler.onClose(p);
                         default -> {
                         }
