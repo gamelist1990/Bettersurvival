@@ -9,8 +9,7 @@ import java.util.UUID;
 
 public class GolemProfile {
     private final String id;
-    private String ownerUuid;
-    private final UUID entityUuid;
+    private UUID entityUuid;
     private int level;
     private int progress;
     private int availablePoints;
@@ -37,7 +36,6 @@ public class GolemProfile {
 
     public GolemProfile(
             String id,
-            String ownerUuid,
             UUID entityUuid,
             int level,
             int progress,
@@ -54,7 +52,6 @@ public class GolemProfile {
             CropRouteMode cropRouteMode,
             GolemMode mode) {
         this.id = id;
-        this.ownerUuid = ownerUuid;
         this.entityUuid = entityUuid;
         this.level = level;
         this.progress = progress;
@@ -76,16 +73,12 @@ public class GolemProfile {
         return id;
     }
 
-    public String ownerUuid() {
-        return ownerUuid;
-    }
-
-    public void setOwnerUuid(String ownerUuid) {
-        this.ownerUuid = ownerUuid;
-    }
-
     public UUID entityUuid() {
         return entityUuid;
+    }
+
+    public void setEntityUuid(UUID entityUuid) {
+        this.entityUuid = entityUuid;
     }
 
     public int level() {

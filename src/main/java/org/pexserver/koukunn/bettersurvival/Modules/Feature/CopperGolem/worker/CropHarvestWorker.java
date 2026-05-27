@@ -170,6 +170,13 @@ public class CropHarvestWorker {
         return harvested;
     }
 
+    public void clearTracking(UUID golemId) {
+        if (golemId == null) {
+            return;
+        }
+        heldItemCycles.remove(golemId);
+    }
+
     private int runBoneMealWorker(
             GolemProfile profile,
             CopperGolem golem,

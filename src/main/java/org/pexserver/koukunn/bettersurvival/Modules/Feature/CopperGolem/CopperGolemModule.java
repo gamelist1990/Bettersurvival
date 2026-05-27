@@ -30,6 +30,8 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -187,12 +189,32 @@ public class CopperGolemModule implements Listener {
         if (profile == null) {
             return;
         }
-        if (!canControl(event.getPlayer(), profile)) {
-            event.getPlayer().sendMessage("§cこのカッパーゴーレムは操作できません");
+        if (!event.getPlayer().isSneaking()) {
             return;
         }
 
+        event.setCancelled(true);
+        openMainMenu(event.getPlayer(), profile);
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
+            return;
+        }
+        Block clicked = event.getClickedBlock();
+        if (!isCopperGolemStatue(clicked)) {
+            return;
+        }
         if (!event.getPlayer().isSneaking()) {
+            return;
+        }
+
+        GolemProfile profile = resolveStatueProfile(clicked);
+        if (profile == null) {
             return;
         }
 
@@ -282,6 +304,44 @@ public class CopperGolemModule implements Listener {
         spawnFloatingCombatText(golem.getLocation().clone().add(0.0D, 1.5D, 0.0D), "-" + formatCombatValue(event.getFinalDamage()), NamedTextColor.RED);
     }
 
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onCopperGolemChangeBlock(EntityChangeBlockEvent event) {
+        if (!(event.getEntity() instanceof CopperGolem golem)) {
+            return;
+        }
+        if (!(event.getBlockData() instanceof org.bukkit.block.data.type.CopperGolemStatue)) {
+            return;
+        }
+        String golemId = golem.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
+        if (golemId == null || golemId.isBlank() || !profiles.containsKey(golemId)) {
+            return;
+        }
+
+        clearTransientTracking(golem.getUniqueId());
+        Bukkit.getScheduler().runTask(plugin, () -> storeStatueTracking(event.getBlock(), golemId));
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onCopperGolemSpawn(CreatureSpawnEvent event) {
+        if (!(event.getEntity() instanceof CopperGolem golem)) {
+            return;
+        }
+        GolemProfile profile = resolveStatueProfile(golem.getLocation().getBlock());
+        if (profile == null) {
+            return;
+        }
+
+        UUID previousEntityUuid = profile.entityUuid();
+        if (previousEntityUuid != null && previousEntityUuid.equals(golem.getUniqueId())) {
+            return;
+        }
+
+        clearTransientTracking(previousEntityUuid);
+        profile.setEntityUuid(golem.getUniqueId());
+        applyProfileToEntity(golem, profile);
+        saveProfiles();
+    }
+
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
     public void onSelectContainer(PlayerInteractEvent event) {
         if (event.getAction() != Action.LEFT_CLICK_BLOCK) {
@@ -347,15 +407,29 @@ public class CopperGolemModule implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onCopperGolemStatueBreak(BlockBreakEvent event) {
+        if (!isCopperGolemStatue(event.getBlock())) {
+            return;
+        }
+        if (removeStatueProfile(event.getBlock())) {
+            saveProfiles();
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onContainerExplode(EntityExplodeEvent event) {
-        if (removeRegisteredTargetsByLocations(event.blockList().stream().map(Block::getLocation).toList())) {
+        boolean changed = removeRegisteredTargetsByLocations(event.blockList().stream().map(Block::getLocation).toList());
+        changed |= removeStatueProfilesByLocations(event.blockList().stream().map(Block::getLocation).toList());
+        if (changed) {
             saveProfiles();
         }
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onContainerExplode(BlockExplodeEvent event) {
-        if (removeRegisteredTargetsByLocations(event.blockList().stream().map(Block::getLocation).toList())) {
+        boolean changed = removeRegisteredTargetsByLocations(event.blockList().stream().map(Block::getLocation).toList());
+        changed |= removeStatueProfilesByLocations(event.blockList().stream().map(Block::getLocation).toList());
+        if (changed) {
             saveProfiles();
         }
     }
@@ -367,8 +441,9 @@ public class CopperGolemModule implements Listener {
             if (id == null || id.isBlank()) {
                 return;
             }
-            profiles.remove(id);
-            saveProfiles();
+            if (removeProfile(id)) {
+                saveProfiles();
+            }
             return;
         }
 
@@ -432,7 +507,7 @@ public class CopperGolemModule implements Listener {
         CopperGolem golem = spawnLocation.getWorld().spawn(spawnLocation, CopperGolem.class);
         golem.setPersistent(true);
 
-        GolemProfile profile = new GolemProfile(golemId, "", golem.getUniqueId(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, false, false, CropRouteMode.NEAR_ORIGIN, GolemMode.IDLE);
+        GolemProfile profile = new GolemProfile(golemId, golem.getUniqueId(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, false, false, CropRouteMode.NEAR_ORIGIN, GolemMode.IDLE);
         profiles.put(golemId, profile);
         applyProfileToEntity(golem, profile);
 
@@ -853,12 +928,6 @@ public class CopperGolemModule implements Listener {
     }
 
     private void openCombatWeaponMenu(Player player, GolemProfile profile) {
-        CopperGolem golem = resolveGolem(profile);
-        if (golem == null) {
-            player.sendMessage("§cゴーレムが見つかりません");
-            openMainMenu(player, profile);
-            return;
-        }
         combatEquipmentMenuEditors.put(player.getUniqueId(), profile.id());
         CopperGolemCombatWeaponMenuUI.open(
                 player,
@@ -1511,7 +1580,6 @@ public class CopperGolemModule implements Listener {
             GolemMode mode = GolemMode.from(entry.getMode());
             GolemProfile profile = new GolemProfile(
                     entry.getId(),
-                    entry.getOwnerUuid(),
                     entityUuid,
                     Math.max(0, Math.min(MAX_LEVEL, entry.getLevel())),
                     Math.max(0, entry.getProgress()),
@@ -1615,7 +1683,6 @@ public class CopperGolemModule implements Listener {
 
             serialized.put(profile.id(), new CopperGolemStore.StoredGolem(
                     profile.id(),
-                    profile.ownerUuid(),
                     profile.entityUuid().toString(),
                     profile.level(),
                     profile.progress(),
@@ -1726,22 +1793,6 @@ public class CopperGolemModule implements Listener {
     }
 
 
-    private boolean canControl(Player player, GolemProfile profile) {
-        if (player == null || profile == null) {
-            return false;
-        }
-        if (player.isOp()) {
-            return true;
-        }
-        String owner = profile.ownerUuid();
-        if (owner == null || owner.isBlank()) {
-            profile.setOwnerUuid(player.getUniqueId().toString());
-            saveProfiles();
-            return true;
-        }
-        return Objects.equals(owner, player.getUniqueId().toString());
-    }
-
     private int maxRangeByPoints(GolemProfile profile) {
         return Math.min(100, 1 + (profile.rangePoints() * 2));
     }
@@ -1804,6 +1855,79 @@ public class CopperGolemModule implements Listener {
 
     private boolean isSharedStorageContainer(Location location) {
         return sharedStorageModule != null && sharedStorageModule.isSharedStorageContainer(location);
+    }
+
+    private boolean isCopperGolemStatue(Block block) {
+        return block != null && block.getBlockData() instanceof org.bukkit.block.data.type.CopperGolemStatue;
+    }
+
+    private GolemProfile resolveStatueProfile(Block block) {
+        if (!isCopperGolemStatue(block)) {
+            return null;
+        }
+        BlockState state = block.getState();
+        if (!(state instanceof org.bukkit.block.CopperGolemStatue statue)) {
+            return null;
+        }
+        String golemId = statue.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
+        if (golemId == null || golemId.isBlank()) {
+            return null;
+        }
+        return profiles.get(golemId);
+    }
+
+    private void storeStatueTracking(Block block, String golemId) {
+        if (block == null || golemId == null || golemId.isBlank()) {
+            return;
+        }
+        BlockState state = block.getState();
+        if (!(state instanceof org.bukkit.block.CopperGolemStatue statue)) {
+            return;
+        }
+        statue.getPersistentDataContainer().set(golemIdKey, PersistentDataType.STRING, golemId);
+        statue.update(true, false);
+    }
+
+    private boolean removeStatueProfile(Block block) {
+        GolemProfile profile = resolveStatueProfile(block);
+        if (profile == null) {
+            return false;
+        }
+        return removeProfile(profile.id());
+    }
+
+    private boolean removeStatueProfilesByLocations(List<Location> locations) {
+        boolean changed = false;
+        for (Location location : locations) {
+            if (location == null) {
+                continue;
+            }
+            changed |= removeStatueProfile(location.getBlock());
+        }
+        return changed;
+    }
+
+    private boolean removeProfile(String golemId) {
+        if (golemId == null || golemId.isBlank()) {
+            return false;
+        }
+        GolemProfile removed = profiles.remove(golemId);
+        if (removed == null) {
+            return false;
+        }
+        clearTransientTracking(removed.entityUuid());
+        pendingSelections.entrySet().removeIf(entry -> Objects.equals(entry.getValue().golemId(), golemId));
+        combatEquipmentMenuEditors.entrySet().removeIf(entry -> Objects.equals(entry.getValue(), golemId));
+        return true;
+    }
+
+    private void clearTransientTracking(UUID entityUuid) {
+        if (entityUuid == null) {
+            return;
+        }
+        lastCombatActivityTickByGolem.remove(entityUuid);
+        combatWorker.clearTracking(entityUuid);
+        cropHarvestWorker.clearTracking(entityUuid);
     }
 
     private boolean isTargetContainerMaterial(Material material) {

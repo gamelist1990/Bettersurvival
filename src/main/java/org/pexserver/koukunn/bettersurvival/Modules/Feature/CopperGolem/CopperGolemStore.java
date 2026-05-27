@@ -70,7 +70,6 @@ public class CopperGolemStore {
 
     public static class StoredGolem {
         private final String id;
-        private final String ownerUuid;
         private final String entityUuid;
         private final int level;
         private final int progress;
@@ -98,7 +97,6 @@ public class CopperGolemStore {
 
         public StoredGolem(
                 String id,
-                String ownerUuid,
                 String entityUuid,
                 int level,
                 int progress,
@@ -124,7 +122,6 @@ public class CopperGolemStore {
                 ItemStack combatLeggings,
                 ItemStack combatBoots) {
             this.id = id;
-            this.ownerUuid = ownerUuid;
             this.entityUuid = entityUuid;
             this.level = level;
             this.progress = progress;
@@ -153,10 +150,6 @@ public class CopperGolemStore {
 
         public String getId() {
             return id;
-        }
-
-        public String getOwnerUuid() {
-            return ownerUuid;
         }
 
         public String getEntityUuid() {
@@ -257,7 +250,6 @@ public class CopperGolemStore {
 
         public Map<String, Object> serialize() {
             Map<String, Object> data = new LinkedHashMap<>();
-            data.put("ownerUuid", ownerUuid);
             data.put("entityUuid", entityUuid);
             data.put("level", level);
             data.put("progress", progress);
@@ -286,7 +278,6 @@ public class CopperGolemStore {
         }
 
         public static StoredGolem deserialize(String id, Map<String, Object> data) {
-            String ownerUuid = data.get("ownerUuid") instanceof String rawOwner ? rawOwner : "";
             String entityUuid = data.get("entityUuid") instanceof String rawEntity ? rawEntity : "";
             int level = data.get("level") instanceof Number number ? number.intValue() : 0;
             int progress = data.get("progress") instanceof Number number ? number.intValue() : 0;
@@ -349,7 +340,6 @@ public class CopperGolemStore {
 
             return new StoredGolem(
                     id,
-                    ownerUuid,
                     entityUuid,
                     level,
                     progress,

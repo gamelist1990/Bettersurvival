@@ -172,6 +172,13 @@ public class CombatWorker {
                 && stack.getType().getMaxDurability() > 0;
     }
 
+    public void clearTracking(UUID golemId) {
+        if (golemId == null) {
+            return;
+        }
+        nextAttackTickByGolem.remove(golemId);
+    }
+
     private LivingEntity findNearestEnemy(CopperGolem golem, Location center, double range) {
         List<LivingEntity> candidates = new ArrayList<>(center.getNearbyLivingEntities(
                 range,
