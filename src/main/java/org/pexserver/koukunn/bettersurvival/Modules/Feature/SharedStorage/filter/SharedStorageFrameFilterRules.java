@@ -131,6 +131,9 @@ public class SharedStorageFrameFilterRules {
             return false;
         if (isClearFrameFilter(filter))
             return matchesClearFilter(item, filter, mode, enchantStateChecker);
+        String namedCategory = resolveNamedFrameFilterCategory(filter);
+        if (namedCategory != null)
+            return matchesNamedFrameFilterCategory(item.getType(), namedCategory);
         boolean directMatch = switch (mode) {
             case MATERIAL -> item.getType() == filter.getType();
             case ENCHANT_STATE -> item.getType() == filter.getType()
@@ -139,9 +142,6 @@ public class SharedStorageFrameFilterRules {
         };
         if (directMatch)
             return true;
-        String namedCategory = resolveNamedFrameFilterCategory(filter);
-        if (namedCategory != null)
-            return matchesNamedFrameFilterCategory(item.getType(), namedCategory);
         if (isAllFrameFilter(filter))
             return matchesAllMaterialFamily(item.getType(), filter.getType());
         return false;
@@ -229,7 +229,7 @@ public class SharedStorageFrameFilterRules {
         if (material == null || category == null || category.isEmpty())
             return false;
         return switch (category) {
-            case "food" -> material.isEdible();
+            case "food" -> matchesFoodCategory(material);
             case "combat" -> matchesCombatCategory(material);
             case "tools_utilities" -> matchesToolsUtilitiesCategory(material);
             case "functional_blocks" -> matchesFunctionalBlockCategory(material);
@@ -249,6 +249,14 @@ public class SharedStorageFrameFilterRules {
             case "material" -> matchesMaterialCategory(material);
             default -> false;
         };
+    }
+
+    private boolean matchesFoodCategory(Material material) {
+        if (material == null)
+            return false;
+        if (!material.isEdible())
+            return false;
+        return material != Material.SPIDER_EYE;
     }
 
     @SafeVarargs
