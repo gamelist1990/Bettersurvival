@@ -30,6 +30,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.BetterMenu.BetterMen
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.EnchantmentSplit.EnchantmentSplitModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.SharedStorageModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.CopperGolemModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.GeyserWorkbench.GeyserWorkbenchModule;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.discord.DiscordCommand;
@@ -59,6 +60,7 @@ public final class Loader extends JavaPlugin {
     private PendingWhitelistModule pendingWhitelistModule;
     private EnchantmentSplitModule enchantmentSplitModule;
     private ItemCombineModule itemCombineModule;
+    private GeyserWorkbenchModule geyserWorkbenchModule;
     private ChestSortModule chestSortModule;
     private ChestLockModule chestLockModule;
     private SharedStorageModule sharedStorageModule;
@@ -135,6 +137,8 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(betterMenuModule, this);
         copperGolemModule = new CopperGolemModule(this, toggleModule, itemCombineModule);
         getServer().getPluginManager().registerEvents(copperGolemModule, this);
+        geyserWorkbenchModule = new GeyserWorkbenchModule(this, toggleModule);
+        getServer().getPluginManager().registerEvents(geyserWorkbenchModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
         InvseeOfflineData.initialize(this);
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -177,7 +181,11 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(
                 new ToggleFeature("bettermenu", "BetterMenu", "木の斧GUIツールの生成・起動を有効/無効にします", Material.WOODEN_AXE, false));
         toggleModule.registerFeature(
-                new ToggleFeature("coppergolem", "CopperGolem", "カッパーゴーレムの召喚と作物採取AIを有効/無効にします", Material.COPPER_BLOCK, false));
+            new ToggleFeature("coppergolem", "CopperGolem", "カッパーゴーレムの召喚と作物採取AIを有効/無効にします", Material.COPPER_BLOCK, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("geyseranvil", "Geyser金床", "Geyser/Bedrock対応の金床UIを有効/無効にします", Material.ANVIL, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("geysersmithing", "Geyser鍛冶台", "Geyser/Bedrock対応の鍛冶台UIを有効/無効にします", Material.SMITHING_TABLE, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -228,6 +236,12 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("coppergolem")) {
             toggleModule.setGlobal("coppergolem", true);
+        }
+        if (!toggleModule.hasGlobal("geyseranvil")) {
+            toggleModule.setGlobal("geyseranvil", true);
+        }
+        if (!toggleModule.hasGlobal("geysersmithing")) {
+            toggleModule.setGlobal("geysersmithing", true);
         }
 
         getLogger().info("Better Survival Plugin が有効になりました");

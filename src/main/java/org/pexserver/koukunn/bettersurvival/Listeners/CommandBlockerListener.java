@@ -1,5 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Listeners;
 
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
@@ -48,6 +49,9 @@ public class CommandBlockerListener implements Listener {
 
     @EventHandler
     public void onPlayerCommandSend(PlayerCommandSendEvent event) {
+        if (!Bukkit.isPrimaryThread()) {
+            return;
+        }
         Collection<String> commands = event.getCommands();
         if (commands == null || commands.isEmpty()) return;
         CommandSender sender = event.getPlayer();
