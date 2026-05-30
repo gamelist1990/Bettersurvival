@@ -164,6 +164,11 @@ public class GeyserWorkbenchModule implements Listener {
         if (type == null) return;
 
         if (TYPE_ANVIL.equals(type)) {
+            AnvilSession session = anvilSessions.get(player.getUniqueId());
+            if (session != null && session.suppressReturnOnClose) {
+                session.suppressReturnOnClose = false;
+                return;
+            }
             anvilSessions.remove(player.getUniqueId());
             returnInputToPlayer(player, top, ANVIL_SLOT_INPUT_LEFT, ANVIL_SLOT_INPUT_RIGHT);
             top.setItem(ANVIL_SLOT_RESULT, null);
@@ -178,6 +183,10 @@ public class GeyserWorkbenchModule implements Listener {
     }
 
     private void openAnvilUI(Player player, Location sourceLocation) {
+        openAnvilUI(player, sourceLocation, new AnvilSession(), null, null);
+    }
+
+    private void openAnvilUI(Player player, Location sourceLocation, AnvilSession session, ItemStack leftInput, ItemStack rightInput) {
         ChestUI.Builder builder = ChestUI.builder()
                 .title(UI_TITLE_ANVIL)
                 .size(27)
@@ -208,10 +217,20 @@ public class GeyserWorkbenchModule implements Listener {
             }
         });
 
-        AnvilSession session = new AnvilSession();
         session.sourceLocation = sourceLocation;
         anvilSessions.put(player.getUniqueId(), session);
         handler.show(player);
+        ChestUI menu = handler.getMenu();
+        if (menu != null && (leftInput != null || rightInput != null)) {
+            Inventory inventory = menu.getInventory();
+            if (leftInput != null) {
+                inventory.setItem(ANVIL_SLOT_INPUT_LEFT, leftInput.clone());
+            }
+            if (rightInput != null) {
+                inventory.setItem(ANVIL_SLOT_INPUT_RIGHT, rightInput.clone());
+            }
+            refreshAnvil(player, inventory);
+        }
         scheduleRefresh(player);
     }
 
@@ -273,24 +292,51 @@ public class GeyserWorkbenchModule implements Listener {
     private void openRenameInput(Player player) {
         AnvilSession session = anvilSessions.get(player.getUniqueId());
         if (session == null) return;
+        Inventory top = player.getOpenInventory().getTopInventory();
+        session.renameRestoreLeft = clean(top.getItem(ANVIL_SLOT_INPUT_LEFT));
+        session.renameRestoreRight = clean(top.getItem(ANVIL_SLOT_INPUT_RIGHT));
+        session.suppressReturnOnClose = true;
         String current = session.renameText == null ? "" : session.renameText;
-        FormsUtil.openSingleInputForm(
+        boolean opened = FormsUtil.openSingleInputForm(
                 player,
                 "金床: 名前変更",
                 "新しい名前（空でリセット）",
                 "最大50文字",
                 current,
                 input -> {
-                    if (input == null) return;
-                    String filtered = filterName(input);
-                    if (filtered.length() > ANVIL_MAX_NAME_LENGTH) {
-                        player.sendMessage("§c名前は最大50文字です");
-                        return;
-                    }
-                    session.renameText = filtered;
-                    scheduleRefresh(player);
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        session.suppressReturnOnClose = false;
+                        if (!player.isOnline()) {
+                            session.renameRestoreLeft = null;
+                            session.renameRestoreRight = null;
+                            return;
+                        }
+                        if (input != null) {
+                            String filtered = filterName(input);
+                            if (filtered.length() > ANVIL_MAX_NAME_LENGTH) {
+                                player.sendMessage("§c名前は最大50文字です");
+                                reopenAnvilAfterRename(player, session);
+                                return;
+                            }
+                            session.renameText = filtered;
+                        }
+                        reopenAnvilAfterRename(player, session);
+                    });
                 }
         );
+        if (!opened) {
+            session.suppressReturnOnClose = false;
+            session.renameRestoreLeft = null;
+            session.renameRestoreRight = null;
+        }
+    }
+
+    private void reopenAnvilAfterRename(Player player, AnvilSession session) {
+        ItemStack left = session.renameRestoreLeft;
+        ItemStack right = session.renameRestoreRight;
+        session.renameRestoreLeft = null;
+        session.renameRestoreRight = null;
+        openAnvilUI(player, session.sourceLocation, session, left, right);
     }
 
     private void scheduleRefresh(Player player) {
@@ -935,6 +981,9 @@ public class GeyserWorkbenchModule implements Listener {
         private int repairItemCountCost = 0;
         private int cost = 0;
         private boolean onlyRenaming = false;
+        private boolean suppressReturnOnClose = false;
+        private ItemStack renameRestoreLeft;
+        private ItemStack renameRestoreRight;
         private Location sourceLocation;
     }
 
