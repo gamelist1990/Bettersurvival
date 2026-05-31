@@ -305,9 +305,11 @@ public class ChestShopUI {
     private static Component buildCurrencyNameComponent(String currencyMaterialName, String customCurrencyName) {
         if (customCurrencyName != null && !customCurrencyName.trim().isEmpty())
             return Component.text(customCurrencyName);
-        Material currency = Material.matchMaterial(currencyMaterialName);
+        if (currencyMaterialName == null || currencyMaterialName.isBlank())
+            return Component.text("未設定");
+        Material currency = Material.matchMaterial(currencyMaterialName.trim());
         if (currency == null)
-            return Component.text(currencyMaterialName == null ? "未設定" : currencyMaterialName);
+            return Component.text(currencyMaterialName.trim());
         return ItemNameUtil.localizedComponent(currency);
     }
 

@@ -793,10 +793,12 @@ public class ChestShopModule implements Listener {
     private Component resolveCurrencyDisplayComponent(String currencyMaterialName, String customCurrencyName) {
         if (customCurrencyName != null && !customCurrencyName.trim().isEmpty())
             return Component.text(customCurrencyName);
-        Material currency = Material.matchMaterial(currencyMaterialName);
+        if (currencyMaterialName == null || currencyMaterialName.isBlank())
+            return Component.text("未設定");
+        Material currency = Material.matchMaterial(currencyMaterialName.trim());
         if (currency != null)
             return ItemNameUtil.localizedComponent(currency);
-        return Component.text(currencyMaterialName == null || currencyMaterialName.isBlank() ? "未設定" : currencyMaterialName);
+        return Component.text(currencyMaterialName.trim());
     }
 
     private void sendItemAmountMessage(Player player, String prefix, ItemStack item, int amount) {
