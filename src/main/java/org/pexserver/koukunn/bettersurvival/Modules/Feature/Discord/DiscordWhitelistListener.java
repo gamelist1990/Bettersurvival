@@ -157,7 +157,14 @@ public class DiscordWhitelistListener extends ListenerAdapter {
                 .setFooter(ServerInfoUtil.getServerName() + " Whitelist");
 
         event.getChannel().sendMessageEmbeds(embed.build()).queue(
-                msg -> {},
+                msg -> {
+                    if (plugin instanceof org.pexserver.koukunn.bettersurvival.Loader) {
+                        var botModule = ((org.pexserver.koukunn.bettersurvival.Loader) plugin).getDiscordBotModule();
+                        if (botModule != null) {
+                            botModule.triggerWhitelistReorderDelay(event.getChannel().getId());
+                        }
+                    }
+                },
                 err -> plugin.getLogger().warning("[DiscordBot] 申請記録 Embed 送信失敗: " + err.getMessage())
         );
     }

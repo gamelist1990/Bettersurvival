@@ -56,11 +56,26 @@ public class DiscordBotModule {
         }
     }
 
+    private org.bukkit.scheduler.BukkitTask reorderTask;
+
     private void stopBot() {
+        if (reorderTask != null) {
+            try {
+                reorderTask.cancel();
+            } catch (Exception e) {}
+            reorderTask = null;
+        }
         if (jda == null) return;
         try {
-            jda.shutdown();
-            plugin.getLogger().info("[DiscordBot] Bot を停止しました");
+            jda.shutdownNow();
+            if (!jda.awaitShutdown(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                plugin.getLogger().warning("[DiscordBot] Bot のシャットダウンがタイムアウトしました。");
+            } else {
+                plugin.getLogger().info("[DiscordBot] Bot を正常に停止しました");
+            }
+        } catch (InterruptedException e) {
+            plugin.getLogger().log(Level.WARNING, "[DiscordBot] Bot 停止待機中に割り込みが発生しました: " + e.getMessage());
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             plugin.getLogger().log(Level.WARNING, "[DiscordBot] Bot 停止中にエラー: " + e.getMessage());
         } finally {
@@ -124,6 +139,89 @@ public class DiscordBotModule {
                         msg -> plugin.getLogger().info("[DiscordBot] ホワイトリスト申請 Embed を送信しました"),
                         err -> plugin.getLogger().warning("[DiscordBot] Embed 送信失敗: " + err.getMessage())
                 );
+    }
+
+    /**
+     * ホワイトリスト申請による募集Embed自動再送（デバウンス）をトリガーする。
+     * 3分間新規リクエストがない場合に実行される。
+     */
+    public synchronized void triggerWhitelistReorderDelay(String channelId) {
+        if (reorderTask != null) {
+            try {
+                reorderTask.cancel();
+            } catch (Exception e) {}
+        }
+        reorderTask = org.bukkit.Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
+            executeWhitelistReorder(channelId);
+        }, 180 * 20L); // 3分間 = 180秒
+    }
+
+    private void executeWhitelistReorder(String channelId) {
+        if (jda == null) return;
+        if (channelId.isBlank()) return;
+        var channel = jda.getTextChannelById(channelId);
+        if (channel == null) return;
+
+        channel.getHistory().retrievePast(5).queue(messages -> {
+            if (messages.isEmpty()) return;
+
+            // 最新メッセージが募集メッセージ（ボタンIDが一致）かどうか確認
+            var latestMsg = messages.get(0);
+            boolean latestIsApplyMsg = false;
+            if (latestMsg.getAuthor().getId().equals(jda.getSelfUser().getId())) {
+                for (var union : latestMsg.getComponents()) {
+                    if (union instanceof net.dv8tion.jda.api.components.actionrow.ActionRow) {
+                        var row = (net.dv8tion.jda.api.components.actionrow.ActionRow) union;
+                        for (var component : row.getComponents()) {
+                            if (component instanceof net.dv8tion.jda.api.components.buttons.Button) {
+                                var btn = (net.dv8tion.jda.api.components.buttons.Button) component;
+                                if (DiscordWhitelistListener.BUTTON_ID.equals(btn.getCustomId())) {
+                                    latestIsApplyMsg = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // すでに最下部にある場合は何もしない
+            if (latestIsApplyMsg) return;
+
+            // 最新5件の中から古い募集メッセージを探して削除
+            boolean hasOldButton = false;
+            for (var msg : messages) {
+                if (msg.getAuthor().getId().equals(jda.getSelfUser().getId())) {
+                    boolean isButtonMsg = false;
+                    for (var union : msg.getComponents()) {
+                        if (union instanceof net.dv8tion.jda.api.components.actionrow.ActionRow) {
+                            var row = (net.dv8tion.jda.api.components.actionrow.ActionRow) union;
+                            for (var component : row.getComponents()) {
+                                if (component instanceof net.dv8tion.jda.api.components.buttons.Button) {
+                                    var btn = (net.dv8tion.jda.api.components.buttons.Button) component;
+                                    if (DiscordWhitelistListener.BUTTON_ID.equals(btn.getCustomId())) {
+                                        isButtonMsg = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (isButtonMsg) {
+                        hasOldButton = true;
+                        msg.delete().queue(
+                                success -> {},
+                                err -> plugin.getLogger().warning("[DiscordBot] 古い募集メッセージの削除に失敗しました: " + err.getMessage())
+                        );
+                    }
+                }
+            }
+
+            // 古い募集メッセージがあった（埋もれていた）場合は、最下部に新規送信
+            if (hasOldButton) {
+                sendWhitelistEmbed(channelId);
+            }
+        }, err -> plugin.getLogger().warning("[DiscordBot] 履歴メッセージの取得に失敗しました: " + err.getMessage()));
     }
 
     /**
