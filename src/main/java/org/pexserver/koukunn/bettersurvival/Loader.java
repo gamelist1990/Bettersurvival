@@ -24,6 +24,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockM
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest.DeathChestModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BetterMenu.BetterMenuModule;
@@ -56,6 +57,7 @@ public final class Loader extends JavaPlugin {
     private ToggleModule toggleModule;
     private TpaModule tpaModule;
     private DiscordWebhookModule discordWebhookModule;
+    private DiscordBotModule discordBotModule;
     private HomeModule homeModule;
     private PendingWhitelistModule pendingWhitelistModule;
     private EnchantmentSplitModule enchantmentSplitModule;
@@ -126,6 +128,7 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
         getServer().getPluginManager().registerEvents(discordWebhookModule, this);
+        discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule);
         homeModule = new HomeModule(this);
         // BedrockSkin モジュール登録 (Floodgate/Geyser ユーザーのスキン自動適用)
         BedrockSkinModule bedrockSkin = new BedrockSkinModule(this, toggleModule, configManager);
@@ -301,6 +304,10 @@ public final class Loader extends JavaPlugin {
         return discordWebhookModule;
     }
 
+    public DiscordBotModule getDiscordBotModule() {
+        return discordBotModule;
+    }
+
     public HomeModule getHomeModule() {
         return homeModule;
     }
@@ -332,6 +339,9 @@ public final class Loader extends JavaPlugin {
         }
         if (discordWebhookModule != null) {
             discordWebhookModule.shutdown();
+        }
+        if (discordBotModule != null) {
+            discordBotModule.shutdown();
         }
         if (enchantmentSplitModule != null) {
             enchantmentSplitModule.shutdown();

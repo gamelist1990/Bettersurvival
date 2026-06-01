@@ -29,6 +29,17 @@ public final class FloodgateUtil {
         return api() != null;
     }
 
+
+    public static String getBedrockPrefix() {
+        FloodgateApi api = api();
+        if (api == null) return "";
+        try {
+            return api.getPlayerPrefix();
+        } catch (NoClassDefFoundError e) {
+            return "";
+        }
+    }
+
     /**
      * 指定UUIDがBedrock (Floodgate) プレイヤーか
      */
@@ -48,5 +59,32 @@ public final class FloodgateUtil {
     public static boolean isBedrock(Player p) {
         if (p == null) return false;
         return isBedrock(p.getUniqueId());
+    }
+
+    /**
+     * プレイヤー名が Bedrock (Floodgate) 形式か (プレフィックスで判定)
+     */
+    public static boolean isBedrockName(String name) {
+        if (name == null) return false;
+        String prefix = getBedrockPrefix();
+        if (prefix != null && !prefix.isEmpty() && name.startsWith(prefix)) {
+            return true;
+        }
+        return name.startsWith(".");
+    }
+
+    /**
+     * Bedrock プレイヤー名からプレフィックスを取り除く
+     */
+    public static String stripPrefix(String name) {
+        if (name == null) return "";
+        String prefix = getBedrockPrefix();
+        if (prefix != null && !prefix.isEmpty() && name.startsWith(prefix)) {
+            return name.substring(prefix.length());
+        }
+        if (name.startsWith(".")) {
+            return name.substring(1);
+        }
+        return name;
     }
 }

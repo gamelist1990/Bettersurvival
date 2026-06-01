@@ -11,6 +11,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FormsUtil;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.McApiClient;
 import org.bukkit.Material;
 
 import java.util.*;
@@ -555,8 +556,8 @@ public class ChestLockUI {
                     if (lock.isOwner(pl)) continue;
                     candidates.add(pl);
                     String rawName = pl.getName();
-                    String san = sanitizeName(rawName);
-                    String url = "https://minotar.net/avatar/" + san + "/64";
+                    boolean isBedrock = FloodgateUtil.isBedrock(pl);
+                    String url = McApiClient.getFaceUrl(rawName, isBedrock);
                     addBtns.add(FormsUtil.ButtonSpec.ofUrl(rawName, url));
                 }
                 addBtns.add(FormsUtil.ButtonSpec.ofText("戻る"));
@@ -583,9 +584,9 @@ public class ChestLockUI {
                 for (String m : lock.getMembers()) {
                     OfflinePlayer op = Bukkit.getOfflinePlayer(UUID.fromString(m));
                     String name = op.getName() == null ? m : op.getName();
-                    String san = sanitizeName(name);
-                    String url = "https://minotar.net/avatar/" + san + "/64";
-                    mbtns.add(FormsUtil.ButtonSpec.ofUrl(name, url));
+                    boolean isBedrock = FloodgateUtil.isBedrock(UUID.fromString(m));
+                    String url = McApiClient.getFaceUrl(name, isBedrock);
+                    mbtns.add(FormsUtil.ButtonSpec.ofUrl(isBedrock ? FloodgateUtil.stripPrefix(name).replace("_", " ") : name, url));
                 }
                 mbtns.add(FormsUtil.ButtonSpec.ofText("戻る"));
                 

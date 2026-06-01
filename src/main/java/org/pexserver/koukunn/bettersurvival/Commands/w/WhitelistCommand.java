@@ -6,6 +6,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.CompletionUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 
 import java.util.ArrayList;
@@ -36,7 +37,7 @@ public class WhitelistCommand extends BaseCommand {
 
     @Override
     public String getUsage() {
-        return "/w <add|remove|list> [username]";
+        return "/w <add|remove|list|discord> [username]";
     }
 
     @Override
@@ -96,6 +97,19 @@ public class WhitelistCommand extends BaseCommand {
                 sendInfo(sender, "接続待機 whitelist (" + pendingNames.size() + "件): " + String.join(", ", pendingNames));
                 return true;
 
+            case "discord":
+                if (!(sender instanceof Player player)) {
+                    sendError(sender, "discord サブコマンドはプレイヤーのみ使用できます");
+                    return true;
+                }
+                DiscordBotModule botModule = plugin.getDiscordBotModule();
+                if (botModule == null) {
+                    sendError(sender, "DiscordBotModule がまだ初期化されていません");
+                    return true;
+                }
+                botModule.openWhitelistChannelMenu(player);
+                return true;
+
             default:
                 sendError(sender, "不明なサブコマンドです: " + sub);
                 return true;
@@ -111,6 +125,7 @@ public class WhitelistCommand extends BaseCommand {
             list.add("add");
             list.add("remove");
             list.add("list");
+            list.add("discord");
             return CompletionUtils.filterBySimilarity(args[0], list);
         }
 

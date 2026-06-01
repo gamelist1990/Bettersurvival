@@ -12,6 +12,7 @@ import org.bukkit.inventory.meta.SkullMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FormsUtil;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.McApiClient;
 
 import java.util.*;
 
@@ -527,9 +528,10 @@ public class InvseeUI {
             String name = target.getName() != null ? target.getName() : "Unknown";
             boolean isOnline = target.isOnline();
             String prefix = isOnline ? "●" : "○";
-            String sanitized = sanitizeName(name);
-            String url = "https://minotar.net/avatar/" + sanitized + "/64";
-            buttons.add(FormsUtil.ButtonSpec.ofUrl(prefix + " " + name, url));
+            boolean isBedrock = FloodgateUtil.isBedrock(target.getUniqueId());
+            String displayName = isBedrock ? FloodgateUtil.stripPrefix(name).replace("_", " ") : name;
+            String url = McApiClient.getFaceUrl(name, isBedrock);
+            buttons.add(FormsUtil.ButtonSpec.ofUrl(prefix + " " + displayName, url));
         }
         buttons.add(FormsUtil.ButtonSpec.ofText("閉じる"));
 

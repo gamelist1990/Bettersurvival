@@ -30,7 +30,8 @@
 
 この手順書は、`C:\Users\PC_User\IdeaProjects\bettersurvival` で別の AI や別の開発者が Paper API を正しく調べ、間違った API や古い API を使わずに実装するための固定手順です。
 
-2026年3月13日時点では、このプロジェクトの `build.gradle` は `io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT` を参照しています。まず毎回ここを確認し、バージョンが変わっていたら以後のコマンド中のバージョン文字列も合わせて変えてください。
+2026年3月13日時点では、このプロジェクトの `build.gradle` は `io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT` を参照しています。
+ただしここは各プロジェクトによって異なる為、build.gradle をまず毎回確認し、バージョンが変わっていたら以後のコマンド中のバージョン文字列も合わせて変えてください。
 
 ## 目的
 

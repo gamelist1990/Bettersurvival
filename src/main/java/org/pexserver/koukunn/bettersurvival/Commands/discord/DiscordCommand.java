@@ -5,7 +5,7 @@ import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
-import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.DiscordBotModule;
 
 public class DiscordCommand extends BaseCommand {
     private final Loader plugin;
@@ -21,7 +21,7 @@ public class DiscordCommand extends BaseCommand {
 
     @Override
     public String getDescription() {
-        return "DiscordWebhook設定UIを開く";
+        return "Discord 設定 UI を開く (Webhook / Bot)";
     }
 
     @Override
@@ -32,13 +32,13 @@ public class DiscordCommand extends BaseCommand {
     @Override
     public boolean execute(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
-            sendError(sender, "このコマンドはOPプレイヤーのみ使用できます");
+            sendError(sender, "このコマンドはプレイヤーのみ使用できます");
             return true;
         }
 
-        DiscordWebhookModule module = plugin.getDiscordWebhookModule();
+        DiscordBotModule module = plugin.getDiscordBotModule();
         if (module == null) {
-            sendError(sender, "DiscordWebhookModuleがまだ初期化されていません");
+            sendError(sender, "DiscordBotModule がまだ初期化されていません");
             return true;
         }
 

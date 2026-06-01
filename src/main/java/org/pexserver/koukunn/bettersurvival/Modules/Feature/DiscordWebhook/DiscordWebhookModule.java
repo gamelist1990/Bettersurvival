@@ -10,8 +10,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitTask;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
@@ -368,21 +368,7 @@ public class DiscordWebhookModule implements Listener {
     }
 
     private String getWebhookDisplayName() {
-        String motd = PlainTextComponentSerializer.plainText().serialize(Bukkit.motd());
-        if (motd != null) {
-            String singleLine = motd.replace('\n', ' ').trim();
-            if (!singleLine.isEmpty() && isAscii(singleLine)) {
-                return singleLine;
-            }
-        }
-        String fallback = plugin.getServer().getName();
-        if (fallback != null) {
-            String trimmed = fallback.trim();
-            if (!trimmed.isEmpty() && isAscii(trimmed)) {
-                return trimmed;
-            }
-        }
-        return "Minecraft Server";
+        return ServerInfoUtil.getServerName();
     }
 
     private boolean isAscii(String value) {

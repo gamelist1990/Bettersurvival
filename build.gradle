@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id("xyz.jpenilla.run-paper") version "2.3.1"
+    id 'com.gradleup.shadow' version '8.3.5'
 }
 
 group = 'org.pexserver.koukunn'
@@ -21,10 +22,22 @@ repositories {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
     implementation 'com.google.code.gson:gson:2.10.1'
+    implementation('net.dv8tion:JDA:6.4.1') {
+        exclude group: 'club.minnced', module: 'opus-java'
+        exclude group: 'com.google.crypto.tink', module: 'tink'
+    }
     compileOnly('org.geysermc.floodgate:api:2.2.4-SNAPSHOT')
     compileOnly('org.geysermc.cumulus:cumulus:1.0.18')
     // Geyser API
     compileOnly('org.geysermc.geyser:api:2.9.0-SNAPSHOT')
+}
+
+tasks.shadowJar {
+    archiveClassifier.set('')
+}
+
+tasks.build {
+    dependsOn tasks.shadowJar
 }
 
 tasks {

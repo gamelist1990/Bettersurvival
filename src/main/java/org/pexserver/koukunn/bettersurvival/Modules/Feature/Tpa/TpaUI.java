@@ -11,6 +11,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FormsUtil;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.McApiClient;
 
 import java.util.*;
 
@@ -213,8 +214,9 @@ public class TpaUI {
 
         for (TpaRequest req : requests) {
             String senderName = req.getSenderName();
-            String sanitized = sanitizeName(senderName);
-            String url = "https://minotar.net/avatar/" + sanitized + "/64";
+            Player senderPlayer = Bukkit.getPlayer(senderName);
+            boolean senderIsBedrock = senderPlayer != null && FloodgateUtil.isBedrock(senderPlayer);
+            String url = McApiClient.getFaceUrl(senderName, senderIsBedrock);
             buttons.add(FormsUtil.ButtonSpec.ofUrl(senderName + " (" + req.getRemainingSeconds() + "秒)", url));
         }
         buttons.add(FormsUtil.ButtonSpec.ofText("リクエストを送信"));
@@ -263,8 +265,8 @@ public class TpaUI {
 
         for (Player pl : candidates) {
             String name = pl.getName();
-            String sanitized = sanitizeName(name);
-            String url = "https://minotar.net/avatar/" + sanitized + "/64";
+            boolean isBedrock = FloodgateUtil.isBedrock(pl);
+            String url = McApiClient.getFaceUrl(name, isBedrock);
             
             if (module.canReceiveTpa(pl)) {
                 buttons.add(FormsUtil.ButtonSpec.ofUrl(name, url));
