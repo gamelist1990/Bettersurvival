@@ -3,6 +3,9 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook;
 public class DiscordWebhookSettings {
     private boolean enabled;
     private String eventWebhookUrl;
+    private boolean botModeEnabled;
+    private String botChannelId;
+    private boolean botChatRelayEnabled;
     private String statusWebhookUrl;
     private String statusMessageId;
     private boolean joinEnabled;
@@ -24,6 +27,30 @@ public class DiscordWebhookSettings {
 
     public void setEventWebhookUrl(String eventWebhookUrl) {
         this.eventWebhookUrl = eventWebhookUrl == null ? "" : eventWebhookUrl.trim();
+    }
+
+    public boolean isBotModeEnabled() {
+        return botModeEnabled;
+    }
+
+    public void setBotModeEnabled(boolean botModeEnabled) {
+        this.botModeEnabled = botModeEnabled;
+    }
+
+    public String getBotChannelId() {
+        return botChannelId == null ? "" : botChannelId;
+    }
+
+    public void setBotChannelId(String botChannelId) {
+        this.botChannelId = botChannelId == null ? "" : botChannelId.trim();
+    }
+
+    public boolean isBotChatRelayEnabled() {
+        return botChatRelayEnabled;
+    }
+
+    public void setBotChatRelayEnabled(boolean botChatRelayEnabled) {
+        this.botChatRelayEnabled = botChatRelayEnabled;
     }
 
     public String getStatusWebhookUrl() {

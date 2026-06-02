@@ -1,0 +1,209 @@
+package org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Bot;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.entities.Webhook;
+import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
+
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
+
+public class DiscordWebhookBotModeService {
+    private final Loader plugin;
+    private final DiscordWebhookClient client;
+    private final Supplier<DiscordWebhookSettings> settingsSupplier;
+    private final DiscordWebhookDiscordListener discordListener;
+    private final Map<String, CompletableFuture<String>> webhookUrlCache = new ConcurrentHashMap<>();
+
+    public DiscordWebhookBotModeService(
+            Loader plugin,
+            DiscordWebhookClient client,
+            Supplier<DiscordWebhookSettings> settingsSupplier) {
+        this.plugin = plugin;
+        this.client = client;
+        this.settingsSupplier = settingsSupplier;
+        this.discordListener = new DiscordWebhookDiscordListener(settingsSupplier,
+                this::relayDiscordMessageToMinecraft);
+        registerDiscordListener();
+    }
+
+    public void shutdown() {
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        if (botModule != null) {
+            botModule.unregisterRuntimeListener(discordListener);
+        }
+        webhookUrlCache.clear();
+    }
+
+    public boolean isAvailable() {
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        return botModule != null && botModule.isBotTokenConfigured();
+    }
+
+    public boolean isActive() {
+        DiscordWebhookSettings settings = settingsSupplier.get();
+        return settings != null
+                && settings.isEnabled()
+                && settings.isBotModeEnabled()
+                && !settings.getBotChannelId().isBlank()
+                && isAvailable();
+    }
+
+    public void sendJoin(Player player, int onlineCount) {
+        if (!isActive())
+            return;
+        sendPlayerSystemMessage(player, "サーバーに参加しました", onlineCount);
+    }
+
+    public void sendLeave(Player player, int onlineCount) {
+        if (!isActive())
+            return;
+        sendPlayerSystemMessage(player, "サーバーから退出しました", onlineCount);
+    }
+
+    public void sendMinecraftChat(Player player, String message) {
+        if (!isActive())
+            return;
+        DiscordWebhookSettings settings = settingsSupplier.get();
+        if (settings == null || !settings.isBotChatRelayEnabled() || message == null || message.isBlank()) {
+            return;
+        }
+        sendWebhookMessage(
+                settings.getBotChannelId(),
+                normalizedPlayerName(player),
+                McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), FloodgateUtil.isBedrock(player)),
+                message.trim());
+    }
+
+    private void sendPlayerSystemMessage(Player player, String message, int onlineCount) {
+        DiscordWebhookSettings settings = settingsSupplier.get();
+        if (settings == null) {
+            return;
+        }
+        String content = message + "\nオンライン: " + onlineCount + "/" + Bukkit.getMaxPlayers();
+        sendWebhookMessage(
+                settings.getBotChannelId(),
+                normalizedPlayerName(player),
+                McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), FloodgateUtil.isBedrock(player)),
+                content);
+    }
+
+    private void sendWebhookMessage(String channelId, String username, String avatarUrl, String content) {
+        getOrCreateWebhookUrl(channelId).thenAccept(webhookUrl -> {
+            if (webhookUrl.isBlank()) {
+                return;
+            }
+            JsonObject payload = new JsonObject();
+            payload.addProperty("username", username);
+            payload.addProperty("avatar_url", avatarUrl);
+            payload.addProperty("content", content);
+            JsonObject allowedMentions = new JsonObject();
+            allowedMentions.add("parse", new JsonArray());
+            payload.add("allowed_mentions", allowedMentions);
+            client.send(webhookUrl, payload);
+        });
+    }
+
+    private CompletableFuture<String> getOrCreateWebhookUrl(String channelId) {
+        if (channelId == null || channelId.isBlank()) {
+            return CompletableFuture.completedFuture("");
+        }
+        return webhookUrlCache.computeIfAbsent(channelId, this::createWebhookUrlFuture);
+    }
+
+    private CompletableFuture<String> createWebhookUrlFuture(String channelId) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        TextChannel channel = getTextChannel(channelId);
+        if (channel == null) {
+            future.complete("");
+            return future;
+        }
+        if (!channel.getGuild().getSelfMember().hasPermission(channel, Permission.MANAGE_WEBHOOKS)) {
+            plugin.getLogger().warning("[DiscordWebhook-Bot] Webhook作成に MANAGE_WEBHOOKS 権限が必要です");
+            future.complete("");
+            return future;
+        }
+
+        channel.retrieveWebhooks().queue(webhooks -> {
+            for (Webhook webhook : webhooks) {
+                User owner = webhook.getOwnerAsUser();
+                if (owner != null
+                        && owner.getIdLong() == channel.getJDA().getSelfUser().getIdLong()
+                        && webhook.getToken() != null
+                        && !webhook.getUrl().isBlank()) {
+                    future.complete(webhook.getUrl());
+                    return;
+                }
+            }
+            channel.createWebhook("BetterSurvival Relay").queue(
+                    created -> future.complete(created.getUrl()),
+                    error -> {
+                        plugin.getLogger().warning("[DiscordWebhook-Bot] Webhook作成失敗: " + error.getMessage());
+                        future.complete("");
+                    });
+        }, error -> {
+            plugin.getLogger().warning("[DiscordWebhook-Bot] Webhook一覧取得失敗: " + error.getMessage());
+            future.complete("");
+        });
+
+        future.whenComplete((url, error) -> {
+            if (error != null || url == null || url.isBlank()) {
+                webhookUrlCache.remove(channelId);
+            }
+        });
+        return future;
+    }
+
+    private TextChannel getTextChannel(String channelId) {
+        if (channelId == null) {
+            return null;
+        }
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        if (botModule == null) {
+            return null;
+        }
+        JDA jda = botModule.getJda();
+        if (jda == null) {
+            return null;
+        }
+        return jda.getTextChannelById(channelId);
+    }
+
+    private void relayDiscordMessageToMinecraft(DiscordWebhookDiscordListener.DiscordIncomingMessage message) {
+        Bukkit.getScheduler().runTask(plugin, () -> Bukkit.broadcast(
+                Component.text("[Discord] ", NamedTextColor.AQUA)
+                        .append(Component.text(message.authorName(), NamedTextColor.WHITE))
+                        .append(Component.text(": ", NamedTextColor.DARK_GRAY))
+                        .append(Component.text(message.content(), NamedTextColor.GRAY))));
+    }
+
+    private String normalizedPlayerName(Player player) {
+        String rawName = player.getName();
+        if (!FloodgateUtil.isBedrock(player)) {
+            return rawName;
+        }
+        return FloodgateUtil.stripPrefix(rawName).replace("_", " ");
+    }
+
+    private void registerDiscordListener() {
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        if (botModule != null) {
+            botModule.registerRuntimeListener(discordListener);
+        }
+    }
+}

@@ -5,7 +5,7 @@ import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
-import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.DiscordBotModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
 
 public class DiscordCommand extends BaseCommand {
     private final Loader plugin;

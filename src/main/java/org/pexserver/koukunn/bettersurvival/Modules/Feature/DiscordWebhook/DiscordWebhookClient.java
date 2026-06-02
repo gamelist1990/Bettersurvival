@@ -152,6 +152,24 @@ public class DiscordWebhookClient {
                 });
     }
 
+    public CompletableFuture<Boolean> deleteMessage(String url, String messageId) {
+        if (!isValidUrl(url) || messageId == null || messageId.isBlank()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(messageUrl(url, messageId)))
+                .timeout(Duration.ofSeconds(15))
+                .DELETE()
+                .build();
+
+        return client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                .thenApply(response -> response.statusCode() >= 200 && response.statusCode() < 300)
+                .exceptionally(error -> {
+                    plugin.getLogger().log(Level.WARNING, "DiscordWebhookメッセージ削除失敗: " + error.getMessage());
+                    return false;
+                });
+    }
+
     public boolean isValidUrl(String url) {
         if (url == null || url.isBlank()) return false;
         String value = url.trim();

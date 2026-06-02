@@ -17,6 +17,9 @@ public class DiscordWebhookStore {
         DiscordWebhookSettings settings = new DiscordWebhookSettings();
         settings.setEnabled(getBoolean(config, "enabled", false));
         settings.setEventWebhookUrl(getString(config, "eventWebhookUrl", ""));
+        settings.setBotModeEnabled(getBoolean(config, "botModeEnabled", false));
+        settings.setBotChannelId(getString(config, "botChannelId", ""));
+        settings.setBotChatRelayEnabled(getBoolean(config, "botChatRelayEnabled", true));
         settings.setStatusWebhookUrl(getString(config, "statusWebhookUrl", ""));
         settings.setStatusMessageId(getString(config, "statusMessageId", ""));
         settings.setJoinEnabled(getBoolean(config, "joinEnabled", true));
@@ -30,6 +33,9 @@ public class DiscordWebhookStore {
         PEXConfig config = new PEXConfig();
         config.put("enabled", settings.isEnabled());
         config.put("eventWebhookUrl", settings.getEventWebhookUrl());
+        config.put("botModeEnabled", settings.isBotModeEnabled());
+        config.put("botChannelId", settings.getBotChannelId());
+        config.put("botChatRelayEnabled", settings.isBotChatRelayEnabled());
         config.put("statusWebhookUrl", settings.getStatusWebhookUrl());
         config.put("statusMessageId", settings.getStatusMessageId());
         config.put("joinEnabled", settings.isJoinEnabled());

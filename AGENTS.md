@@ -1,359 +1,534 @@
-毎回最新のソースコードを調べてから作業して下さい
+# Paper API 調査手順書
 
+> **目的**: Paper Plugin 開発において、間違った API・古い API を使わずに  
+> 正しく実装するための固定手順書。  
+> Windows / WSL2 / Ubuntu (Linux ネイティブ) すべての環境に対応。
 
-## 依存関係及び目的
+---
 
-- Paper Plugin
-- Geyser
-- Floodgate
+## 目次
 
+1. [環境別コマンド対応表](#0-環境別コマンド対応表)
+2. [build.gradle の確認](#1-buildgradle-の確認)
+3. [Gradle キャッシュから Paper API を探す](#2-gradle-キャッシュから-paper-api-を探す)
+4. [Temp キャッシュの活用](#3-temp-キャッシュの活用)
+5. [sources.jar の中を見る](#4-sourcesjar-の中を見る)
+6. [javadoc.jar の確認](#5-javadocjar-の確認)
+7. [公式 Paper ドキュメントで最終確認](#6-公式-paper-ドキュメントで最終確認)
+8. [プロジェクト内の既存実装を探す](#7-プロジェクト内の既存実装を探す)
+9. [API を読む時の判断基準](#8-api-を読む時の判断基準)
+10. [よく使うコマンド集](#9-よく使うコマンド集)
+11. [実装後の最終確認チェックリスト](#10-実装後の最終確認チェックリスト)
 
-## 環境について
-- 基本的にはWindows環境ですが、WSL2のLinux環境で作業することも可能です。ただし、WSL2環境で作業する場合は、Windows環境でのファイルパスやコマンドを使用してください。特に、Gradleのビルドやローカルキャッシュの確認などはWindows環境で行うことを推奨します。
-- またLinuxのネイティブの環境の場合もあるのでその都度適切に見極めて下さい
-**目的** Minecraft PEX鯖で使うオリジナルプラグインの開発  
+---
 
+## 0. 環境別コマンド対応表
 
-- Buildはコンソールでgradle buildを行って下さい、gradlw.batでも構いません
-- 生成するコードには余計な// コメントを入れないで下さい正し 関数等の説明であるJava docsに限り許可します。
-- またユーザーの言語で回答を行いなさい (Japanese)
-- 基本リフレクションが絶対禁止です。サポートが厳しくなる為API等が分からなければユーザーに聞いて下さい教えてくれます(Classのコードを提示したりAPIの使い方等を教えます。)
-- コードを生成する際に既存のプロジェクトで既に同様の動作をしていないか？等をCheckし最小差分で変更することで安全性と安定性を確保して下さい。
-- 生成するコードは既存のコードと同様のスタイルで書いて下さい。
-- 生成する際にtry catchを多用しないで下さい、例外処理は必要な場合にのみ行って下さい。(try catchを多用すると肝心な部分でエラーを見逃す為確実な安定性を確保する為に止めて下さい。またほぼ意味のないtry catchを見つけたら削除して下さい(前後関係をよく見て消しても問題ない場合に消すように))
-- コードの部分的な物やコードがうまく分からない時とか不明な場合によりしっかりと取得したい場合はコマンドを使っていいよ例 ```Select-String -Path "src/main/java/org/example/koukunn/pexserver/Project/customItem/Duel/*.java" -Pattern "getActiveMapsIds\(\)\.contains\(map\.getId\(\)\)" | ForEach-Object { "{0}:{1}: {2}" -f $_.Path,$_.LineNumber,$_.Line.Trim() }``` みたいな感じのコマンドでしっかりと確認して認識すべきコードを確認して下さい。
-- またコード変更後に、IDEやツールのエラー確認ツールを呼び出したり、コマンドでビルドエラーや警告がないか確認して下さい。ビルドエラーや警告がある場合は、コードを修正してから次の作業に進んで下さい。
+> 作業前に自分がどの環境にいるかを確認してから読み進めてください。
 
+| 項目 | Windows (PowerShell) | WSL2 | Ubuntu / Linux ネイティブ |
+|------|----------------------|------|--------------------------|
+| シェル | `powershell` / `pwsh` | `bash` (Gradle キャッシュは **Windows 側**を参照) | `bash` |
+| Gradle キャッシュ | `$env:USERPROFILE\.gradle\...` | `/mnt/c/Users/<ユーザー名>/.gradle/...` | `~/.gradle/...` |
+| Temp フォルダ | `<project>\Temp\` | `<project>/Temp/` | `<project>/Temp/` |
+| ファイル検索 | `Get-ChildItem -Recurse` | `find` | `find` |
+| テキスト検索 | `Select-String` / `rg` | `rg` / `grep` | `rg` / `grep` |
+| jar 展開 | `jar xf` (JDK の jar コマンド) | `jar xf` / `unzip` | `jar xf` / `unzip` |
+| ビルド | `.\gradlew.bat build` | `./gradlew build` | `./gradlew build` |
 
+> ⚠️ **WSL2 の注意点**  
+> Gradle ビルドや `.gradle` キャッシュの確認は **Windows 側** で行うことを推奨。  
+> WSL2 から参照する場合は `/mnt/c/Users/<ユーザー名>/.gradle/` を使う。
 
-# Paper API 調査手順
-
-この手順書は、`C:\Users\PC_User\IdeaProjects\bettersurvival` で別の AI や別の開発者が Paper API を正しく調べ、間違った API や古い API を使わずに実装するための固定手順です。
-
-2026年3月13日時点では、このプロジェクトの `build.gradle` は `io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT` を参照しています。
-ただしここは各プロジェクトによって異なる為、build.gradle をまず毎回確認し、バージョンが変わっていたら以後のコマンド中のバージョン文字列も合わせて変えてください。
-
-## 目的
-
-- 今このプロジェクトが実際に使っている Paper API バージョンを確認する
-- ローカルの Gradle キャッシュにある `sources.jar` と `javadoc.jar` を使って API を調べる
-- 公式 Paper ドキュメントで最終確認する
-- 既存コードの実装例を調べて最小差分で実装する
-- 最後に `gradle build` でエラーを潰す
+---
 
 ## 絶対に守る順番
 
-1. `build.gradle` で現在の Paper API バージョンを確認する
-2. ローカルの `.gradle` キャッシュから、そのバージョンの `sources.jar` と `javadoc.jar` を探す
-3. まず `sources.jar` で型・メソッド・引数・deprecated 状態を確認する
-4. 次に `javadoc.jar` または公式 Javadoc で説明文を確認する
-5. その API をこのプロジェクト内で既に使っていないか `rg` で確認する
-6. 既存スタイルに合わせて最小差分で実装する
-7. `gradle build` を実行してエラーや警告を確認する
+```
+1. build.gradle で現在の Paper API バージョンを確認する
+2. Temp/<version>/ に既にキャッシュがあればそれを使う (再展開不要)
+3. キャッシュがなければ Gradle キャッシュから sources.jar / javadoc.jar を展開して Temp に保存する
+4. sources.jar で型・メソッド・引数・@Deprecated を確認する
+5. javadoc.jar または公式 Javadoc で説明文を確認する
+6. プロジェクト内に既存実装がないか rg で確認する
+7. 既存スタイルに合わせて最小差分で実装する
+8. gradle build を実行してエラーや警告を確認・修正する
+```
 
-この順番を飛ばさないでください。特に、記憶だけで Paper API を使わないことが重要です。
+> ❌ 記憶だけで Paper API を書かない。必ずキャッシュと公式資料を確認する。
 
-## 1. まず build.gradle を確認する
+---
 
-PowerShell:
+## 1. build.gradle の確認
+
+**毎回最初に確認する。バージョンが変わっていたら以後のコマンドのバージョン文字列も変える。**
+
+### Windows / PowerShell
 
 ```powershell
 Get-Content .\build.gradle
 ```
 
-このプロジェクトでは次を確認します。
+### WSL2 / Linux
+
+```bash
+cat build.gradle
+```
+
+### 確認するべき行の例
 
 ```gradle
-compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
 ```
 
-この文字列が、今読むべきローカルキャッシュの対象です。
+> ここの `1.21.4-R0.1-SNAPSHOT` の部分が、以後の手順で使うバージョン文字列になる。
 
-## 2. ローカルの Gradle キャッシュから Paper API を探す
+---
 
-## Windows環境です WSL2 の環境の場合はWindows環境で探して下さい。
-PowerShell:
+## 2. Gradle キャッシュから Paper API を探す
 
-```powershell
-Get-ChildItem -Recurse -Filter 'paper-api-*.jar' "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\io.papermc.paper\paper-api"
-```
+### 2-1. バージョン変数のセット
 
-今の環境では、たとえば以下のようなものがあります。
-
-- `paper-api-1.21.11-R0.1-SNAPSHOT.jar`
-- `paper-api-1.21.11-R0.1-SNAPSHOT-sources.jar`
-- `paper-api-1.21.11-R0.1-SNAPSHOT-javadoc.jar`
-
-最重要なのは次の2つです。
-
-- `sources.jar`
-- `javadoc.jar`
-
-## 3. 使う jar の場所を PowerShell 変数に入れる
-
-PowerShell:
+#### Windows / PowerShell
 
 ```powershell
-$paperVersion = '1.21.11-R0.1-SNAPSHOT'
+$paperVersion = '1.21.4-R0.1-SNAPSHOT'   # build.gradle に合わせて変える
 $paperCacheRoot = "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\io.papermc.paper\paper-api\$paperVersion"
 
 $paperSources = Get-ChildItem -Recurse -Filter "paper-api-$paperVersion-sources.jar" $paperCacheRoot |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
 
 $paperJavadoc = Get-ChildItem -Recurse -Filter "paper-api-$paperVersion-javadoc.jar" $paperCacheRoot |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
 
 $paperBinary = Get-ChildItem -Recurse -Filter "paper-api-$paperVersion.jar" $paperCacheRoot |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
 
 $paperSources
 $paperJavadoc
 $paperBinary
 ```
 
-複数候補が出ることがありますが、基本は `LastWriteTime` が新しいものを使います。
+#### WSL2 (Windows キャッシュを参照)
+
+```bash
+PAPER_VERSION="1.21.4-R0.1-SNAPSHOT"
+WIN_USER=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r')
+PAPER_CACHE_ROOT="/mnt/c/Users/${WIN_USER}/.gradle/caches/modules-2/files-2.1/io.papermc.paper/paper-api/${PAPER_VERSION}"
+
+PAPER_SOURCES=$(find "$PAPER_CACHE_ROOT" -name "paper-api-${PAPER_VERSION}-sources.jar" | head -1)
+PAPER_JAVADOC=$(find "$PAPER_CACHE_ROOT" -name "paper-api-${PAPER_VERSION}-javadoc.jar" | head -1)
+PAPER_BINARY=$(find "$PAPER_CACHE_ROOT" -name "paper-api-${PAPER_VERSION}.jar" ! -name "*sources*" ! -name "*javadoc*" | head -1)
+
+echo "$PAPER_SOURCES"
+echo "$PAPER_JAVADOC"
+echo "$PAPER_BINARY"
+```
+
+#### Ubuntu / Linux ネイティブ
+
+```bash
+PAPER_VERSION="1.21.4-R0.1-SNAPSHOT"
+PAPER_CACHE_ROOT="${HOME}/.gradle/caches/modules-2/files-2.1/io.papermc.paper/paper-api/${PAPER_VERSION}"
+
+PAPER_SOURCES=$(find "$PAPER_CACHE_ROOT" -name "paper-api-${PAPER_VERSION}-sources.jar" | head -1)
+PAPER_JAVADOC=$(find "$PAPER_CACHE_ROOT" -name "paper-api-${PAPER_VERSION}-javadoc.jar" | head -1)
+PAPER_BINARY=$(find "$PAPER_CACHE_ROOT" -name "paper-api-${PAPER_VERSION}.jar" ! -name "*sources*" ! -name "*javadoc*" | head -1)
+
+echo "$PAPER_SOURCES"
+echo "$PAPER_JAVADOC"
+echo "$PAPER_BINARY"
+```
+
+### 2-2. キャッシュに jar がない場合
+
+```bash
+# Linux / WSL2
+./gradlew dependencies --configuration compileClasspath
+```
+
+```powershell
+# Windows
+.\gradlew.bat dependencies --configuration compileClasspath
+```
+
+---
+
+## 3. Temp キャッシュの活用
+
+> 毎回 sources.jar / javadoc.jar を展開し直すのは非効率。  
+> **プロジェクトフォルダ内の `Temp/` に展開済みデータを保存**し、次回以降はそれを使う。
+
+---
+
+### 3-1. Temp ディレクトリ構造
+
+```
+<project_root>/
+└── Temp/
+    └── paper-api-1.21.4-R0.1-SNAPSHOT/
+        ├── sources/        # sources.jar を展開したもの
+        └── javadoc/        # javadoc.jar を展開したもの
+```
+
+バージョンごとにフォルダを分けることで、複数バージョンが混在しても安全に管理できる。
+
+---
+
+### 3-2. 初回: Temp へ展開する
+
+#### Windows / PowerShell
+
+```powershell
+$projectRoot = Get-Location   # プロジェクトルートで実行すること
+$tempBase    = Join-Path $projectRoot "Temp\paper-api-$paperVersion"
+$tempSrc     = Join-Path $tempBase "sources"
+$tempDoc     = Join-Path $tempBase "javadoc"
+
+if (-not (Test-Path $tempSrc)) {
+    New-Item -ItemType Directory -Path $tempSrc | Out-Null
+    Push-Location $tempSrc
+    jar xf $paperSources
+    Pop-Location
+    Write-Host "sources 展開完了: $tempSrc"
+} else {
+    Write-Host "sources キャッシュ済み: $tempSrc"
+}
+
+if (-not (Test-Path $tempDoc)) {
+    New-Item -ItemType Directory -Path $tempDoc | Out-Null
+    Push-Location $tempDoc
+    jar xf $paperJavadoc
+    Pop-Location
+    Write-Host "javadoc 展開完了: $tempDoc"
+} else {
+    Write-Host "javadoc キャッシュ済み: $tempDoc"
+}
+```
+
+#### WSL2 / Linux
+
+```bash
+PROJECT_ROOT=$(pwd)   # プロジェクトルートで実行すること
+TEMP_BASE="${PROJECT_ROOT}/Temp/paper-api-${PAPER_VERSION}"
+TEMP_SRC="${TEMP_BASE}/sources"
+TEMP_DOC="${TEMP_BASE}/javadoc"
+
+if [ ! -d "$TEMP_SRC" ]; then
+    mkdir -p "$TEMP_SRC"
+    cd "$TEMP_SRC" && jar xf "$PAPER_SOURCES" && cd "$PROJECT_ROOT"
+    echo "sources 展開完了: $TEMP_SRC"
+else
+    echo "sources キャッシュ済み: $TEMP_SRC"
+fi
+
+if [ ! -d "$TEMP_DOC" ]; then
+    mkdir -p "$TEMP_DOC"
+    cd "$TEMP_DOC" && jar xf "$PAPER_JAVADOC" && cd "$PROJECT_ROOT"
+    echo "javadoc 展開完了: $TEMP_DOC"
+else
+    echo "javadoc キャッシュ済み: $TEMP_DOC"
+fi
+```
+
+---
+
+### 3-3. 2回目以降: Temp を使って検索する
+
+#### Windows / PowerShell
+
+```powershell
+$projectRoot = Get-Location
+$tempSrc     = Join-Path $projectRoot "Temp\paper-api-$paperVersion\sources"
+$tempDoc     = Join-Path $projectRoot "Temp\paper-api-$paperVersion\javadoc"
+
+rg -n "PotionMeta|Registry|NamespacedKey" $tempSrc
+```
+
+#### WSL2 / Linux
+
+```bash
+PROJECT_ROOT=$(pwd)
+TEMP_SRC="${PROJECT_ROOT}/Temp/paper-api-${PAPER_VERSION}/sources"
+TEMP_DOC="${PROJECT_ROOT}/Temp/paper-api-${PAPER_VERSION}/javadoc"
+
+rg -n "PotionMeta|Registry|NamespacedKey" "$TEMP_SRC"
+```
+
+---
+
+### 3-4. .gitignore への追加
+
+Temp フォルダはリポジトリに含める必要はない。`.gitignore` に追加する。
+
+```gitignore
+# Paper API 解析用一時キャッシュ
+Temp/
+```
+
+---
+
+### 3-5. Temp の削除 (バージョン更新時)
+
+バージョンが上がった場合は古い Temp を削除してから再展開する。
+
+#### Windows / PowerShell
+
+```powershell
+Remove-Item -Recurse -Force "Temp\paper-api-<旧バージョン>"
+```
+
+#### WSL2 / Linux
+
+```bash
+rm -rf Temp/paper-api-<旧バージョン>
+```
+
+---
 
 ## 4. sources.jar の中を見る
 
-### 4-1. クラス名だけ探す
+> **2回目以降は Temp/paper-api-\<version\>/sources/ を直接参照する。**
 
-PowerShell:
+### 4-1. クラス名を探す
+
+#### Windows / PowerShell
 
 ```powershell
+# Temp キャッシュを使う場合
+rg -n "class PotionMeta|interface PotionMeta" $tempSrc
+
+# jar から直接確認する場合
 jar tf $paperSources | Select-String 'PotionMeta|PotionEffectType|Registry'
 ```
 
-または:
+#### WSL2 / Linux
 
-```powershell
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::OpenRead($paperSources).Entries |
-    Where-Object { $_.FullName -match 'PotionMeta|PotionEffectType|Registry' } |
-    Select-Object -ExpandProperty FullName
+```bash
+# Temp キャッシュを使う場合
+rg -n "class PotionMeta|interface PotionMeta" "$TEMP_SRC"
+
+# jar から直接確認する場合
+jar tf "$PAPER_SOURCES" | grep -E 'PotionMeta|PotionEffectType|Registry'
 ```
 
-### 4-2. 一時展開して中身を検索する
+---
 
-PowerShell:
+### 4-2. 単一ファイルを直接読む
 
-```powershell
-$tmp = Join-Path $env:TEMP "paper-api-src-$paperVersion"
-if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
-New-Item -ItemType Directory -Path $tmp | Out-Null
-Push-Location $tmp
-jar xf $paperSources
-Pop-Location
-```
-
-展開後は `rg` で検索します。
+#### Windows / PowerShell
 
 ```powershell
-rg -n "addCustomEffect|setBasePotionType|getColor|Registry" $tmp
-rg -n "class PotionMeta|interface PotionMeta" $tmp
-rg -n "class PotionEffectType|interface Registry" $tmp
+Get-Content "$tempSrc\org\bukkit\inventory\meta\PotionMeta.java"
+Get-Content "$tempSrc\org\bukkit\potion\PotionEffectType.java"
+Get-Content "$tempSrc\org\bukkit\Registry.java"
 ```
 
-### 4-3. 単一ファイルを読む
+#### WSL2 / Linux
 
-PowerShell:
-
-```powershell
-Get-Content "$tmp\org\bukkit\inventory\meta\PotionMeta.java"
-Get-Content "$tmp\org\bukkit\potion\PotionEffectType.java"
-Get-Content "$tmp\org\bukkit\Registry.java"
+```bash
+cat "$TEMP_SRC/org/bukkit/inventory/meta/PotionMeta.java"
+cat "$TEMP_SRC/org/bukkit/potion/PotionEffectType.java"
+cat "$TEMP_SRC/org/bukkit/Registry.java"
 ```
 
-ここで確認する内容:
+### ✅ sources で確認するポイント
 
-- メソッド名が今のバージョンで本当に存在するか
-- 引数の型が何か
-- 戻り値が何か
-- `@Deprecated` かどうか
+- メソッドが今のバージョンで **本当に存在するか**
+- 引数の **型・数**
+- 戻り値の **型**
+- `@Deprecated` が付いていないか
 - static 取得か registry 取得か
 
-## 5. javadoc.jar を確認する
+---
 
-ソースだけでは説明不足のことがあるので、Javadoc も見ます。
+## 5. javadoc.jar の確認
 
-PowerShell:
+sources だけでは意図がわからない場合に使う。
 
-```powershell
-jar tf $paperJavadoc | Select-String 'PotionMeta|PotionEffectType|Registry'
-```
-
-必要なら一時展開します。
+#### Windows / PowerShell
 
 ```powershell
-$tmpDoc = Join-Path $env:TEMP "paper-api-doc-$paperVersion"
-if (Test-Path $tmpDoc) { Remove-Item $tmpDoc -Recurse -Force }
-New-Item -ItemType Directory -Path $tmpDoc | Out-Null
-Push-Location $tmpDoc
-jar xf $paperJavadoc
-Pop-Location
+rg -n "PotionMeta|Registry" $tempDoc
 ```
 
-対象 HTML を探します。
+#### WSL2 / Linux
 
-```powershell
-rg -n "PotionMeta|PotionEffectType|Registry" $tmpDoc
+```bash
+rg -n "PotionMeta|Registry" "$TEMP_DOC"
 ```
 
-## 6. 公式 Paper ドキュメントで最終確認する
+---
 
-ローカルキャッシュ確認の後、最後に必ず公式資料も見ます。
+## 6. 公式 Paper ドキュメントで最終確認
 
-優先順位:
+ローカルキャッシュ確認後、**必ず公式資料も確認する**。
 
-1. 公式 Javadoc
-2. 公式 Docs
-3. 必要なら Bukkit/Paper の source
+| 優先順位 | 参照先 | 用途 |
+|----------|--------|------|
+| 1 | https://jd.papermc.io/ | API 仕様・メソッドシグネチャの最終確認 |
+| 2 | https://docs.papermc.io/ | 概念・新しい使い方・ガイド |
+| 3 | Bukkit/Paper の GitHub ソース | 上記で不明な場合のみ |
 
-主な参照先:
+> ⚠️ Paper 独自 API は Bukkit の古い記事より **Paper 公式を優先** する。
 
-- Javadoc: `https://jd.papermc.io/`
-- Docs: `https://docs.papermc.io/`
+---
 
-確認のしかた:
+## 7. プロジェクト内の既存実装を探す
 
-- API 仕様は Javadoc で確認する
-- 概念や新しい使い方は Docs で確認する
-- Paper 独自 API は Bukkit の古い記事より Paper 公式を優先する
-
-## 7. プロジェクト内の既存実装を先に探す
-
-このプロジェクトは既に多くの Paper/Bukkit API を使っているので、いきなり新規実装しないで既存コードを確認します。
+**いきなり新規実装せず、まず既存コードを確認する。**
 
 ### 7-1. API 名で検索
 
-PowerShell:
-
-```powershell
-rg -n "PotionMeta|PotionEffectType|Registry.MOB_EFFECT|NamespacedKey" src/main/java -S
+```bash
+rg -n "PotionMeta|PotionEffectType|Registry\.MOB_EFFECT|NamespacedKey" src/main/java -S
 ```
 
-### 7-2. ScriptEvent 実装パターンを探す
+### 7-2. 特定パターンを探す
 
-PowerShell:
+```bash
+# タブ補完・インベントリ付与パターン
+rg -n "getInventory\(\)\.addItem|tab\(" src/main/java -S
 
-```powershell
-rg -n "new ScriptEvent\\(\\)\\.name\\(" src/main/java -S
+# イベント実装パターン
+rg -n "@EventHandler" src/main/java -S
+
+# コマンド実装パターン
+rg -n "implements CommandExecutor|implements TabCompleter" src/main/java -S
 ```
 
-### 7-3. インベントリ付与やタブ補完の既存パターンを探す
+### ✅ 既存コード確認のポイント
 
-PowerShell:
-
-```powershell
-rg -n "getInventory\\(\\)\\.addItem|tab\\(" src/main/java -S
-```
-
-ここで見るポイント:
-
-- 既に同じことをしているコードがないか
+- 同じことをしているコードがないか
 - 命名規則が揃っているか
 - Adventure `Component` を使うべきか
-- `ScriptEvent` の分岐やタブ補完の書き方が揃っているか
+- タブ補完・イベントの書き方が揃っているか
+
+---
 
 ## 8. API を読む時の判断基準
 
 ### Registry 系 API
 
-最近の Paper/Bukkit は static getter より registry アクセスが正しいことがあります。  
-たとえば、ID から何かを引く時は次を優先確認します。
+最近の Paper/Bukkit は static getter より **registry アクセスが正しい** ことがある。
 
+```java
+// 古い書き方 (非推奨になっている場合がある)
+PotionEffectType.getByName("speed");
+
+// 新しい書き方 (バージョンによる)
+Registry.EFFECT.get(NamespacedKey.minecraft("speed"));
+```
+
+確認対象:
 - `org.bukkit.Registry`
 - `io.papermc.paper.registry.RegistryAccess`
 - `NamespacedKey`
 
-古い記事で `getByName()` が出てきても、今のバージョンでは registry の方が正しい可能性があります。
+---
 
-### ItemMeta / PotionMeta
+### ItemMeta / PotionMeta 系
 
-アイテム系は `ItemMeta` のサブ型が増えているので、次を毎回確認します。
-
-- そのメタが専用型かどうか
-- `getItemMeta()` の戻り値をどこで cast すべきか
-- `item.setItemMeta(meta)` を最後に戻しているか
-
-### 時間や数値
-
-ゲーム内コマンドの数値は、実装前に必ず単位を決めます。
-
-- 秒なのか
-- tick なのか
-- 少数を許可するか
-- 補完に単位候補を出すか
-
-## 9. AI にやらせる時の最小プロンプト
-
-他の AI を使う場合は、最低でも次を守らせてください。
-
-```text
-1. まず build.gradle の paper-api バージョンを確認する
-2. .gradle キャッシュの paper-api sources.jar と javadoc.jar を確認する
-3. 公式 Paper Javadoc / Docs で最終確認する
-4. 既存コードで同様実装がないか rg で確認する
-5. 最小差分で実装する
-6. 最後に gradle build を実行してエラーを直す
+```java
+ItemMeta meta = item.getItemMeta();
+if (meta instanceof PotionMeta potionMeta) {
+    // ...
+}
+item.setItemMeta(meta);   // 最後に必ず戻す
 ```
 
-## 10. 実際によく使う確認コマンド集
+確認ポイント:
+- そのメタが専用型かどうか
+- `getItemMeta()` の戻り値をどこで cast するか
+- `setItemMeta()` を最後に呼んでいるか
+
+---
+
+### 時間・数値の単位
+
+| 項目 | 確認事項 |
+|------|----------|
+| 時間 | 秒なのか tick なのか |
+| 数値 | 小数を許可するか |
+| タブ補完 | 単位候補を出すか |
+
+---
+
+## 9. よく使うコマンド集
 
 ### Paper API バージョン確認
 
 ```powershell
+# Windows
 Select-String -Path .\build.gradle -Pattern 'paper-api'
 ```
 
-### sources.jar の場所確認
-
-```powershell
-Get-ChildItem -Recurse -Filter 'paper-api-*-sources.jar' "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\io.papermc.paper\paper-api"
+```bash
+# Linux / WSL2
+grep 'paper-api' build.gradle
 ```
 
-### javadoc.jar の場所確認
+### Temp の存在確認
 
 ```powershell
-Get-ChildItem -Recurse -Filter 'paper-api-*-javadoc.jar' "$env:USERPROFILE\.gradle\caches\modules-2\files-2.1\io.papermc.paper\paper-api"
+# Windows
+Test-Path "Temp\paper-api-$paperVersion\sources"
 ```
 
-### sources.jar 内の検索
-
-```powershell
-jar tf $paperSources | Select-String 'PotionMeta'
-jar tf $paperSources | Select-String 'Registry'
+```bash
+# Linux / WSL2
+[ -d "Temp/paper-api-${PAPER_VERSION}/sources" ] && echo "キャッシュあり" || echo "キャッシュなし"
 ```
 
-### 展開後の全文検索
+### Temp から特定クラスを検索
 
 ```powershell
-rg -n "addCustomEffect|Registry.MOB_EFFECT|NamespacedKey.minecraft" $tmp
+# Windows
+rg -n "TargetClass" $tempSrc
 ```
 
-### プロジェクト内既存使用例検索
-
-```powershell
-rg -n "Registry\\.MOB_EFFECT|PotionEffectType|PotionMeta" src/main/java -S
+```bash
+# Linux / WSL2
+rg -n "TargetClass" "$TEMP_SRC"
 ```
 
-### 最終ビルド
+### 特定コードの行番号付き検索 (Windows)
 
 ```powershell
+Select-String -Path "src/main/java/**/*.java" -Pattern "targetMethodName\(\)" |
+    ForEach-Object { "{0}:{1}: {2}" -f $_.Path, $_.LineNumber, $_.Line.Trim() }
+```
+
+### ビルド
+
+```powershell
+# Windows
 .\gradlew.bat build
 ```
 
-## 11. 最後の確認
+```bash
+# Linux / WSL2
+./gradlew build
+```
 
-実装後は必ず次を確認します。
+---
 
-- コンパイルが通る
-- タブ補完が実際の引数仕様と一致している
-- API の取得方法が現在の Paper バージョンに合っている
-- 既存の設計に反していない
-- リフレクションを使っていない
+## 10. 実装後の最終確認チェックリスト
 
-この手順書の目的は、AI に「雰囲気で API を書かせないこと」です。  
-必ずローカルキャッシュと公式 Paper 資料の両方を確認してから実装してください。
+```
+[ ] gradle build が通る (エラー・警告なし)
+[ ] タブ補完が実際の引数仕様と一致している
+[ ] API の取得方法が現在の Paper バージョンに合っている
+[ ] @Deprecated な API を使っていない
+[ ] 既存の設計・命名規則に反していない
+[ ] リフレクションを使っていない
+[ ] 不要な try-catch を追加していない
+[ ] コメントは Javadoc 形式のみ (// コメントなし)
+[ ] 既存コードと同じスタイルで書かれている
+[ ] Temp/ が .gitignore に追加されている
+```
+
+---
+
+> **この手順書の目的**: AI や開発者が「雰囲気で API を書かないこと」。  
+> 必ず Temp キャッシュ → ローカルキャッシュ → 公式 Paper 資料の順に確認してから実装する。

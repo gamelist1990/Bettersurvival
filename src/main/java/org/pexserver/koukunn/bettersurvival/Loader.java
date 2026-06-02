@@ -24,7 +24,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockM
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest.DeathChestModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
-import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.DiscordBotModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BetterMenu.BetterMenuModule;

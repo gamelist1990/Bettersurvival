@@ -1,15 +1,21 @@
-package org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord;
+package org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.bukkit.plugin.Plugin;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
+import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 
@@ -17,17 +23,21 @@ import java.util.logging.Level;
  * mc-api.io を使用して Minecraft プレイヤー名の実在確認を行うクライアント。
  * Java 版・Bedrock 版どちらにも対応する。
  */
-public class McApiClient {
+public class McApiClient implements Listener {
     private static final String MC_API_BASE = "https://mc-api.io/uuid/";
+    private static volatile McApiClient instance;
 
-    private final Plugin plugin;
+    private final Loader plugin;
     private final HttpClient client;
+    private final McApiCacheStore cacheStore;
 
-    public McApiClient(Plugin plugin) {
+    public McApiClient(Loader plugin) {
         this.plugin = plugin;
         this.client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+        this.cacheStore = new McApiCacheStore(plugin.getConfigManager());
+        instance = this;
     }
 
     /**
@@ -81,6 +91,15 @@ public class McApiClient {
         return segment.replace(" ", "%20").replace("#", "%23");
     }
 
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        refreshPlayerCache(event.getPlayer());
+    }
+
+    public void refreshPlayerCache(Player player) {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> cacheStore.update(player));
+    }
+
     /**
      * mc-api.io の顔レンダリング URL を生成する。
      * <p>
@@ -93,13 +112,52 @@ public class McApiClient {
      * @return 顔画像 URL（256×256）
      */
     public static String getFaceUrl(String username, boolean isBedrock) {
+        return buildFaceUrl(username, isBedrock);
+    }
+
+    public static String getFaceUrl(UUID uuid, String username, boolean isBedrock) {
+        McApiClient current = instance;
+        if (current != null) {
+            String cachedUrl = current.cacheStore.getFaceUrl(uuid).orElse("");
+            if (!cachedUrl.isBlank()) {
+                return cachedUrl;
+            }
+        }
+        return buildFaceUrl(username, isBedrock);
+    }
+
+    public static String getFaceUrl(OfflinePlayer player) {
+        String name = player.getName();
+        if (name == null || name.isBlank()) {
+            return "";
+        }
+        return getFaceUrl(player.getUniqueId(), name, FloodgateUtil.isBedrock(player.getUniqueId()));
+    }
+
+    public static String buildFaceUrl(String username, boolean isBedrock) {
+        String encoded = encodedRenderName(username, isBedrock);
+        String edition = isBedrock ? "bedrock" : "java";
+        return "https://mc-api.io/render/face/" + encoded + "/" + edition + "?size=256";
+    }
+
+    public static String buildSkinUrl(String username, boolean isBedrock) {
+        String encoded = encodedRenderName(username, isBedrock);
+        String edition = isBedrock ? "bedrock" : "java";
+        return "https://mc-api.io/render/skin/" + encoded + "/" + edition;
+    }
+
+    public static String buildBodyUrl(String username, boolean isBedrock) {
+        String encoded = encodedRenderName(username, isBedrock);
+        String edition = isBedrock ? "bedrock" : "java";
+        return "https://mc-api.io/render/body/" + encoded + "/" + edition + "?scale=10";
+    }
+
+    private static String encodedRenderName(String username, boolean isBedrock) {
         String name = username;
         if (isBedrock) {
             name = FloodgateUtil.stripPrefix(name);
             name = name.replace("_", " ");
         }
-        String edition = isBedrock ? "bedrock" : "java";
-        String encoded = name.replace(" ", "%20").replace("#", "%23");
-        return "https://mc-api.io/render/face/" + encoded + "/" + edition + "?size=256";
+        return name.replace(" ", "%20").replace("#", "%23");
     }
 }

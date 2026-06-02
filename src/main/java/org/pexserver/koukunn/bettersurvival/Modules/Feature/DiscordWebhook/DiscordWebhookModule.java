@@ -1,65 +1,77 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
-import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import io.papermc.paper.event.player.AsyncChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
-import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
-
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Bot.DiscordWebhookBotModeService;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Webhook.DiscordWebhookEventService;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Webhook.DiscordWebhookStatusService;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 public class DiscordWebhookModule implements Listener {
-    private static final String STATUS_IMAGE_FILE_NAME = "status.png";
-    private static final int JOIN_COLOR = 0x57F287;
-    private static final int LEAVE_COLOR = 0xED4245;
-    private static final int STATUS_COLOR = 0x5865F2;
-    private static final int PLAYER_LIST_LIMIT = 15;
-    private static final long STATUS_AUTO_UPDATE_INTERVAL_TICKS = 5L * 60L * 20L;
-
     private final Loader plugin;
     private final DiscordWebhookStore store;
     private final DiscordWebhookClient client;
+    private final DiscordWebhookEventService webhookEventService;
+    private final DiscordWebhookStatusService statusService;
+    private final DiscordWebhookBotModeService botModeService;
     private DiscordWebhookSettings settings;
-    private BukkitTask statusAutoUpdateTask;
 
     public DiscordWebhookModule(Loader plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.store = new DiscordWebhookStore(configManager);
         this.client = new DiscordWebhookClient(plugin);
         this.settings = store.load();
-        updateStatusAutoUpdateTask();
+        this.webhookEventService = new DiscordWebhookEventService(client);
+        this.statusService = new DiscordWebhookStatusService(plugin, client, this::getSettings, this::saveStatusMessageId);
+        this.botModeService = new DiscordWebhookBotModeService(plugin, client, this::getSettings);
+        statusService.updateStatusAutoUpdateTask();
     }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         DiscordWebhookSettings current = getSettings();
         if (!current.isEnabled() || !current.isJoinEnabled()) return;
+        if (isBotModeActive(current)) {
+            botModeService.sendJoin(event.getPlayer(), Bukkit.getOnlinePlayers().size());
+            return;
+        }
         if (!client.isValidUrl(current.getEventWebhookUrl())) return;
-        sendPlayerEvent(current.getEventWebhookUrl(), "Join", event.getPlayer(), Bukkit.getOnlinePlayers().size(), JOIN_COLOR);
+        webhookEventService.sendJoin(current, event.getPlayer());
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         DiscordWebhookSettings current = getSettings();
         if (!current.isEnabled() || !current.isLeaveEnabled()) return;
+        if (isBotModeActive(current)) {
+            int online = Math.max(0, Bukkit.getOnlinePlayers().size() - 1);
+            botModeService.sendLeave(event.getPlayer(), online);
+            return;
+        }
         if (!client.isValidUrl(current.getEventWebhookUrl())) return;
-        int online = Math.max(0, Bukkit.getOnlinePlayers().size() - 1);
-        sendPlayerEvent(current.getEventWebhookUrl(), "Leave", event.getPlayer(), online, LEAVE_COLOR);
+        webhookEventService.sendLeave(current, event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onAsyncChat(AsyncChatEvent event) {
+        DiscordWebhookSettings current = getSettings();
+        if (!isBotModeActive(current) || !current.isBotChatRelayEnabled()) {
+            return;
+        }
+        String plainMessage = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
+        if (plainMessage.isBlank()) {
+            return;
+        }
+        botModeService.sendMinecraftChat(event.getPlayer(), plainMessage);
     }
 
     public synchronized DiscordWebhookSettings getSettings() {
@@ -70,32 +82,18 @@ public class DiscordWebhookModule implements Listener {
         boolean saved = store.save(settings);
         if (saved) {
             this.settings = settings;
-            updateStatusAutoUpdateTask();
+            statusService.updateStatusAutoUpdateTask();
         }
         return saved;
     }
 
     public synchronized void shutdown() {
-        cancelStatusAutoUpdateTask();
+        statusService.shutdown();
+        botModeService.shutdown();
     }
 
     public boolean sendStatusNow(Player sender) {
-        DiscordWebhookSettings current = getSettings();
-        if (!current.isEnabled()) {
-            sender.sendMessage("§cDiscordWebhookが無効です");
-            return false;
-        }
-        if (!current.isStatusEnabled()) {
-            sender.sendMessage("§cStatus/List送信が無効です");
-            return false;
-        }
-        if (!client.isValidUrl(current.getStatusWebhookUrl())) {
-            sender.sendMessage("§cStatus/List用Webhook URLが未設定です");
-            return false;
-        }
-        sendOrUpdateStatus(current, sender);
-        sender.sendMessage("§aDiscordのStatus/Listを更新します");
-        return true;
+        return statusService.sendStatusNow(sender);
     }
 
     public void openMenu(Player player) {
@@ -103,8 +101,10 @@ public class DiscordWebhookModule implements Listener {
         DialogUI.builder()
                 .title("DiscordWebhook")
                 .body("状態: " + (current.isEnabled() ? "有効" : "無効"))
+                .body("イベント送信方式: " + (current.isBotModeEnabled() ? "Bot" : "Webhook"))
                 .body("Join: " + enabledText(current.isJoinEnabled()))
                 .body("Leave: " + enabledText(current.isLeaveEnabled()))
+                .body("Botチャット中継: " + enabledText(current.isBotChatRelayEnabled()))
                 .body("Status/List: " + enabledText(current.isStatusEnabled()))
                 .body("Status自動更新: " + enabledText(current.isStatusAutoUpdateEnabled()))
                 .addAction("設定", 0x57F287)
@@ -122,10 +122,15 @@ public class DiscordWebhookModule implements Listener {
 
     private void openSettings(Player player) {
         DiscordWebhookSettings current = getSettings();
+        boolean botModeAvailable = botModeService.isAvailable();
         DialogUI.builder()
                 .title("DiscordWebhook設定")
-                .body("Join/Leave用URLとStatus/List用URLは別々に設定できます")
+                .body("Join/Leave/Chat は Webhook または Bot モードを選べます")
+                .body("Botモード利用可否: " + (botModeAvailable ? "利用可能" : "Discord Bot Token 未設定"))
                 .addBoolInput("enabled", "DiscordWebhookを有効にする", current.isEnabled())
+                .addBoolInput("botModeEnabled", "Join/Leave/Chat に Bot モードを使う", current.isBotModeEnabled())
+                .addTextInput("botChannelId", "Botモード用チャンネル ID", current.getBotChannelId(), 30, false)
+                .addBoolInput("botChatRelayEnabled", "Discord と Minecraft のチャット中継", current.isBotChatRelayEnabled())
                 .addTextInput("eventWebhookUrl", "Join/Leave Webhook URL", current.getEventWebhookUrl(), 2048, true)
                 .addBoolInput("joinEnabled", "Join通知", current.isJoinEnabled())
                 .addBoolInput("leaveEnabled", "Leave通知", current.isLeaveEnabled())
@@ -140,12 +145,25 @@ public class DiscordWebhookModule implements Listener {
                     }
                     DiscordWebhookSettings updated = new DiscordWebhookSettings();
                     updated.setEnabled(result.getBool("enabled"));
+                    updated.setBotModeEnabled(result.getBool("botModeEnabled"));
+                    updated.setBotChannelId(result.getText("botChannelId"));
+                    updated.setBotChatRelayEnabled(result.getBool("botChatRelayEnabled"));
                     updated.setEventWebhookUrl(result.getText("eventWebhookUrl"));
                     updated.setJoinEnabled(result.getBool("joinEnabled"));
                     updated.setLeaveEnabled(result.getBool("leaveEnabled"));
                     updated.setStatusWebhookUrl(result.getText("statusWebhookUrl"));
                     updated.setStatusEnabled(result.getBool("statusEnabled"));
                     updated.setStatusAutoUpdateEnabled(result.getBool("statusAutoUpdateEnabled"));
+                    if (updated.isBotModeEnabled() && !botModeAvailable) {
+                        p.sendMessage("§cBotモードは Discord Bot Token 設定後に利用できます");
+                        openMenu(p);
+                        return;
+                    }
+                    if (updated.isBotModeEnabled() && !updated.getBotChannelId().isBlank() && !updated.getBotChannelId().matches("\\d+")) {
+                        p.sendMessage("§cBotモード用チャンネル ID は数字のみで指定してください");
+                        openMenu(p);
+                        return;
+                    }
                     if (updated.getStatusWebhookUrl().equals(current.getStatusWebhookUrl())) {
                         updated.setStatusMessageId(current.getStatusMessageId());
                     }
@@ -163,220 +181,12 @@ public class DiscordWebhookModule implements Listener {
         return enabled ? "有効" : "無効";
     }
 
-    private void sendOrUpdateStatus(DiscordWebhookSettings current, Player sender) {
-        JsonObject payload = createStatusPayload();
-        byte[] imageBytes = createStatusImageBytes();
-        if (imageBytes.length == 0) {
-            sendStatusMessage(sender, "§cStatus画像の生成に失敗しました");
-            return;
-        }
-        String messageId = current.getStatusMessageId();
-        if (!messageId.isBlank()) {
-            client.editMessage(current.getStatusWebhookUrl(), messageId, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(updated -> {
-                if (updated) {
-                    sendStatusMessageSync(sender, "§a既存のStatus/Listメッセージを更新しました");
-                    return;
-                }
-                createStatusMessage(current.getStatusWebhookUrl(), payload, sender);
-            });
-            return;
-        }
-        createStatusMessage(current.getStatusWebhookUrl(), payload, sender);
-    }
-
-    private void createStatusMessage(String webhookUrl, JsonObject payload, Player sender) {
-        byte[] imageBytes = createStatusImageBytes();
-        if (imageBytes.length == 0) {
-            sendStatusMessage(sender, "§cStatus画像の生成に失敗しました");
-            return;
-        }
-        client.sendAndReturnMessageId(webhookUrl, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(messageId -> {
-            if (messageId.isBlank()) {
-                sendStatusMessageSync(sender, "§cStatus/Listメッセージの作成に失敗しました");
-                return;
-            }
-            runSync(() -> {
-                saveStatusMessageId(messageId);
-                sendStatusMessage(sender, "§aStatus/Listメッセージを作成し、次回以降は更新するようにしました");
-            });
-        });
-    }
-
-    private void updateStatusAutoUpdateTask() {
-        cancelStatusAutoUpdateTask();
-        DiscordWebhookSettings current = getSettings();
-        if (!current.isEnabled() || !current.isStatusEnabled() || !current.isStatusAutoUpdateEnabled()) return;
-        if (!client.isValidUrl(current.getStatusWebhookUrl())) return;
-        statusAutoUpdateTask = plugin.getServer().getScheduler().runTaskTimer(plugin,
-                this::sendScheduledStatus,
-                STATUS_AUTO_UPDATE_INTERVAL_TICKS,
-                STATUS_AUTO_UPDATE_INTERVAL_TICKS);
-    }
-
-    private void cancelStatusAutoUpdateTask() {
-        if (statusAutoUpdateTask != null) {
-            statusAutoUpdateTask.cancel();
-            statusAutoUpdateTask = null;
-        }
-    }
-
-    private void sendScheduledStatus() {
-        DiscordWebhookSettings current = getSettings();
-        if (!current.isEnabled() || !current.isStatusEnabled() || !current.isStatusAutoUpdateEnabled()) return;
-        if (!client.isValidUrl(current.getStatusWebhookUrl())) return;
-        sendOrUpdateStatus(current, null);
-    }
-
-    private void sendStatusMessage(Player sender, String message) {
-        if (sender != null && sender.isOnline()) {
-            sender.sendMessage(message);
-        }
-    }
-
-    private void sendStatusMessageSync(Player sender, String message) {
-        if (sender != null) {
-            runSync(() -> sendStatusMessage(sender, message));
-        }
-    }
-
     private synchronized void saveStatusMessageId(String messageId) {
         settings.setStatusMessageId(messageId);
         store.save(settings);
     }
 
-    private void runSync(Runnable task) {
-        plugin.getServer().getScheduler().runTask(plugin, task);
-    }
-
-    private void sendPlayerEvent(String url, String title, Player player, int online, int color) {
-        JsonObject embed = baseEmbed(title, color);
-        embed.addProperty("description", compactPlayerEventText(title, player.getName(), online));
-        JsonObject thumbnail = new JsonObject();
-        thumbnail.addProperty("url", getPlayerIconUrl(player));
-        embed.add("thumbnail", thumbnail);
-
-        JsonObject payload = new JsonObject();
-        payload.addProperty("username", getWebhookDisplayName());
-        JsonArray embeds = new JsonArray();
-        embeds.add(embed);
-        payload.add("embeds", embeds);
-        client.send(url, payload);
-    }
-
-    private JsonObject createStatusPayload() {
-        JsonObject embed = baseEmbed("Status/List", STATUS_COLOR);
-        embed.addProperty("description", "Current server status");
-        JsonObject image = new JsonObject();
-        image.addProperty("url", "attachment://" + STATUS_IMAGE_FILE_NAME);
-        embed.add("image", image);
-
-        JsonObject payload = new JsonObject();
-        payload.addProperty("username", getWebhookDisplayName());
-        JsonArray embeds = new JsonArray();
-        embeds.add(embed);
-        payload.add("embeds", embeds);
-        return payload;
-    }
-
-    private JsonObject baseEmbed(String title, int color) {
-        JsonObject embed = new JsonObject();
-        embed.addProperty("title", title);
-        embed.addProperty("color", color);
-        embed.addProperty("timestamp", Instant.now().toString());
-        return embed;
-    }
-
-    private String getPlayerIconUrl(Player player) {
-        return "https://mc-heads.net/avatar/" + player.getUniqueId() + "/64";
-    }
-
-    private String compactPlayerEventText(String title, String playerName, int online) {
-        String action = "Join".equalsIgnoreCase(title) ? "joined" : "left";
-        return playerName + " " + action + "\nOnline: " + online + "/" + Bukkit.getMaxPlayers();
-    }
-
-    private byte[] createStatusImageBytes() {
-        try {
-            StatusImageRenderer.StatusImageData data = new StatusImageRenderer.StatusImageData(
-                    getWebhookDisplayName(),
-                    Bukkit.getOnlinePlayers().size(),
-                    Bukkit.getMaxPlayers(),
-                    sortedOnlinePlayerNames(),
-                    minecraftTimeText(),
-                    tpsText(),
-                    cpuLoadText(),
-                    heapText(),
-                    Instant.now());
-            return StatusImageRenderer.render(data);
-        } catch (Exception e) {
-            plugin.getLogger().warning("Status画像の生成に失敗しました: " + e.getMessage());
-            return new byte[0];
-        }
-    }
-
-    private List<String> sortedOnlinePlayerNames() {
-        List<String> names = new ArrayList<>();
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            names.add(player.getName());
-        }
-        names.sort(String.CASE_INSENSITIVE_ORDER);
-        if (names.size() > PLAYER_LIST_LIMIT) {
-            List<String> clipped = new ArrayList<>(names.subList(0, PLAYER_LIST_LIMIT - 1));
-            clipped.add("+" + (names.size() - clipped.size()) + " more");
-            return clipped;
-        }
-        return names;
-    }
-
-    private String minecraftTimeText() {
-        List<World> worlds = plugin.getServer().getWorlds();
-        if (worlds.isEmpty()) return "unknown";
-        World world = worlds.get(0);
-        long time = world.getTime();
-        return time + "T / " + dayPart(time);
-    }
-
-    private String dayPart(long time) {
-        if (time < 6000) return "Morning";
-        if (time < 12000) return "Day";
-        return "Night";
-    }
-
-    private String tpsText() {
-        double[] tps = plugin.getServer().getTPS();
-        return tps.length > 0 ? String.format(Locale.ROOT, "%.2f/20.00", Math.min(20.0, tps[0])) : "unknown";
-    }
-
-    private String heapText() {
-        MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-        MemoryUsage heap = memoryBean.getHeapMemoryUsage();
-        long usedMb = heap.getUsed() / 1024 / 1024;
-        long maxMb = heap.getMax() / 1024 / 1024;
-        long heapPercent = maxMb > 0 ? Math.round(usedMb * 100.0 / maxMb) : 0;
-        return usedMb + "/" + maxMb + "MB (" + heapPercent + "%)";
-    }
-
-    private String cpuLoadText() {
-        java.lang.management.OperatingSystemMXBean bean = ManagementFactory.getOperatingSystemMXBean();
-        if (bean instanceof com.sun.management.OperatingSystemMXBean operatingSystem) {
-            double load = operatingSystem.getProcessCpuLoad();
-            if (load >= 0) {
-                return String.format(Locale.ROOT, "%.1f%%", load * 100.0);
-            }
-        }
-        return "unknown";
-    }
-
-    private String getWebhookDisplayName() {
-        return ServerInfoUtil.getServerName();
-    }
-
-    private boolean isAscii(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            if (value.charAt(i) > 0x7F) {
-                return false;
-            }
-        }
-        return true;
+    private boolean isBotModeActive(DiscordWebhookSettings settings) {
+        return settings.isBotModeEnabled() && botModeService.isActive();
     }
 }
