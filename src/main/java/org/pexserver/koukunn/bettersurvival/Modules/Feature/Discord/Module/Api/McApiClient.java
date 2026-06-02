@@ -16,8 +16,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
@@ -31,6 +33,7 @@ public class McApiClient implements Listener {
     private final Loader plugin;
     private final HttpClient client;
     private final McApiCacheStore cacheStore;
+    private final Set<UUID> refreshInFlight;
 
     public McApiClient(Loader plugin) {
         this.plugin = plugin;
@@ -38,6 +41,7 @@ public class McApiClient implements Listener {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
         this.cacheStore = new McApiCacheStore(plugin.getConfigManager());
+        this.refreshInFlight = ConcurrentHashMap.newKeySet();
         instance = this;
     }
 
@@ -98,30 +102,7 @@ public class McApiClient implements Listener {
     }
 
     public void refreshPlayerCache(Player player) {
-        boolean isBedrock = FloodgateUtil.isBedrock(player);
-        String rawName = player.getName();
-        String normalizedName = normalizedName(rawName, isBedrock);
-        String faceUrl = buildFaceUrl(rawName, isBedrock);
-        String skinUrl = buildSkinUrl(rawName, isBedrock);
-        String bodyUrl = buildBodyUrl(rawName, isBedrock);
-
-        CompletableFuture<String> faceBase64Future = fetchBase64(faceUrl, "face", rawName);
-        CompletableFuture<String> skinBase64Future = fetchBase64(skinUrl, "skin", rawName);
-        CompletableFuture<String> bodyBase64Future = fetchBase64(bodyUrl, "body", rawName);
-
-        CompletableFuture.allOf(faceBase64Future, skinBase64Future, bodyBase64Future)
-                .thenRun(() -> cacheStore.update(
-                        player.getUniqueId(),
-                        rawName,
-                        normalizedName,
-                        isBedrock,
-                        faceUrl,
-                        skinUrl,
-                        bodyUrl,
-                        faceBase64Future.join(),
-                        skinBase64Future.join(),
-                        bodyBase64Future.join()
-                ));
+        refreshPlayerCache(player.getUniqueId(), player.getName(), FloodgateUtil.isBedrock(player));
     }
 
     /**
@@ -146,6 +127,7 @@ public class McApiClient implements Listener {
             if (!cachedUrl.isBlank()) {
                 return cachedUrl;
             }
+            current.ensureCacheWarm(uuid, username, isBedrock);
         }
         return buildFaceUrl(username, isBedrock);
     }
@@ -158,22 +140,85 @@ public class McApiClient implements Listener {
         return getFaceUrl(player.getUniqueId(), name, FloodgateUtil.isBedrock(player.getUniqueId()));
     }
 
+    public static String getSkinUrl(UUID uuid, String username, boolean isBedrock) {
+        McApiClient current = instance;
+        if (current != null) {
+            String cachedUrl = current.cacheStore.getSkinUrl(uuid).orElse("");
+            if (!cachedUrl.isBlank()) {
+                return cachedUrl;
+            }
+            current.ensureCacheWarm(uuid, username, isBedrock);
+        }
+        return buildSkinUrl(username, isBedrock);
+    }
+
+    public static String getBodyUrl(UUID uuid, String username, boolean isBedrock) {
+        McApiClient current = instance;
+        if (current != null) {
+            String cachedUrl = current.cacheStore.getBodyUrl(uuid).orElse("");
+            if (!cachedUrl.isBlank()) {
+                return cachedUrl;
+            }
+            current.ensureCacheWarm(uuid, username, isBedrock);
+        }
+        return buildBodyUrl(username, isBedrock);
+    }
+
+    public static String getFaceBase64(UUID uuid, String username, boolean isBedrock) {
+        McApiClient current = instance;
+        if (current == null) {
+            return "";
+        }
+        String cachedBase64 = current.cacheStore.getFaceBase64(uuid).orElse("");
+        if (!cachedBase64.isBlank()) {
+            return cachedBase64;
+        }
+        current.ensureCacheWarm(uuid, username, isBedrock);
+        return "";
+    }
+
+    public static String getSkinBase64(UUID uuid, String username, boolean isBedrock) {
+        McApiClient current = instance;
+        if (current == null) {
+            return "";
+        }
+        String cachedBase64 = current.cacheStore.getSkinBase64(uuid).orElse("");
+        if (!cachedBase64.isBlank()) {
+            return cachedBase64;
+        }
+        current.ensureCacheWarm(uuid, username, isBedrock);
+        return "";
+    }
+
+    public static String getBodyBase64(UUID uuid, String username, boolean isBedrock) {
+        McApiClient current = instance;
+        if (current == null) {
+            return "";
+        }
+        String cachedBase64 = current.cacheStore.getBodyBase64(uuid).orElse("");
+        if (!cachedBase64.isBlank()) {
+            return cachedBase64;
+        }
+        current.ensureCacheWarm(uuid, username, isBedrock);
+        return "";
+    }
+
     public static String buildFaceUrl(String username, boolean isBedrock) {
         String encoded = encodedRenderName(username, isBedrock);
-        String edition = isBedrock ? "bedrock" : "java";
-        return "https://mc-api.io/render/face/" + encoded + "/" + edition + "?size=256";
+        String edition = isBedrock ? "BEDROCK" : "JAVA";
+        return "https://mc-api.io/render/FACE/" + encoded + "/" + edition + "?size=256";
     }
 
     public static String buildSkinUrl(String username, boolean isBedrock) {
         String encoded = encodedRenderName(username, isBedrock);
-        String edition = isBedrock ? "bedrock" : "java";
-        return "https://mc-api.io/render/skin/" + encoded + "/" + edition;
+        String edition = isBedrock ? "BEDROCK" : "JAVA";
+        return "https://mc-api.io/render/BUST/" + encoded + "/" + edition + "?size=256";
     }
 
     public static String buildBodyUrl(String username, boolean isBedrock) {
         String encoded = encodedRenderName(username, isBedrock);
-        String edition = isBedrock ? "bedrock" : "java";
-        return "https://mc-api.io/render/body/" + encoded + "/" + edition + "?scale=10";
+        String edition = isBedrock ? "BEDROCK" : "JAVA";
+        return "https://mc-api.io/render/FULL/" + encoded + "/" + edition + "?size=256";
     }
 
     private static String encodedRenderName(String username, boolean isBedrock) {
@@ -207,6 +252,47 @@ public class McApiClient implements Listener {
                     plugin.getLogger().log(Level.WARNING, "[McAPI] " + label + " 画像取得失敗: " + playerName + " - " + error.getMessage());
                     return "";
                 });
+    }
+
+    private void ensureCacheWarm(UUID uuid, String rawName, boolean isBedrock) {
+        refreshPlayerCache(uuid, rawName, isBedrock);
+    }
+
+    private CompletableFuture<Void> refreshPlayerCache(UUID uuid, String rawName, boolean isBedrock) {
+        if (uuid == null || rawName == null || rawName.isBlank()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (!refreshInFlight.add(uuid)) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        String normalizedName = normalizedName(rawName, isBedrock);
+        String faceUrl = buildFaceUrl(rawName, isBedrock);
+        String skinUrl = buildSkinUrl(rawName, isBedrock);
+        String bodyUrl = buildBodyUrl(rawName, isBedrock);
+
+        CompletableFuture<String> faceBase64Future = fetchBase64(faceUrl, "face", rawName);
+        CompletableFuture<String> skinBase64Future = fetchBase64(skinUrl, "skin", rawName);
+        CompletableFuture<String> bodyBase64Future = fetchBase64(bodyUrl, "body", rawName);
+
+        return CompletableFuture.allOf(faceBase64Future, skinBase64Future, bodyBase64Future)
+                .thenRun(() -> cacheStore.update(
+                        uuid,
+                        rawName,
+                        normalizedName,
+                        isBedrock,
+                        faceUrl,
+                        skinUrl,
+                        bodyUrl,
+                        faceBase64Future.join(),
+                        skinBase64Future.join(),
+                        bodyBase64Future.join()
+                ))
+                .exceptionally(error -> {
+                    plugin.getLogger().log(Level.WARNING, "[McAPI] キャッシュ更新失敗: " + rawName + " - " + error.getMessage());
+                    return null;
+                })
+                .whenComplete((ignored, error) -> refreshInFlight.remove(uuid));
     }
 
     private String normalizedName(String rawName, boolean isBedrock) {

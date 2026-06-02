@@ -31,6 +31,18 @@ public class McApiCacheStore {
         return getString(uuid, "bodyUrl");
     }
 
+    public Optional<String> getFaceBase64(UUID uuid) {
+        return getString(uuid, "faceBase64");
+    }
+
+    public Optional<String> getSkinBase64(UUID uuid) {
+        return getString(uuid, "skinBase64");
+    }
+
+    public Optional<String> getBodyBase64(UUID uuid) {
+        return getString(uuid, "bodyBase64");
+    }
+
     public void update(Player player) {
         boolean isBedrock = FloodgateUtil.isBedrock(player);
         update(
