@@ -8,6 +8,7 @@ import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.bukkit.attribute.Attributable;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
@@ -18,6 +19,7 @@ import org.bukkit.block.data.Ageable;
 import org.bukkit.entity.CopperGolem;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -1523,10 +1525,11 @@ public class CopperGolemModule implements Listener {
 
     private void applyCombatHealth(CopperGolem golem, GolemProfile profile) {
         org.bukkit.attribute.AttributeInstance attribute = golem.getAttribute(Attribute.MAX_HEALTH);
+        Attributable defaultAttributes = EntityType.COPPER_GOLEM.getDefaultAttributes();
         if (attribute == null) {
             return;
         }
-        double base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, Attribute.MAX_HEALTH.getDefaultValue()));
+        double base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, defaultAttributes.getAttribute(Attribute.MAX_HEALTH).getBaseValue()));
         double target = resolveCombatMaxHealth(profile, base);
         if (Math.abs(attribute.getBaseValue() - target) > 0.0001D) {
             attribute.setBaseValue(target);
@@ -1544,8 +1547,9 @@ public class CopperGolemModule implements Listener {
         double base = 20.0D;
         if (golem != null) {
             org.bukkit.attribute.AttributeInstance attribute = golem.getAttribute(Attribute.MAX_HEALTH);
+            Attributable defaultAttributes = EntityType.COPPER_GOLEM.getDefaultAttributes();
             if (attribute != null) {
-                base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, Attribute.MAX_HEALTH.getDefaultValue()));
+                base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, defaultAttributes.getAttribute(Attribute.MAX_HEALTH).getBaseValue()));
             }
         }
         return resolveCombatMaxHealth(profile, base);
