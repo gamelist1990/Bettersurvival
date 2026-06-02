@@ -33,7 +33,6 @@ import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
-import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -48,6 +47,7 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Transformation;
+import io.papermc.paper.world.WeatheringCopperState;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
@@ -99,6 +99,8 @@ public class CopperGolemModule implements Listener {
     private static final int COMBAT_MAX_HEALTH = 100;
     private static final double COMBAT_REGEN_AMOUNT = 1.0D;
     private static final long COMBAT_REGEN_INTERVAL_TICKS = 20L;
+    private static final long MISSING_CONFIRM_MILLIS = 10_000L;
+    private static final long RESPAWN_RETRY_MILLIS = 15_000L;
 
     private final Loader plugin;
     private final ToggleModule toggle;
@@ -117,6 +119,9 @@ public class CopperGolemModule implements Listener {
     private final Map<UUID, PendingTargetSelection> pendingSelections = new LinkedHashMap<>();
     private final Map<UUID, String> combatEquipmentMenuEditors = new LinkedHashMap<>();
     private final Map<UUID, Long> lastCombatActivityTickByGolem = new LinkedHashMap<>();
+    private final Map<String, Location> lastKnownLocationByGolemId = new LinkedHashMap<>();
+    private final Map<String, Long> missingSinceMillisByGolemId = new LinkedHashMap<>();
+    private final Map<String, Long> lastRespawnAttemptMillisByGolemId = new LinkedHashMap<>();
 
     private BukkitTask workerTask;
 
@@ -201,27 +206,56 @@ public class CopperGolemModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
+        if (event.getAction() != Action.LEFT_CLICK_BLOCK) {
             return;
         }
-        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
+        PendingTargetSelection pending = pendingSelections.get(event.getPlayer().getUniqueId());
+        if (pending == null) {
             return;
         }
         Block clicked = event.getClickedBlock();
-        if (!isCopperGolemStatue(clicked)) {
-            return;
-        }
-        if (!event.getPlayer().isSneaking()) {
+        if (clicked == null) {
             return;
         }
 
-        GolemProfile profile = resolveStatueProfile(clicked);
+        GolemProfile profile = profiles.get(pending.golemId());
         if (profile == null) {
+            pendingSelections.remove(event.getPlayer().getUniqueId());
             return;
         }
 
+        ContainerTarget target = resolveContainerTarget(clicked);
+        if (target == null) {
+            event.getPlayer().sendMessage("§cチェスト/ラージチェスト/樽を左クリックしてください");
+            event.setCancelled(true);
+            return;
+        }
+        if (!canRegisterContainerTarget(event.getPlayer(), target)) {
+            event.setCancelled(true);
+            return;
+        }
+
+        if (pending.type() == TargetSelectionType.BONE_MEAL_SOURCE) {
+            setContainerTarget(profile.boneMealSources(), pending.slot(), target);
+        } else {
+            setContainerTarget(profile.targets(), pending.slot(), target);
+        }
+        pendingSelections.remove(event.getPlayer().getUniqueId());
+        saveProfiles();
+
+        spawnContainerOutline(target.footprint());
+        event.getPlayer().playSound(target.anchor(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 0.8F, 1.2F);
+        if (pending.type() == TargetSelectionType.BONE_MEAL_SOURCE) {
+            event.getPlayer().sendMessage("§a骨粉供給元スロット " + (pending.slot() + 1) + " に設定しました");
+        } else {
+            event.getPlayer().sendMessage("§a保管先スロット " + (pending.slot() + 1) + " に設定しました");
+        }
         event.setCancelled(true);
-        openMainMenu(event.getPlayer(), profile);
+        if (pending.type() == TargetSelectionType.BONE_MEAL_SOURCE) {
+            openBoneMealSourceMenu(event.getPlayer(), profile);
+        } else {
+            openTargetMenu(event.getPlayer(), profile);
+        }
     }
 
     @EventHandler(ignoreCancelled = false, priority = EventPriority.MONITOR)
@@ -307,28 +341,15 @@ public class CopperGolemModule implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
-    public void onCopperGolemChangeBlock(EntityChangeBlockEvent event) {
-        if (!(event.getEntity() instanceof CopperGolem golem)) {
-            return;
-        }
-        if (!(event.getBlockData() instanceof org.bukkit.block.data.type.CopperGolemStatue)) {
-            return;
-        }
-        String golemId = golem.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
-        if (golemId == null || golemId.isBlank() || !profiles.containsKey(golemId)) {
-            return;
-        }
-
-        clearTransientTracking(golem.getUniqueId());
-        Bukkit.getScheduler().runTask(plugin, () -> storeStatueTracking(event.getBlock(), golemId));
-    }
-
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onCopperGolemSpawn(CreatureSpawnEvent event) {
         if (!(event.getEntity() instanceof CopperGolem golem)) {
             return;
         }
-        GolemProfile profile = resolveStatueProfile(golem.getLocation().getBlock());
+        String golemId = golem.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
+        if (golemId == null || golemId.isBlank()) {
+            return;
+        }
+        GolemProfile profile = profiles.get(golemId);
         if (profile == null) {
             return;
         }
@@ -344,60 +365,6 @@ public class CopperGolemModule implements Listener {
         saveProfiles();
     }
 
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
-    public void onSelectContainer(PlayerInteractEvent event) {
-        if (event.getAction() != Action.LEFT_CLICK_BLOCK) {
-            return;
-        }
-        PendingTargetSelection pending = pendingSelections.get(event.getPlayer().getUniqueId());
-        if (pending == null) {
-            return;
-        }
-        Block clicked = event.getClickedBlock();
-        if (clicked == null) {
-            return;
-        }
-
-        GolemProfile profile = profiles.get(pending.golemId());
-        if (profile == null) {
-            pendingSelections.remove(event.getPlayer().getUniqueId());
-            return;
-        }
-
-        ContainerTarget target = resolveContainerTarget(clicked);
-        if (target == null) {
-            event.getPlayer().sendMessage("§cチェスト/ラージチェスト/樽を左クリックしてください");
-            event.setCancelled(true);
-            return;
-        }
-        if (!canRegisterContainerTarget(event.getPlayer(), target)) {
-            event.setCancelled(true);
-            return;
-        }
-
-        if (pending.type() == TargetSelectionType.BONE_MEAL_SOURCE) {
-            setContainerTarget(profile.boneMealSources(), pending.slot(), target);
-        } else {
-            setContainerTarget(profile.targets(), pending.slot(), target);
-        }
-        pendingSelections.remove(event.getPlayer().getUniqueId());
-        saveProfiles();
-
-        spawnContainerOutline(target.footprint());
-        event.getPlayer().playSound(target.anchor(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 0.8F, 1.2F);
-        if (pending.type() == TargetSelectionType.BONE_MEAL_SOURCE) {
-            event.getPlayer().sendMessage("§a骨粉供給元スロット " + (pending.slot() + 1) + " に設定しました");
-        } else {
-            event.getPlayer().sendMessage("§a保管先スロット " + (pending.slot() + 1) + " に設定しました");
-        }
-        event.setCancelled(true);
-        if (pending.type() == TargetSelectionType.BONE_MEAL_SOURCE) {
-            openBoneMealSourceMenu(event.getPlayer(), profile);
-        } else {
-            openTargetMenu(event.getPlayer(), profile);
-        }
-    }
-
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onContainerBreak(BlockBreakEvent event) {
         if (!isTargetContainerMaterial(event.getBlock().getType())) {
@@ -409,19 +376,8 @@ public class CopperGolemModule implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
-    public void onCopperGolemStatueBreak(BlockBreakEvent event) {
-        if (!isCopperGolemStatue(event.getBlock())) {
-            return;
-        }
-        if (removeStatueProfile(event.getBlock())) {
-            saveProfiles();
-        }
-    }
-
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onContainerExplode(EntityExplodeEvent event) {
         boolean changed = removeRegisteredTargetsByLocations(event.blockList().stream().map(Block::getLocation).toList());
-        changed |= removeStatueProfilesByLocations(event.blockList().stream().map(Block::getLocation).toList());
         if (changed) {
             saveProfiles();
         }
@@ -430,7 +386,6 @@ public class CopperGolemModule implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onContainerExplode(BlockExplodeEvent event) {
         boolean changed = removeRegisteredTargetsByLocations(event.blockList().stream().map(Block::getLocation).toList());
-        changed |= removeStatueProfilesByLocations(event.blockList().stream().map(Block::getLocation).toList());
         if (changed) {
             saveProfiles();
         }
@@ -1334,12 +1289,23 @@ public class CopperGolemModule implements Listener {
         if (!toggle.getGlobal(FEATURE_KEY)) {
             return;
         }
+        long now = System.currentTimeMillis();
 
         for (GolemProfile profile : profiles.values()) {
             CopperGolem golem = resolveGolem(profile);
             if (golem == null) {
+                if (!shouldAttemptRespawn(profile, now)) {
+                    continue;
+                }
+                lastRespawnAttemptMillisByGolemId.put(profile.id(), now);
+                if (respawnMissingGolem(profile)) {
+                    missingSinceMillisByGolemId.remove(profile.id());
+                    saveProfiles();
+                }
                 continue;
             }
+            lastKnownLocationByGolemId.put(profile.id(), golem.getLocation().clone());
+            missingSinceMillisByGolemId.remove(profile.id());
             applyProfileToEntity(golem, profile);
             if (profile.mode() == GolemMode.IDLE) {
                 golem.getPathfinder().stopPathfinding();
@@ -1451,6 +1417,7 @@ public class CopperGolemModule implements Listener {
         golem.setCustomNameVisible(false);
         golem.setPersistent(true);
         golem.setCanPickupItems(false);
+        applyNoRustSettings(golem);
         syncEquipment(golem, EquipmentSlot.HAND, null);
         syncEquipment(golem, EquipmentSlot.OFF_HAND, resolveCombatWeapon(profile));
         syncEquipment(golem, EquipmentSlot.HEAD, profile.combatHelmet());
@@ -1567,15 +1534,170 @@ public class CopperGolemModule implements Listener {
     }
 
     private CopperGolem resolveGolem(GolemProfile profile) {
-        Entity entity = Bukkit.getEntity(profile.entityUuid());
-        if (entity instanceof CopperGolem copperGolem && copperGolem.isValid() && !copperGolem.isDead()) {
-            return copperGolem;
+        CopperGolem selected = findAndConvergeGolemsById(profile.id(), profile.entityUuid());
+        if (selected != null && !selected.getUniqueId().equals(profile.entityUuid())) {
+            clearTransientTracking(profile.entityUuid());
+            profile.setEntityUuid(selected.getUniqueId());
+        }
+        return selected;
+    }
+
+    private CopperGolem findAndConvergeGolemsById(String golemId, UUID preferredUuid) {
+        if (golemId == null || golemId.isBlank()) {
+            return null;
+        }
+        List<CopperGolem> candidates = new ArrayList<>();
+        for (World world : Bukkit.getWorlds()) {
+            for (CopperGolem candidate : world.getEntitiesByClass(CopperGolem.class)) {
+                if (!candidate.isValid() || candidate.isDead()) {
+                    continue;
+                }
+                String candidateId = candidate.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
+                if (Objects.equals(candidateId, golemId)) {
+                    candidates.add(candidate);
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        CopperGolem selected = null;
+        if (preferredUuid != null) {
+            for (CopperGolem candidate : candidates) {
+                if (preferredUuid.equals(candidate.getUniqueId())) {
+                    selected = candidate;
+                    break;
+                }
+            }
+        }
+        if (selected == null) {
+            selected = candidates.get(0);
+            for (CopperGolem candidate : candidates) {
+                if (candidate.getTicksLived() < selected.getTicksLived()) {
+                    selected = candidate;
+                }
+            }
+        }
+
+        for (CopperGolem candidate : candidates) {
+            if (candidate.getUniqueId().equals(selected.getUniqueId())) {
+                continue;
+            }
+            clearTransientTracking(candidate.getUniqueId());
+            candidate.remove();
+        }
+        return selected;
+    }
+
+    private boolean shouldAttemptRespawn(GolemProfile profile, long nowMillis) {
+        if (profile == null || profile.id() == null || profile.id().isBlank()) {
+            return false;
+        }
+        String golemId = profile.id();
+        long missingSince = missingSinceMillisByGolemId.computeIfAbsent(golemId, ignored -> nowMillis);
+        if ((nowMillis - missingSince) < MISSING_CONFIRM_MILLIS) {
+            return false;
+        }
+        Long lastAttempt = lastRespawnAttemptMillisByGolemId.get(golemId);
+        if (lastAttempt != null && (nowMillis - lastAttempt) < RESPAWN_RETRY_MILLIS) {
+            return false;
+        }
+
+        Location lastKnown = lastKnownLocationByGolemId.get(golemId);
+        if (lastKnown != null && lastKnown.getWorld() != null) {
+            int chunkX = lastKnown.getBlockX() >> 4;
+            int chunkZ = lastKnown.getBlockZ() >> 4;
+            if (!lastKnown.getWorld().isChunkLoaded(chunkX, chunkZ)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean respawnMissingGolem(GolemProfile profile) {
+        Location anchor = resolveRespawnAnchor(profile);
+        if (anchor == null || anchor.getWorld() == null) {
+            return false;
+        }
+        Location spawnLocation = findRespawnLocation(anchor);
+        if (spawnLocation == null || spawnLocation.getWorld() == null) {
+            return false;
+        }
+
+        UUID previousEntityUuid = profile.entityUuid();
+        CopperGolem golem = spawnLocation.getWorld().spawn(spawnLocation, CopperGolem.class, spawned -> {
+            spawned.setPersistent(true);
+            spawned.getPersistentDataContainer().set(golemIdKey, PersistentDataType.STRING, profile.id());
+            applyNoRustSettings(spawned);
+        });
+        clearTransientTracking(previousEntityUuid);
+        profile.setEntityUuid(golem.getUniqueId());
+        lastKnownLocationByGolemId.put(profile.id(), golem.getLocation().clone());
+        applyProfileToEntity(golem, profile);
+        return true;
+    }
+
+    private Location resolveRespawnAnchor(GolemProfile profile) {
+        if (profile == null) {
+            return null;
+        }
+        for (ContainerTarget target : profile.boneMealSources()) {
+            if (target != null && target.anchor() != null && target.anchor().getWorld() != null) {
+                return target.anchor().clone();
+            }
+        }
+        for (ContainerTarget target : profile.targets()) {
+            if (target != null && target.anchor() != null && target.anchor().getWorld() != null) {
+                return target.anchor().clone();
+            }
         }
         return null;
     }
 
+    private Location findRespawnLocation(Location anchor) {
+        World world = anchor.getWorld();
+        if (world == null) {
+            return null;
+        }
+        int baseX = anchor.getBlockX();
+        int baseY = anchor.getBlockY() + 1;
+        int baseZ = anchor.getBlockZ();
+        for (int radius = 0; radius <= 2; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    Location candidate = new Location(world, baseX + dx + 0.5D, baseY, baseZ + dz + 0.5D);
+                    if (canSpawnGolemAt(candidate)) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean canSpawnGolemAt(Location location) {
+        Block feet = location.getBlock();
+        Block head = feet.getRelative(0, 1, 0);
+        Block ground = feet.getRelative(0, -1, 0);
+        return feet.isPassable() && head.isPassable() && ground.getType().isSolid();
+    }
+
+    private void applyNoRustSettings(CopperGolem golem) {
+        if (golem == null) {
+            return;
+        }
+        golem.setOxidizing(CopperGolem.Oxidizing.waxed());
+        if (golem.getWeatheringState() != WeatheringCopperState.UNAFFECTED) {
+            golem.setWeatheringState(WeatheringCopperState.UNAFFECTED);
+        }
+    }
+
     private void loadProfiles() {
         profiles.clear();
+        lastKnownLocationByGolemId.clear();
+        missingSinceMillisByGolemId.clear();
+        lastRespawnAttemptMillisByGolemId.clear();
         Map<String, CopperGolemStore.StoredGolem> stored = store.loadAll();
         for (CopperGolemStore.StoredGolem entry : stored.values()) {
             UUID entityUuid;
@@ -1660,6 +1782,7 @@ public class CopperGolemModule implements Listener {
 
             CopperGolem golem = resolveGolem(profile);
             if (golem != null) {
+                lastKnownLocationByGolemId.put(profile.id(), golem.getLocation().clone());
                 applyProfileToEntity(golem, profile);
             }
         }
@@ -1865,56 +1988,6 @@ public class CopperGolemModule implements Listener {
         return sharedStorageModule != null && sharedStorageModule.isSharedStorageContainer(location);
     }
 
-    private boolean isCopperGolemStatue(Block block) {
-        return block != null && block.getBlockData() instanceof org.bukkit.block.data.type.CopperGolemStatue;
-    }
-
-    private GolemProfile resolveStatueProfile(Block block) {
-        if (!isCopperGolemStatue(block)) {
-            return null;
-        }
-        BlockState state = block.getState();
-        if (!(state instanceof org.bukkit.block.CopperGolemStatue statue)) {
-            return null;
-        }
-        String golemId = statue.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
-        if (golemId == null || golemId.isBlank()) {
-            return null;
-        }
-        return profiles.get(golemId);
-    }
-
-    private void storeStatueTracking(Block block, String golemId) {
-        if (block == null || golemId == null || golemId.isBlank()) {
-            return;
-        }
-        BlockState state = block.getState();
-        if (!(state instanceof org.bukkit.block.CopperGolemStatue statue)) {
-            return;
-        }
-        statue.getPersistentDataContainer().set(golemIdKey, PersistentDataType.STRING, golemId);
-        statue.update(true, false);
-    }
-
-    private boolean removeStatueProfile(Block block) {
-        GolemProfile profile = resolveStatueProfile(block);
-        if (profile == null) {
-            return false;
-        }
-        return removeProfile(profile.id());
-    }
-
-    private boolean removeStatueProfilesByLocations(List<Location> locations) {
-        boolean changed = false;
-        for (Location location : locations) {
-            if (location == null) {
-                continue;
-            }
-            changed |= removeStatueProfile(location.getBlock());
-        }
-        return changed;
-    }
-
     private boolean removeProfile(String golemId) {
         if (golemId == null || golemId.isBlank()) {
             return false;
@@ -1924,6 +1997,9 @@ public class CopperGolemModule implements Listener {
             return false;
         }
         clearTransientTracking(removed.entityUuid());
+        lastKnownLocationByGolemId.remove(golemId);
+        missingSinceMillisByGolemId.remove(golemId);
+        lastRespawnAttemptMillisByGolemId.remove(golemId);
         pendingSelections.entrySet().removeIf(entry -> Objects.equals(entry.getValue().golemId(), golemId));
         combatEquipmentMenuEditors.entrySet().removeIf(entry -> Objects.equals(entry.getValue(), golemId));
         return true;

@@ -54,7 +54,6 @@ hs_err_pid*
 .LSOverride
 
 # Icon must end with two \r
-Icon
 
 # Thumbnails
 ._*
@@ -114,6 +113,9 @@ gradle-app.setting
 # Common working directory
 run/
 runs/
+WebMap/node_modules/
+WebMap/dist/
+Temp/
 
 # Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
 !gradle-wrapper.jar

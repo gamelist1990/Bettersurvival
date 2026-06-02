@@ -40,8 +40,8 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
         }
 
         Member member = event.getMember();
-        String authorName = member != null ? member.getEffectiveName() : event.getAuthor().getName();
-        String content = event.getMessage().getContentDisplay().trim();
+        String authorName = member != null ? member.getEffectiveName() : event.getAuthor().getGlobalName() != null ? event.getAuthor().getGlobalName() : event.getAuthor().getName();
+        String content = event.getMessage().getContentRaw().trim();
         if (content.isBlank()) {
             List<String> attachmentUrls = new ArrayList<>();
             event.getMessage().getAttachments().forEach(attachment -> attachmentUrls.add(attachment.getUrl()));

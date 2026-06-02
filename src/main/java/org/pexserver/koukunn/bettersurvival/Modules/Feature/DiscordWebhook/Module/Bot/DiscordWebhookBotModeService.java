@@ -8,7 +8,9 @@ import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.Webhook;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
@@ -23,10 +25,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.time.Instant;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class DiscordWebhookBotModeService {
     private static final int JOIN_COLOR = 0x57F287;
     private static final int LEAVE_COLOR = 0xED4245;
+    private static final Pattern URL_PATTERN = Pattern.compile(
+            "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+");
 
     private final Loader plugin;
     private final DiscordWebhookClient client;
@@ -217,11 +223,41 @@ public class DiscordWebhookBotModeService {
     }
 
     private void relayDiscordMessageToMinecraft(DiscordWebhookDiscordListener.DiscordIncomingMessage message) {
-        Bukkit.getScheduler().runTask(plugin, () -> Bukkit.broadcast(
-                Component.text("[Discord] ", NamedTextColor.AQUA)
-                        .append(Component.text(message.authorName(), NamedTextColor.WHITE))
-                        .append(Component.text(": ", NamedTextColor.DARK_GRAY))
-                        .append(Component.text(message.content(), NamedTextColor.GRAY))));
+        Component header = Component.text("[Discord] ", NamedTextColor.AQUA)
+                .append(Component.text(message.authorName(), NamedTextColor.WHITE))
+                .append(Component.text(": ", NamedTextColor.DARK_GRAY));
+
+        Component body = buildMessageComponent(message.content());
+        Component fullMessage = header.append(body);
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.sendMessage(fullMessage);
+            }
+            Bukkit.getConsoleSender().sendMessage(fullMessage);
+        });
+    }
+
+    private Component buildMessageComponent(String text) {
+        Component result = Component.empty();
+        Matcher matcher = URL_PATTERN.matcher(text);
+        int last = 0;
+        while (matcher.find()) {
+            if (matcher.start() > last) {
+                result = result.append(Component.text(text.substring(last, matcher.start()), NamedTextColor.GRAY));
+            }
+            String url = matcher.group();
+            result = result.append(
+                    Component.text(url)
+                            .color(NamedTextColor.BLUE)
+                            .decorate(TextDecoration.UNDERLINED)
+                            .clickEvent(ClickEvent.openUrl(url)));
+            last = matcher.end();
+        }
+        if (last < text.length()) {
+            result = result.append(Component.text(text.substring(last), NamedTextColor.GRAY));
+        }
+        return result;
     }
 
     private String normalizedPlayerName(Player player) {

@@ -42,10 +42,12 @@ import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.webmap.WebMapCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
@@ -69,6 +71,7 @@ public final class Loader extends JavaPlugin {
     private ChestShopModule chestShopModule;
     private BetterMenuModule betterMenuModule;
     private CopperGolemModule copperGolemModule;
+    private WebMapModule webMapModule;
 
     @Override
     public void onEnable() {
@@ -126,9 +129,9 @@ public final class Loader extends JavaPlugin {
         chestSortModule = new ChestSortModule(this, toggleModule, chestLockModule, chestShopModule);
         getServer().getPluginManager().registerEvents(chestSortModule, this);
         getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
+        discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule);
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
         getServer().getPluginManager().registerEvents(discordWebhookModule, this);
-        discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule);
         homeModule = new HomeModule(this);
         // BedrockSkin モジュール登録 (Floodgate/Geyser ユーザーのスキン自動適用)
         BedrockSkinModule bedrockSkin = new BedrockSkinModule(this, toggleModule, configManager);
@@ -142,6 +145,8 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(copperGolemModule, this);
         geyserWorkbenchModule = new GeyserWorkbenchModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(geyserWorkbenchModule, this);
+        webMapModule = new WebMapModule(this);
+        getServer().getPluginManager().registerEvents(webMapModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
         InvseeOfflineData.initialize(this);
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -189,6 +194,8 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("geyseranvil", "Geyser金床", "Geyser/Bedrock対応の金床UIを有効/無効にします", Material.ANVIL, false));
         toggleModule.registerFeature(
             new ToggleFeature("geysersmithing", "Geyser鍛冶台", "Geyser/Bedrock対応の鍛冶台UIを有効/無効にします", Material.SMITHING_TABLE, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("webmap", "WebMap", "軽量な Web マップと ChunkGen を有効/無効にします", Material.FILLED_MAP, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -246,6 +253,9 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("geysersmithing")) {
             toggleModule.setGlobal("geysersmithing", true);
         }
+        if (!toggleModule.hasGlobal("webmap")) {
+            toggleModule.setGlobal("webmap", false);
+        }
 
         getLogger().info("Better Survival Plugin が有効になりました");
     }
@@ -274,6 +284,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new DiscordCommand(this));
         // Pending whitelist command: 初回参加前ユーザーを接続待機登録
         commandManager.register(new WhitelistCommand(this));
+        // WebMap command
+        commandManager.register(new WebMapCommand(this));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
@@ -332,6 +344,10 @@ public final class Loader extends JavaPlugin {
         return chestShopModule;
     }
 
+    public WebMapModule getWebMapModule() {
+        return webMapModule;
+    }
+
     @Override
     public void onDisable() {
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -351,6 +367,9 @@ public final class Loader extends JavaPlugin {
         }
         if (copperGolemModule != null) {
             copperGolemModule.shutdown();
+        }
+        if (webMapModule != null) {
+            webMapModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

@@ -76,3 +76,39 @@ processResources {
         expand props
     }
 }
+
+def webMapDir = file("$projectDir/WebMap")
+def webMapDistDir = file("$projectDir/WebMap/dist")
+def npmCommand = org.gradle.internal.os.OperatingSystem.current().isWindows() ? 'npm.cmd' : 'npm'
+
+tasks.register('npmInstallWebMap', Exec) {
+    onlyIf { webMapDir.exists() }
+    workingDir webMapDir
+    commandLine npmCommand, 'install'
+    inputs.file(file("$webMapDir/package.json"))
+    outputs.dir(file("$webMapDir/node_modules"))
+}
+
+tasks.register('buildWebMapFrontend', Exec) {
+    onlyIf { webMapDir.exists() }
+    dependsOn tasks.named('npmInstallWebMap')
+    workingDir webMapDir
+    commandLine npmCommand, 'run', 'build'
+    inputs.files(
+            file("$webMapDir/package.json"),
+            file("$webMapDir/vite.config.js"),
+            file("$webMapDir/index.html")
+    )
+    inputs.dir(file("$webMapDir/src"))
+    inputs.dir(file("$webMapDir/public"))
+    outputs.dir(webMapDistDir)
+}
+
+processResources {
+    if (webMapDir.exists()) {
+        dependsOn tasks.named('buildWebMapFrontend')
+        from(webMapDistDir) {
+            into 'webmap'
+        }
+    }
+}

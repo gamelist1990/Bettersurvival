@@ -43,7 +43,7 @@ public class DiscordBotRuntime {
         try {
 
             JDABuilder builder = JDABuilder.createLight(token)
-                    .enableIntents(GatewayIntent.MESSAGE_CONTENT)
+                    .enableIntents(GatewayIntent.MESSAGE_CONTENT, GatewayIntent.GUILD_MEMBERS)
                     .addEventListeners(
                             new DiscordWhitelistListener(plugin, whitelistModule, mcApiClient, settingsSupplier));
 
