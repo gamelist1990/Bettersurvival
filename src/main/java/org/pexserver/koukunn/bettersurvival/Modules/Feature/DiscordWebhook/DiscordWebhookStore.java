@@ -19,6 +19,8 @@ public class DiscordWebhookStore {
         settings.setEventWebhookUrl(getString(config, "eventWebhookUrl", ""));
         settings.setBotModeEnabled(getBoolean(config, "botModeEnabled", false));
         settings.setBotChannelId(getString(config, "botChannelId", ""));
+        settings.setBotJoinEnabled(getBoolean(config, "botJoinEnabled", true));
+        settings.setBotLeaveEnabled(getBoolean(config, "botLeaveEnabled", true));
         settings.setBotChatRelayEnabled(getBoolean(config, "botChatRelayEnabled", true));
         settings.setStatusWebhookUrl(getString(config, "statusWebhookUrl", ""));
         settings.setStatusMessageId(getString(config, "statusMessageId", ""));
@@ -35,6 +37,8 @@ public class DiscordWebhookStore {
         config.put("eventWebhookUrl", settings.getEventWebhookUrl());
         config.put("botModeEnabled", settings.isBotModeEnabled());
         config.put("botChannelId", settings.getBotChannelId());
+        config.put("botJoinEnabled", settings.isBotJoinEnabled());
+        config.put("botLeaveEnabled", settings.isBotLeaveEnabled());
         config.put("botChatRelayEnabled", settings.isBotChatRelayEnabled());
         config.put("statusWebhookUrl", settings.getStatusWebhookUrl());
         config.put("statusMessageId", settings.getStatusMessageId());

@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
@@ -97,7 +98,30 @@ public class McApiClient implements Listener {
     }
 
     public void refreshPlayerCache(Player player) {
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> cacheStore.update(player));
+        boolean isBedrock = FloodgateUtil.isBedrock(player);
+        String rawName = player.getName();
+        String normalizedName = normalizedName(rawName, isBedrock);
+        String faceUrl = buildFaceUrl(rawName, isBedrock);
+        String skinUrl = buildSkinUrl(rawName, isBedrock);
+        String bodyUrl = buildBodyUrl(rawName, isBedrock);
+
+        CompletableFuture<String> faceBase64Future = fetchBase64(faceUrl, "face", rawName);
+        CompletableFuture<String> skinBase64Future = fetchBase64(skinUrl, "skin", rawName);
+        CompletableFuture<String> bodyBase64Future = fetchBase64(bodyUrl, "body", rawName);
+
+        CompletableFuture.allOf(faceBase64Future, skinBase64Future, bodyBase64Future)
+                .thenRun(() -> cacheStore.update(
+                        player.getUniqueId(),
+                        rawName,
+                        normalizedName,
+                        isBedrock,
+                        faceUrl,
+                        skinUrl,
+                        bodyUrl,
+                        faceBase64Future.join(),
+                        skinBase64Future.join(),
+                        bodyBase64Future.join()
+                ));
     }
 
     /**
@@ -159,5 +183,36 @@ public class McApiClient implements Listener {
             name = name.replace("_", " ");
         }
         return name.replace(" ", "%20").replace("#", "%23");
+    }
+
+    private CompletableFuture<String> fetchBase64(String url, String label, String playerName) {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(15))
+                .GET()
+                .build();
+
+        return client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(response -> {
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        plugin.getLogger().warning("[McAPI] " + label + " 画像取得失敗: " + playerName + " HTTP " + response.statusCode());
+                        return "";
+                    }
+                    byte[] body = response.body();
+                    if (body == null || body.length == 0) {
+                        return "";
+                    }
+                    return Base64.getEncoder().encodeToString(body);
+                })
+                .exceptionally(error -> {
+                    plugin.getLogger().log(Level.WARNING, "[McAPI] " + label + " 画像取得失敗: " + playerName + " - " + error.getMessage());
+                    return "";
+                });
+    }
+
+    private String normalizedName(String rawName, boolean isBedrock) {
+        if (!isBedrock) {
+            return rawName;
+        }
+        return FloodgateUtil.stripPrefix(rawName).replace("_", " ");
     }
 }

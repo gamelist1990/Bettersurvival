@@ -37,7 +37,13 @@ public class McApiCacheStore {
                 player.getUniqueId(),
                 player.getName(),
                 normalizeName(player.getName(), isBedrock),
-                isBedrock
+                isBedrock,
+                McApiClient.buildFaceUrl(player.getName(), isBedrock),
+                McApiClient.buildSkinUrl(player.getName(), isBedrock),
+                McApiClient.buildBodyUrl(player.getName(), isBedrock),
+                "",
+                "",
+                ""
         );
     }
 
@@ -47,10 +53,32 @@ public class McApiCacheStore {
             return;
         }
         boolean isBedrock = FloodgateUtil.isBedrock(player.getUniqueId());
-        update(player.getUniqueId(), name, normalizeName(name, isBedrock), isBedrock);
+        update(
+                player.getUniqueId(),
+                name,
+                normalizeName(name, isBedrock),
+                isBedrock,
+                McApiClient.buildFaceUrl(name, isBedrock),
+                McApiClient.buildSkinUrl(name, isBedrock),
+                McApiClient.buildBodyUrl(name, isBedrock),
+                "",
+                "",
+                ""
+        );
     }
 
-    public void update(UUID uuid, String rawName, String normalizedName, boolean isBedrock) {
+    public void update(
+            UUID uuid,
+            String rawName,
+            String normalizedName,
+            boolean isBedrock,
+            String faceUrl,
+            String skinUrl,
+            String bodyUrl,
+            String faceBase64,
+            String skinBase64,
+            String bodyBase64
+    ) {
         if (uuid == null || rawName == null || rawName.isBlank()) {
             return;
         }
@@ -61,9 +89,12 @@ public class McApiCacheStore {
         config.put("normalizedName", normalizedName);
         config.put("isBedrock", isBedrock);
         config.put("edition", edition);
-        config.put("faceUrl", McApiClient.buildFaceUrl(rawName, isBedrock));
-        config.put("skinUrl", McApiClient.buildSkinUrl(rawName, isBedrock));
-        config.put("bodyUrl", McApiClient.buildBodyUrl(rawName, isBedrock));
+        config.put("faceUrl", faceUrl);
+        config.put("skinUrl", skinUrl);
+        config.put("bodyUrl", bodyUrl);
+        config.put("faceBase64", faceBase64);
+        config.put("skinBase64", skinBase64);
+        config.put("bodyBase64", bodyBase64);
         config.put("updatedAt", Instant.now().toString());
         configManager.saveConfig(path(uuid), config);
     }

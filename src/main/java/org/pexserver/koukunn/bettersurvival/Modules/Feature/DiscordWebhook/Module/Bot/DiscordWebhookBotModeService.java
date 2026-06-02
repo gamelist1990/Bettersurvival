@@ -22,8 +22,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.time.Instant;
 
 public class DiscordWebhookBotModeService {
+    private static final int JOIN_COLOR = 0x57F287;
+    private static final int LEAVE_COLOR = 0xED4245;
+
     private final Loader plugin;
     private final DiscordWebhookClient client;
     private final Supplier<DiscordWebhookSettings> settingsSupplier;
@@ -67,13 +71,13 @@ public class DiscordWebhookBotModeService {
     public void sendJoin(Player player, int onlineCount) {
         if (!isActive())
             return;
-        sendPlayerSystemMessage(player, "サーバーに参加しました", onlineCount);
+        sendPlayerSystemEmbed(player, "サーバーに参加しました", onlineCount, JOIN_COLOR);
     }
 
     public void sendLeave(Player player, int onlineCount) {
         if (!isActive())
             return;
-        sendPlayerSystemMessage(player, "サーバーから退出しました", onlineCount);
+        sendPlayerSystemEmbed(player, "サーバーから退出しました", onlineCount, LEAVE_COLOR);
     }
 
     public void sendMinecraftChat(Player player, String message) {
@@ -90,17 +94,18 @@ public class DiscordWebhookBotModeService {
                 message.trim());
     }
 
-    private void sendPlayerSystemMessage(Player player, String message, int onlineCount) {
+    private void sendPlayerSystemEmbed(Player player, String message, int onlineCount, int color) {
         DiscordWebhookSettings settings = settingsSupplier.get();
         if (settings == null) {
             return;
         }
-        String content = message + "\nオンライン: " + onlineCount + "/" + Bukkit.getMaxPlayers();
-        sendWebhookMessage(
+        sendWebhookEmbed(
                 settings.getBotChannelId(),
                 normalizedPlayerName(player),
                 McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), FloodgateUtil.isBedrock(player)),
-                content);
+                message,
+                "オンライン: " + onlineCount + "/" + Bukkit.getMaxPlayers(),
+                color);
     }
 
     private void sendWebhookMessage(String channelId, String username, String avatarUrl, String content) {
@@ -115,6 +120,33 @@ public class DiscordWebhookBotModeService {
             JsonObject allowedMentions = new JsonObject();
             allowedMentions.add("parse", new JsonArray());
             payload.add("allowed_mentions", allowedMentions);
+            client.send(webhookUrl, payload);
+        });
+    }
+
+    private void sendWebhookEmbed(String channelId, String username, String avatarUrl, String description, String footerText, int color) {
+        getOrCreateWebhookUrl(channelId).thenAccept(webhookUrl -> {
+            if (webhookUrl.isBlank()) {
+                return;
+            }
+            JsonObject embed = new JsonObject();
+            embed.addProperty("description", description);
+            embed.addProperty("color", color);
+            embed.addProperty("timestamp", Instant.now().toString());
+
+            JsonObject footer = new JsonObject();
+            footer.addProperty("text", footerText);
+            embed.add("footer", footer);
+
+            JsonObject payload = new JsonObject();
+            payload.addProperty("username", username);
+            payload.addProperty("avatar_url", avatarUrl);
+            JsonObject allowedMentions = new JsonObject();
+            allowedMentions.add("parse", new JsonArray());
+            payload.add("allowed_mentions", allowedMentions);
+            JsonArray embeds = new JsonArray();
+            embeds.add(embed);
+            payload.add("embeds", embeds);
             client.send(webhookUrl, payload);
         });
     }

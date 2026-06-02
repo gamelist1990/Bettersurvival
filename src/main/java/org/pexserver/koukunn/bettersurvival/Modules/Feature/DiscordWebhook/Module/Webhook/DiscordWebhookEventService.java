@@ -4,7 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
 
@@ -49,7 +51,7 @@ public class DiscordWebhookEventService {
     }
 
     private String getPlayerIconUrl(Player player) {
-        return "https://mc-heads.net/avatar/" + player.getUniqueId() + "/64";
+        return McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), FloodgateUtil.isBedrock(player));
     }
 
     private String compactPlayerEventText(String title, String playerName, int online) {

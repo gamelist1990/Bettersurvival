@@ -39,11 +39,12 @@ public class DiscordWebhookModule implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         DiscordWebhookSettings current = getSettings();
-        if (!current.isEnabled() || !current.isJoinEnabled()) return;
         if (isBotModeActive(current)) {
+            if (!current.isEnabled() || !current.isBotJoinEnabled()) return;
             botModeService.sendJoin(event.getPlayer(), Bukkit.getOnlinePlayers().size());
             return;
         }
+        if (!current.isEnabled() || !current.isJoinEnabled()) return;
         if (!client.isValidUrl(current.getEventWebhookUrl())) return;
         webhookEventService.sendJoin(current, event.getPlayer());
     }
@@ -51,12 +52,13 @@ public class DiscordWebhookModule implements Listener {
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         DiscordWebhookSettings current = getSettings();
-        if (!current.isEnabled() || !current.isLeaveEnabled()) return;
         if (isBotModeActive(current)) {
+            if (!current.isEnabled() || !current.isBotLeaveEnabled()) return;
             int online = Math.max(0, Bukkit.getOnlinePlayers().size() - 1);
             botModeService.sendLeave(event.getPlayer(), online);
             return;
         }
+        if (!current.isEnabled() || !current.isLeaveEnabled()) return;
         if (!client.isValidUrl(current.getEventWebhookUrl())) return;
         webhookEventService.sendLeave(current, event.getPlayer());
     }
@@ -102,8 +104,8 @@ public class DiscordWebhookModule implements Listener {
                 .title("DiscordWebhook")
                 .body("状態: " + (current.isEnabled() ? "有効" : "無効"))
                 .body("イベント送信方式: " + (current.isBotModeEnabled() ? "Bot" : "Webhook"))
-                .body("Join: " + enabledText(current.isJoinEnabled()))
-                .body("Leave: " + enabledText(current.isLeaveEnabled()))
+                .body("Webhook Join/Leave: " + enabledText(current.isJoinEnabled()) + "/" + enabledText(current.isLeaveEnabled()))
+                .body("Bot Join/Leave: " + enabledText(current.isBotJoinEnabled()) + "/" + enabledText(current.isBotLeaveEnabled()))
                 .body("Botチャット中継: " + enabledText(current.isBotChatRelayEnabled()))
                 .body("Status/List: " + enabledText(current.isStatusEnabled()))
                 .body("Status自動更新: " + enabledText(current.isStatusAutoUpdateEnabled()))
@@ -130,10 +132,12 @@ public class DiscordWebhookModule implements Listener {
                 .addBoolInput("enabled", "DiscordWebhookを有効にする", current.isEnabled())
                 .addBoolInput("botModeEnabled", "Join/Leave/Chat に Bot モードを使う", current.isBotModeEnabled())
                 .addTextInput("botChannelId", "Botモード用チャンネル ID", current.getBotChannelId(), 30, false)
+                .addBoolInput("botJoinEnabled", "Botモード Join通知", current.isBotJoinEnabled())
+                .addBoolInput("botLeaveEnabled", "Botモード Leave通知", current.isBotLeaveEnabled())
                 .addBoolInput("botChatRelayEnabled", "Discord と Minecraft のチャット中継", current.isBotChatRelayEnabled())
                 .addTextInput("eventWebhookUrl", "Join/Leave Webhook URL", current.getEventWebhookUrl(), 2048, true)
-                .addBoolInput("joinEnabled", "Join通知", current.isJoinEnabled())
-                .addBoolInput("leaveEnabled", "Leave通知", current.isLeaveEnabled())
+                .addBoolInput("joinEnabled", "Webhook Join通知", current.isJoinEnabled())
+                .addBoolInput("leaveEnabled", "Webhook Leave通知", current.isLeaveEnabled())
                 .addTextInput("statusWebhookUrl", "Status/List Webhook URL", current.getStatusWebhookUrl(), 2048, true)
                 .addBoolInput("statusEnabled", "Status/List送信", current.isStatusEnabled())
                 .addBoolInput("statusAutoUpdateEnabled", "Status/Listを5分ごとに自動更新", current.isStatusAutoUpdateEnabled())
@@ -147,6 +151,8 @@ public class DiscordWebhookModule implements Listener {
                     updated.setEnabled(result.getBool("enabled"));
                     updated.setBotModeEnabled(result.getBool("botModeEnabled"));
                     updated.setBotChannelId(result.getText("botChannelId"));
+                    updated.setBotJoinEnabled(result.getBool("botJoinEnabled"));
+                    updated.setBotLeaveEnabled(result.getBool("botLeaveEnabled"));
                     updated.setBotChatRelayEnabled(result.getBool("botChatRelayEnabled"));
                     updated.setEventWebhookUrl(result.getText("eventWebhookUrl"));
                     updated.setJoinEnabled(result.getBool("joinEnabled"));
