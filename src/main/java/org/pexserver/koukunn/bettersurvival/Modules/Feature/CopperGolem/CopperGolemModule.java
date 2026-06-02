@@ -1526,7 +1526,7 @@ public class CopperGolemModule implements Listener {
         if (attribute == null) {
             return;
         }
-        double base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, attribute.getDefaultValue()));
+        double base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, Attribute.MAX_HEALTH.getDefaultValue()));
         double target = resolveCombatMaxHealth(profile, base);
         if (Math.abs(attribute.getBaseValue() - target) > 0.0001D) {
             attribute.setBaseValue(target);
@@ -1545,7 +1545,7 @@ public class CopperGolemModule implements Listener {
         if (golem != null) {
             org.bukkit.attribute.AttributeInstance attribute = golem.getAttribute(Attribute.MAX_HEALTH);
             if (attribute != null) {
-                base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, attribute.getDefaultValue()));
+                base = Math.min(COMBAT_MAX_HEALTH, Math.max(1.0D, Attribute.MAX_HEALTH.getDefaultValue()));
             }
         }
         return resolveCombatMaxHealth(profile, base);
