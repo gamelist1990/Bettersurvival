@@ -76,7 +76,7 @@ public class WebMapDataStore {
         }
     }
 
-    public void flushDirty() {
+    public synchronized void flushDirty() {
         for (String worldKey : new ArrayList<>(dirtyWorlds)) {
             WebMapDimensionData data = loaded.get(worldKey);
             if (data == null) {
@@ -92,7 +92,7 @@ public class WebMapDataStore {
         }
     }
 
-    public void flushAll() {
+    public synchronized void flushAll() {
         dirtyWorlds.addAll(loaded.keySet());
         flushDirty();
     }

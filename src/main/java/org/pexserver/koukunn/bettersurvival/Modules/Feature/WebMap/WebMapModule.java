@@ -26,6 +26,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.server.ServerCommandEvent;
 import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
@@ -43,8 +44,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 
@@ -68,11 +71,14 @@ public class WebMapModule implements Listener {
     private final Map<String, BossBar> chunkGenBossBars = new ConcurrentHashMap<>();
     private final Map<String, List<WebMapMarkerRecord>> markerSnapshots = new ConcurrentHashMap<>();
     private final Map<String, Map<String, WebMapMarkerRecord>> waypointSnapshots = new ConcurrentHashMap<>();
+    private final AtomicInteger pendingChunkWork = new AtomicInteger();
     private final AtomicLong nmsColorHits = new AtomicLong();
     private final AtomicLong fallbackColorHits = new AtomicLong();
     private BossBar globalTpsBar;
 
     private volatile boolean globalEnabled;
+    private volatile boolean shutdownRequested;
+    private volatile boolean shutdownComplete;
     private WebMapSettings settings;
     private BukkitTask dirtyFlushTask;
     private BukkitTask featureSyncTask;
@@ -80,6 +86,7 @@ public class WebMapModule implements Listener {
     private BukkitTask chunkCaptureTask;
     private BukkitTask nearbySweepTask;
     private BukkitTask markerRefreshTask;
+    private BukkitTask shutdownWatchTask;
 
     public WebMapModule(Loader plugin) {
         this.plugin = plugin;
@@ -346,6 +353,14 @@ public class WebMapModule implements Listener {
     }
 
     public void shutdown() {
+        if (shutdownComplete) {
+            return;
+        }
+        shutdownRequested = true;
+        if (shutdownWatchTask != null) {
+            shutdownWatchTask.cancel();
+            shutdownWatchTask = null;
+        }
         if (dirtyFlushTask != null) {
             dirtyFlushTask.cancel();
         }
@@ -364,6 +379,7 @@ public class WebMapModule implements Listener {
         if (markerRefreshTask != null) {
             markerRefreshTask.cancel();
         }
+        stopAllChunkGen();
         hideAllChunkGenBossBars();
         if (globalTpsBar != null) {
             globalTpsBar.removeAll();
@@ -372,11 +388,61 @@ public class WebMapModule implements Listener {
         }
         httpServer.stop();
         dataStore.flushAll();
+        shutdownComplete = true;
+    }
+
+    public void requestGracefulShutdown() {
+        if (shutdownRequested || shutdownComplete) {
+            return;
+        }
+        shutdownRequested = true;
+        stopAllChunkGen();
+        if (shutdownWatchTask == null) {
+            shutdownWatchTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tryFinishGracefulShutdown, 1L, 1L);
+        }
+    }
+
+    private void tryFinishGracefulShutdown() {
+        if (!shutdownRequested || shutdownComplete) {
+            return;
+        }
+        if (hasPendingShutdownWork()) {
+            return;
+        }
+        shutdown();
+        plugin.getServer().shutdown();
+    }
+
+    private boolean hasPendingShutdownWork() {
+        return getActiveChunkGenCount() > 0
+                || pendingChunkWork.get() > 0
+                || !urgentChunkCaptures.isEmpty()
+                || !normalChunkCaptures.isEmpty()
+                || !queuedChunkKeys.isEmpty();
     }
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         trackPlayerChunk(event.getPlayer(), event.getPlayer().getLocation());
+    }
+
+    @EventHandler
+    public void onServerCommand(ServerCommandEvent event) {
+        String command = normalizeServerCommand(event.getCommand());
+        if (!"stop".equals(command) && !"restart".equals(command)) {
+            return;
+        }
+        if (shutdownRequested) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!hasPendingShutdownWork()) {
+            return;
+        }
+        event.setCancelled(true);
+        event.getSender().sendMessage("WebMap ChunkGen を安全に停止してからサーバーを終了します");
+        plugin.getLogger().info("サーバー停止コマンドを受け取り、WebMap ChunkGen の終了を待機します");
+        requestGracefulShutdown();
     }
 
     @EventHandler
@@ -480,22 +546,34 @@ public class WebMapModule implements Listener {
     }
 
     private void captureChunk(World world, int chunkX, int chunkZ) {
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (!world.isChunkLoaded(chunkX, chunkZ)) {
-                world.getChunkAtAsync(chunkX, chunkZ, false).thenAccept(chunk -> {
-                    if (chunk != null) {
-                        Bukkit.getScheduler().runTask(plugin, () -> writeChunkColor(world, chunk));
-                    }
-                });
-                return;
-            }
-            writeChunkColor(world, world.getChunkAt(chunkX, chunkZ));
-        });
+        queueChunkColorWrite(world, chunkX, chunkZ, false);
     }
 
-    private void writeChunkColor(World world, Chunk chunk) {
+    private void queueChunkColorWrite(World world, int chunkX, int chunkZ, boolean gen) {
+        pendingChunkWork.incrementAndGet();
+        try {
+            world.getChunkAtAsync(chunkX, chunkZ, gen).thenCompose(chunk -> {
+                if (chunk == null) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                return writeChunkColorAsync(world, chunk);
+            }).whenComplete((ignored, error) -> {
+                pendingChunkWork.decrementAndGet();
+                if (error != null) {
+                    plugin.getLogger().log(Level.FINE, "WebMap chunk capture failed: " + world.getName() + " " + chunkX + ":" + chunkZ, error);
+                }
+            });
+        } catch (Throwable error) {
+            pendingChunkWork.decrementAndGet();
+            plugin.getLogger().log(Level.FINE, "WebMap chunk capture failed: " + world.getName() + " " + chunkX + ":" + chunkZ, error);
+        }
+    }
+
+    private CompletableFuture<Void> writeChunkColorAsync(World world, Chunk chunk) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
         if (chunk == null) {
-            return;
+            future.complete(null);
+            return future;
         }
         org.bukkit.ChunkSnapshot mcsnapshot = chunk.getChunkSnapshot(true, true, false);
         String worldKey = world.getKey().toString();
@@ -505,20 +583,31 @@ public class WebMapModule implements Listener {
         int chunkX = chunk.getX();
         int chunkZ = chunk.getZ();
 
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
-            ChunkSnapshot chunkSnapshot = sampleChunkSnapshot(mcsnapshot, chunkX, chunkZ, envName, minHeight);
-            long updatedAt = System.currentTimeMillis();
-            dataStore.updateChunk(
-                    worldKey,
-                    worldName,
-                    chunkX,
-                    chunkZ,
-                    chunkSnapshot.averageColor(),
-                    chunkSnapshot.pixels(),
-                    updatedAt
-            );
-            markTileChanged(worldKey, Math.floorDiv(chunkX, CHUNKS_PER_TILE), Math.floorDiv(chunkZ, CHUNKS_PER_TILE), updatedAt);
-        });
+        try {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                try {
+                    ChunkSnapshot chunkSnapshot = sampleChunkSnapshot(mcsnapshot, chunkX, chunkZ, envName, minHeight);
+                    long updatedAt = System.currentTimeMillis();
+                    dataStore.updateChunk(
+                            worldKey,
+                            worldName,
+                            chunkX,
+                            chunkZ,
+                            chunkSnapshot.averageColor(),
+                            chunkSnapshot.pixels(),
+                            updatedAt
+                    );
+                    markTileChanged(worldKey, Math.floorDiv(chunkX, CHUNKS_PER_TILE), Math.floorDiv(chunkZ, CHUNKS_PER_TILE), updatedAt);
+                    future.complete(null);
+                } catch (Throwable error) {
+                    plugin.getLogger().log(Level.FINE, "WebMap chunk color update failed: " + worldName + " " + chunkX + ":" + chunkZ, error);
+                    future.completeExceptionally(error);
+                }
+            });
+        } catch (Throwable error) {
+            future.completeExceptionally(error);
+        }
+        return future;
     }
 
     private ChunkSnapshot sampleChunkSnapshot(org.bukkit.ChunkSnapshot mcsnapshot, int chunkX, int chunkZ, String environment, int minHeight) {
@@ -881,7 +970,7 @@ public class WebMapModule implements Listener {
     }
 
     private void tickChunkGen() {
-        if (!isGloballyEnabled() || settings.isPaused() || !settings.isEnabled()) {
+        if (shutdownRequested || !isGloballyEnabled() || settings.isPaused() || !settings.isEnabled()) {
             return;
         }
         int budget = 4;
@@ -904,8 +993,7 @@ public class WebMapModule implements Listener {
                     break;
                 }
                 budget--;
-                world.getChunkAtAsync(next.x(), next.z(), true).thenAccept(chunk ->
-                        Bukkit.getScheduler().runTask(plugin, () -> writeChunkColor(world, chunk)));
+                queueChunkColorWrite(world, next.x(), next.z(), true);
             }
             updateChunkGenBossBar(world, job);
         }
@@ -916,6 +1004,9 @@ public class WebMapModule implements Listener {
     }
 
     private void syncRuntimeState(boolean forceRestart) {
+        if (shutdownRequested) {
+            return;
+        }
         if (!isGloballyEnabled() || !settings.isEnabled() || settings.isPaused()) {
             httpServer.stop();
             return;
@@ -1084,12 +1175,12 @@ public class WebMapModule implements Listener {
         }
 
         List<WebMapMarkerRecord> markers = new ArrayList<>(waypointByChunk.values());
-        java.util.Set<String> chunkLoaderKeys = new java.util.HashSet<>();
+        java.util.Set<String> loadedChunkKeysForMarkers = new java.util.HashSet<>();
         for (Chunk chunk : world.getLoadedChunks()) {
             int chunkX = chunk.getX();
             int chunkZ = chunk.getZ();
             String chunkKey = chunkX + ":" + chunkZ;
-            if (!chunkLoaderKeys.add(chunkKey)) {
+            if (!loadedChunkKeysForMarkers.add(chunkKey)) {
                 continue;
             }
             markers.add(new WebMapMarkerRecord(
@@ -1105,11 +1196,37 @@ public class WebMapModule implements Listener {
                     0
             ));
         }
+
+        java.util.Set<String> persistentChunkKeys = new java.util.HashSet<>();
+        for (Chunk chunk : world.getLoadedChunks()) {
+            int chunkX = chunk.getX();
+            int chunkZ = chunk.getZ();
+            String chunkKey = chunkX + ":" + chunkZ;
+            if (!world.getPlayersSeeingChunk(chunk).isEmpty()) {
+                continue;
+            }
+            if (!persistentChunkKeys.add(chunkKey)) {
+                continue;
+            }
+            markers.add(new WebMapMarkerRecord(
+                    world.getKey() + ":persistent-loaded:" + chunkX + ":" + chunkZ,
+                    "persistentchunk",
+                    "Persistent Chunk",
+                    "Persistent Chunk",
+                    "#66d1ff",
+                    (chunkX << 4) + 8,
+                    (chunkZ << 4) + 8,
+                    chunkX,
+                    chunkZ,
+                    0
+            ));
+        }
+
         for (Chunk chunk : world.getForceLoadedChunks()) {
             int chunkX = chunk.getX();
             int chunkZ = chunk.getZ();
             String chunkKey = chunkX + ":" + chunkZ;
-            if (!chunkLoaderKeys.add(chunkKey)) {
+            if (!persistentChunkKeys.add(chunkKey)) {
                 continue;
             }
             markers.add(new WebMapMarkerRecord(
@@ -1132,7 +1249,7 @@ public class WebMapModule implements Listener {
                 int chunkX = chunk.getX();
                 int chunkZ = chunk.getZ();
                 String chunkKey = chunkX + ":" + chunkZ;
-                if (!chunkLoaderKeys.add(chunkKey)) {
+                if (!persistentChunkKeys.add(chunkKey)) {
                     continue;
                 }
                 markers.add(new WebMapMarkerRecord(
@@ -1387,7 +1504,7 @@ public class WebMapModule implements Listener {
     }
 
     private void enqueueChunkCapture(World world, int chunkX, int chunkZ, boolean force, boolean urgent) {
-        if (!isGloballyEnabled() || !settings.isEnabled() || settings.isPaused()) {
+        if (shutdownRequested || !isGloballyEnabled() || !settings.isEnabled() || settings.isPaused()) {
             return;
         }
         if (world == null) {
@@ -1417,6 +1534,25 @@ public class WebMapModule implements Listener {
         } else {
             normalChunkCaptures.addLast(capture);
         }
+    }
+
+    private String normalizeServerCommand(String command) {
+        if (command == null) {
+            return "";
+        }
+        String normalized = command.trim();
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        int spaceIndex = normalized.indexOf(' ');
+        if (spaceIndex >= 0) {
+            normalized = normalized.substring(0, spaceIndex);
+        }
+        int namespaceIndex = normalized.indexOf(':');
+        if (namespaceIndex >= 0) {
+            normalized = normalized.substring(namespaceIndex + 1);
+        }
+        return normalized.toLowerCase(java.util.Locale.ROOT);
     }
 
     private void enqueueNearbyChunkCaptures(World world, int centerChunkX, int centerChunkZ, int radius, boolean urgent) {

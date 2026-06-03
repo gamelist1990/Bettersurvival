@@ -48,6 +48,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChunkLoader.ChunkLoaderModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
@@ -72,6 +73,7 @@ public final class Loader extends JavaPlugin {
     private BetterMenuModule betterMenuModule;
     private CopperGolemModule copperGolemModule;
     private WebMapModule webMapModule;
+    private ChunkLoaderModule chunkLoaderModule;
 
     @Override
     public void onEnable() {
@@ -145,6 +147,11 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(copperGolemModule, this);
         geyserWorkbenchModule = new GeyserWorkbenchModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(geyserWorkbenchModule, this);
+        if (!toggleModule.hasGlobal("chunkloader")) {
+            toggleModule.setGlobal("chunkloader", true);
+        }
+        chunkLoaderModule = new ChunkLoaderModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(chunkLoaderModule, this);
         webMapModule = new WebMapModule(this);
         getServer().getPluginManager().registerEvents(webMapModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
@@ -196,6 +203,8 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("geysersmithing", "Geyser鍛冶台", "Geyser/Bedrock対応の鍛冶台UIを有効/無効にします", Material.SMITHING_TABLE, false));
         toggleModule.registerFeature(
             new ToggleFeature("webmap", "WebMap", "軽量な Web マップと ChunkGen を有効/無効にします", Material.FILLED_MAP, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("chunkloader", "ChunkLoader", "コンパス+名札(chunkloader)で作るチャンクローダーを有効/無効にします", Material.CALIBRATED_SCULK_SENSOR, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -353,6 +362,9 @@ public final class Loader extends JavaPlugin {
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
             InvseeOfflineData.saveSnapshot(onlinePlayer);
         }
+        if (webMapModule != null) {
+            webMapModule.shutdown();
+        }
         if (discordWebhookModule != null) {
             discordWebhookModule.shutdown();
         }
@@ -368,8 +380,8 @@ public final class Loader extends JavaPlugin {
         if (copperGolemModule != null) {
             copperGolemModule.shutdown();
         }
-        if (webMapModule != null) {
-            webMapModule.shutdown();
+        if (chunkLoaderModule != null) {
+            chunkLoaderModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

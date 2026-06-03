@@ -22,6 +22,7 @@ li {
 #map {
     width: 100%;
     height: 100vh;
+    height: 100dvh;
 }
 #map {
     background: black;
@@ -297,39 +298,61 @@ div.leaflet-control-layers.coordinates {
     font: 12px/1.5 "Helvetica Neue", Arial, Helvetica, sans-serif;
 }
 
-.mobile-hamburger,
-.mobile-close {
+.mobile-hamburger {
     display: none;
 }
 
 @media (max-width: 900px) {
+    html,
+    body,
     #root,
     #map {
+        height: 100vh;
         height: 100dvh;
+        min-height: 100dvh;
     }
 
     #sidebar {
+        position: fixed;
+        inset: 0;
         width: 100vw;
-        right: -100vw;
-        padding-left: 0;
-        border-left: 0;
-        border-right: 0;
-        background-color: rgba(6, 9, 15, 0.92);
-        backdrop-filter: blur(14px);
+        height: 100vh;
+        height: 100dvh;
+        padding:
+            calc(env(safe-area-inset-top) + 14px)
+            calc(env(safe-area-inset-right) + 14px)
+            calc(env(safe-area-inset-bottom) + 14px)
+            calc(env(safe-area-inset-left) + 14px);
+        box-sizing: border-box;
+        border: 0;
+        background:
+            linear-gradient(180deg, rgba(8, 11, 18, 0.98), rgba(8, 11, 18, 0.92)),
+            rgba(6, 9, 15, 0.94);
+        backdrop-filter: blur(18px);
         text-align: left;
         z-index: 18000;
+        transform: translate3d(100%, 0, 0);
+        transition:
+            transform 0.26s ease,
+            opacity 0.26s ease;
+        opacity: 0;
+        pointer-events: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
     }
 
     #sidebar.show {
-        right: 0;
-        width: 100vw;
+        transform: translate3d(0, 0, 0);
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .mobile-hamburger {
         display: inline-flex;
         position: fixed;
         top: max(10px, env(safe-area-inset-top));
-        left: 10px;
+        left: max(10px, env(safe-area-inset-left));
         z-index: 18500;
         width: 42px;
         height: 42px;
@@ -350,32 +373,38 @@ div.leaflet-control-layers.coordinates {
         height: 2px;
         border-radius: 999px;
         background: #e6f0ff;
+        transition:
+            transform 0.22s ease,
+            opacity 0.22s ease;
     }
 
-    .mobile-close {
-        display: inline-flex;
-        align-self: flex-end;
-        margin: 10px 10px 0;
-        padding: 7px 11px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 9px;
-        background: rgba(255, 255, 255, 0.08);
-        color: #ffffff;
-        font: inherit;
-        cursor: pointer;
+    .mobile-hamburger.is-open span:nth-child(1) {
+        transform: translateY(7px) rotate(45deg);
+    }
+
+    .mobile-hamburger.is-open span:nth-child(2) {
+        opacity: 0;
+    }
+
+    .mobile-hamburger.is-open span:nth-child(3) {
+        transform: translateY(-7px) rotate(-45deg);
     }
 
     #sidebar fieldset {
-        margin: 12px 0 0;
+        margin: 0;
+        padding-top: 12px;
     }
 
     #sidebar fieldset#worlds {
-        margin-top: 12px;
+        margin-top: 0;
     }
 
     #sidebar fieldset#players {
-        margin-top: 8px;
-        padding-bottom: 110px;
+        flex: 1 1 auto;
+        min-height: 0;
+        margin-top: 10px;
+        padding-bottom: 0;
+        overflow-y: auto;
     }
 
     #sidebar fieldset a,

@@ -1116,12 +1116,14 @@ export default function App() {
       {isMobileLayout ? (
         <button
           type="button"
-          className="mobile-hamburger"
+          className={`mobile-hamburger${mobileSidebarOpen ? " is-open" : ""}`}
           onClick={(event) => {
             event.stopPropagation();
             setMobileSidebarOpen((value) => !value);
           }}
-          aria-label="メニュー"
+          aria-label={mobileSidebarOpen ? "メニューを閉じる" : "メニューを開く"}
+          aria-controls="sidebar"
+          aria-expanded={sidebarShown}
         >
           <span />
           <span />
@@ -1133,15 +1135,6 @@ export default function App() {
         className={sidebarShown ? "show" : ""}
         onClick={(event) => event.stopPropagation()}
       >
-        {isMobileLayout ? (
-          <button
-            type="button"
-            className="mobile-close"
-            onClick={() => setMobileSidebarOpen(false)}
-          >
-            閉じる
-          </button>
-        ) : null}
         <fieldset id="worlds">
           <legend>Worlds</legend>
           {worlds.map((world) => (
