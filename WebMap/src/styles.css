@@ -346,6 +346,8 @@ div.leaflet-control-layers.coordinates {
         transform: translate3d(0, 0, 0);
         opacity: 1;
         pointer-events: auto;
+        width: 100dvw;
+        max-width: 100dvw;
     }
 
     .mobile-hamburger {
