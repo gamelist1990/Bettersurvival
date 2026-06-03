@@ -46,6 +46,7 @@ public class WebMapCommand extends BaseCommand {
             sendInfo(sender, "探索追従: " + (module.getSettings().isAutoTrackPlayers() ? "ON" : "OFF")
                     + " / 一時停止: " + (module.getSettings().isPaused() ? "ON" : "OFF"));
             sendInfo(sender, "ChunkGen: " + module.getActiveChunkGenCount() + " dimension(s) running");
+            sendInfo(sender, "マップカラー: " + module.getMapColorProcessingStatus());
             return true;
         }
 

@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 
 public class WebMapModule implements Listener {
@@ -67,6 +68,8 @@ public class WebMapModule implements Listener {
     private final Map<String, BossBar> chunkGenBossBars = new ConcurrentHashMap<>();
     private final Map<String, List<WebMapMarkerRecord>> markerSnapshots = new ConcurrentHashMap<>();
     private final Map<String, Map<String, WebMapMarkerRecord>> waypointSnapshots = new ConcurrentHashMap<>();
+    private final AtomicLong nmsColorHits = new AtomicLong();
+    private final AtomicLong fallbackColorHits = new AtomicLong();
     private BossBar globalTpsBar;
 
     private volatile boolean globalEnabled;
@@ -90,6 +93,7 @@ public class WebMapModule implements Listener {
         restorePersistedMarkerSnapshots();
         refreshMarkerSnapshots();
         startTasks();
+        logMapColorProcessingMode();
         syncRuntimeState();
     }
 
@@ -283,6 +287,15 @@ public class WebMapModule implements Listener {
             }
         }
         return count;
+    }
+
+    public String getMapColorProcessingStatus() {
+        long nms = nmsColorHits.get();
+        long fallback = fallbackColorHits.get();
+        if (NMS_MAP_COLOR_RESOLVER.isEnabled()) {
+            return "NMSでマップカラー生成 (NMS=" + nms + ", フォールバック=" + fallback + ")";
+        }
+        return "フォールバック生成 (NMS=0, フォールバック=" + fallback + ")";
     }
 
     public List<Map<String, Object>> getChangedTilesSince(String worldKey, long since) {
@@ -520,7 +533,8 @@ public class WebMapModule implements Listener {
                 Material type = mcsnapshot.getBlockType(localX, sampleY, localZ);
                 BlockData blockData = mcsnapshot.getBlockData(localX, sampleY, localZ);
                 Biome biome = mcsnapshot.getBiome(localX, sampleY, localZ);
-                int[] color = materialColor(type, blockData, biome, environment);
+                int waterDepth = estimateWaterDepth(mcsnapshot, localX, localZ, sampleY, minHeight);
+                int[] color = materialColor(type, blockData, biome, environment, waterDepth);
                 if (previousHeight != Integer.MIN_VALUE) {
                     color = applyShade(color, topY - previousHeight);
                 }
@@ -539,13 +553,32 @@ public class WebMapModule implements Listener {
         return new ChunkSnapshot(toHex(average), pixels);
     }
 
-    private int[] materialColor(Material material, BlockData blockData, Biome biome, String environment) {
-        if (material == Material.WATER) return waterColor(biome);
+    private int estimateWaterDepth(org.bukkit.ChunkSnapshot snapshot, int localX, int localZ, int topY, int minHeight) {
+        if (snapshot.getBlockType(localX, topY, localZ) != Material.WATER) {
+            return 0;
+        }
+        int depth = 1;
+        int floorY = Math.max(minHeight, topY - 12);
+        for (int y = topY - 1; y >= floorY; y--) {
+            if (snapshot.getBlockType(localX, y, localZ) != Material.WATER) {
+                break;
+            }
+            depth++;
+        }
+        return depth;
+    }
+
+    private int[] materialColor(Material material, BlockData blockData, Biome biome, String environment, int waterDepth) {
+        int[] nmsColor = NMS_MAP_COLOR_RESOLVER.color(blockData);
+        if (nmsColor != null) {
+            nmsColorHits.incrementAndGet();
+            return applyBiomeAdjustments(material, nmsColor, biome, waterDepth);
+        }
+        fallbackColorHits.incrementAndGet();
+        if (material == Material.WATER) return applyWaterDepthShading(waterColor(biome), waterDepth);
         if (blockData instanceof Ageable ageable) return cropColor(material, ageable);
         if (isGrassTinted(material)) return grassColor(biome);
         if (Tag.LEAVES.isTagged(material)) return foliageColor(material, biome);
-        int[] nmsColor = NMS_MAP_COLOR_RESOLVER.color(blockData);
-        if (nmsColor != null) return nmsColor;
         if (Tag.LOGS.isTagged(material) || Tag.PLANKS.isTagged(material)) return woodColor(material);
         int[] dyed = dyedBlockColor(material);
         if (dyed != null) return dyed;
@@ -572,6 +605,33 @@ public class WebMapModule implements Listener {
             case COPPER_BLOCK, CUT_COPPER, EXPOSED_COPPER, EXPOSED_CUT_COPPER, WEATHERED_COPPER, WEATHERED_CUT_COPPER, OXIDIZED_COPPER, OXIDIZED_CUT_COPPER -> new int[]{160, 132, 95};
             case AMETHYST_BLOCK, BUDDING_AMETHYST, AMETHYST_CLUSTER -> new int[]{137, 103, 191};
             default -> "NETHER".equals(environment) ? new int[]{111, 48, 48} : new int[]{145, 145, 145};
+        };
+    }
+
+    private int[] applyBiomeAdjustments(Material material, int[] nmsColor, Biome biome, int waterDepth) {
+        if (material == Material.WATER) {
+            int[] blended = mix(nmsColor, waterColor(biome), 0.55D);
+            return applyWaterDepthShading(blended, waterDepth);
+        }
+        if (isGrassTinted(material)) {
+            return mix(nmsColor, grassColor(biome), 0.28D);
+        }
+        if (Tag.LEAVES.isTagged(material)) {
+            return mix(nmsColor, foliageColor(material, biome), 0.35D);
+        }
+        return nmsColor;
+    }
+
+    private int[] applyWaterDepthShading(int[] color, int waterDepth) {
+        if (waterDepth <= 1) {
+            return color;
+        }
+        double darken = Math.min(0.22D, (waterDepth - 1) * 0.018D);
+        int boostedBlue = clampColor(color[2] + Math.min(18, (waterDepth - 1) * 2));
+        return new int[]{
+                clampColor((int) Math.round(color[0] * (1.0D - darken))),
+                clampColor((int) Math.round(color[1] * (1.0D - darken))),
+                clampColor((int) Math.round(boostedBlue * (1.0D - (darken * 0.35D))))
         };
     }
 
@@ -674,6 +734,14 @@ public class WebMapModule implements Listener {
         return biome == null ? "" : biome.getKey().getKey();
     }
 
+    private void logMapColorProcessingMode() {
+        if (NMS_MAP_COLOR_RESOLVER.isEnabled()) {
+            plugin.getLogger().info("[WebMap] NMSでマップカラー生成");
+            return;
+        }
+        plugin.getLogger().info("[WebMap] フォールバック生成");
+    }
+
     private static final class NmsMapColorResolver {
         private static final NmsMapColorResolver DISABLED = new NmsMapColorResolver(null, null, null, null, null, null);
 
@@ -740,6 +808,10 @@ public class WebMapModule implements Listener {
             } catch (Throwable ignored) {
                 return null;
             }
+        }
+
+        public boolean isEnabled() {
+            return craftBlockDataClass != null;
         }
     }
 
