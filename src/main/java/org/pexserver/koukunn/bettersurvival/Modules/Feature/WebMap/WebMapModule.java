@@ -24,6 +24,7 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkPopulateEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.server.ServerCommandEvent;
@@ -74,6 +75,7 @@ public class WebMapModule implements Listener {
     private final AtomicInteger pendingChunkWork = new AtomicInteger();
     private final AtomicLong nmsColorHits = new AtomicLong();
     private final AtomicLong fallbackColorHits = new AtomicLong();
+    private final AtomicLong recentChunkCaptureCleanupAt = new AtomicLong();
     private BossBar globalTpsBar;
 
     private volatile boolean globalEnabled;
@@ -424,6 +426,11 @@ public class WebMapModule implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         trackPlayerChunk(event.getPlayer(), event.getPlayer().getLocation());
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        lastPlayerChunk.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler
@@ -927,7 +934,7 @@ public class WebMapModule implements Listener {
     }
 
     private String toHex(int[] color) {
-        return String.format(java.util.Locale.ROOT, "#%02x%02x%02x", color[0], color[1], color[2]);
+        return WebMapColorPool.canonicalize(String.format(java.util.Locale.ROOT, "#%02x%02x%02x", color[0], color[1], color[2]));
     }
 
     private void syncKnownWorlds() {
@@ -1510,6 +1517,7 @@ public class WebMapModule implements Listener {
         if (world == null) {
             return;
         }
+        pruneRecentChunkCaptures();
         WebMapDimensionSettings dimension = getDimensionSettings(world);
         if (!dimension.isVisible() || !dimension.isAutoTrack()) {
             return;
@@ -1533,6 +1541,24 @@ public class WebMapModule implements Listener {
             urgentChunkCaptures.addLast(capture);
         } else {
             normalChunkCaptures.addLast(capture);
+        }
+    }
+
+    private void pruneRecentChunkCaptures() {
+        long now = System.currentTimeMillis();
+        long lastCleanup = recentChunkCaptureCleanupAt.get();
+        if (now - lastCleanup < 60_000L) {
+            return;
+        }
+        if (!recentChunkCaptureCleanupAt.compareAndSet(lastCleanup, now)) {
+            return;
+        }
+        long cutoff = now - 1_800_000L;
+        for (Map.Entry<String, Long> entry : recentChunkCaptures.entrySet()) {
+            Long updatedAt = entry.getValue();
+            if (updatedAt != null && updatedAt < cutoff) {
+                recentChunkCaptures.remove(entry.getKey(), updatedAt);
+            }
         }
     }
 

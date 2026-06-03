@@ -25,6 +25,10 @@ public class ConfigManager {
         return baseDir;
     }
 
+    public Plugin getPlugin() {
+        return plugin;
+    }
+
     /**
      * 指定された相対パスにある JSON ファイルを読み込み、PEXConfig にデシリアライズする
      * @param relativePath 例: "sample.json" または "nested/example.json"
