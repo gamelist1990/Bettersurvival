@@ -27,6 +27,7 @@ public class DiscordWebhookStore {
         settings.setJoinEnabled(getBoolean(config, "joinEnabled", true));
         settings.setLeaveEnabled(getBoolean(config, "leaveEnabled", true));
         settings.setStatusEnabled(getBoolean(config, "statusEnabled", true));
+        settings.setStatusEmbedEnabled(getBoolean(config, "statusEmbedEnabled", false));
         settings.setStatusAutoUpdateEnabled(getBoolean(config, "statusAutoUpdateEnabled", false));
         return settings;
     }
@@ -45,6 +46,7 @@ public class DiscordWebhookStore {
         config.put("joinEnabled", settings.isJoinEnabled());
         config.put("leaveEnabled", settings.isLeaveEnabled());
         config.put("statusEnabled", settings.isStatusEnabled());
+        config.put("statusEmbedEnabled", settings.isStatusEmbedEnabled());
         config.put("statusAutoUpdateEnabled", settings.isStatusAutoUpdateEnabled());
         return configManager.saveConfig(CONFIG_PATH, config);
     }

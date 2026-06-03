@@ -108,6 +108,7 @@ public class DiscordWebhookModule implements Listener {
                 .body("Bot Join/Leave: " + enabledText(current.isBotJoinEnabled()) + "/" + enabledText(current.isBotLeaveEnabled()))
                 .body("Botチャット中継: " + enabledText(current.isBotChatRelayEnabled()))
                 .body("Status/List: " + enabledText(current.isStatusEnabled()))
+                .body("Status送信形式: " + (current.isStatusEmbedEnabled() ? "日本語Embed" : "画像"))
                 .body("Status自動更新: " + enabledText(current.isStatusAutoUpdateEnabled()))
                 .addAction("設定", 0x57F287)
                 .addAction("Status送信", 0x5865F2)
@@ -140,6 +141,7 @@ public class DiscordWebhookModule implements Listener {
                 .addBoolInput("leaveEnabled", "Webhook Leave通知", current.isLeaveEnabled())
                 .addTextInput("statusWebhookUrl", "Status/List Webhook URL", current.getStatusWebhookUrl(), 2048, true)
                 .addBoolInput("statusEnabled", "Status/List送信", current.isStatusEnabled())
+                .addBoolInput("statusEmbedEnabled", "Status/Listを日本語Embedで送信する", current.isStatusEmbedEnabled())
                 .addBoolInput("statusAutoUpdateEnabled", "Status/Listを5分ごとに自動更新", current.isStatusAutoUpdateEnabled())
                 .confirmation("保存", "キャンセル")
                 .onResponse((result, p) -> {
@@ -159,6 +161,7 @@ public class DiscordWebhookModule implements Listener {
                     updated.setLeaveEnabled(result.getBool("leaveEnabled"));
                     updated.setStatusWebhookUrl(result.getText("statusWebhookUrl"));
                     updated.setStatusEnabled(result.getBool("statusEnabled"));
+                    updated.setStatusEmbedEnabled(result.getBool("statusEmbedEnabled"));
                     updated.setStatusAutoUpdateEnabled(result.getBool("statusAutoUpdateEnabled"));
                     if (updated.isBotModeEnabled() && !botModeAvailable) {
                         p.sendMessage("§cBotモードは Discord Bot Token 設定後に利用できます");

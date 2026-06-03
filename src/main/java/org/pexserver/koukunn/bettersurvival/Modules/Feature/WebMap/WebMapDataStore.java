@@ -45,6 +45,30 @@ public class WebMapDataStore {
         }
     }
 
+    public Map<String, WebMapMarkerRecord> snapshotWaypoints(String worldKey) {
+        WebMapDimensionData data = get(worldKey);
+        synchronized (data) {
+            return new LinkedHashMap<>(data.getWaypoints());
+        }
+    }
+
+    public void replaceWaypoints(String worldKey, String worldName, Map<String, WebMapMarkerRecord> waypoints) {
+        WebMapDimensionData data = get(worldKey);
+        boolean changed;
+        synchronized (data) {
+            data.setWorldKey(worldKey);
+            data.setWorldName(worldName);
+            Map<String, WebMapMarkerRecord> nextWaypoints = new LinkedHashMap<>(waypoints);
+            changed = !data.getWaypoints().equals(nextWaypoints);
+            if (changed) {
+                data.setWaypoints(nextWaypoints);
+            }
+        }
+        if (changed) {
+            dirtyWorlds.add(worldKey);
+        }
+    }
+
     public int chunkCount(String worldKey) {
         WebMapDimensionData data = get(worldKey);
         synchronized (data) {
@@ -85,6 +109,7 @@ public class WebMapDataStore {
                 copiedChunks.put(entry.getKey(), new WebMapChunkRecord(chunk.getX(), chunk.getZ(), chunk.getColor(), copiedPixels, chunk.getUpdatedAt()));
             }
             copy.setChunks(copiedChunks);
+            copy.setWaypoints(new LinkedHashMap<>(source.getWaypoints()));
         }
         return copy;
     }

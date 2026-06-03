@@ -60,7 +60,7 @@ export type WorldDetail = {
 
 export type WorldMarker = {
   id: string;
-  kind: "waypoint" | "chunkloader";
+  kind: "waypoint" | "loadedchunk" | "persistentchunk";
   name: string;
   displayName: string;
   color: string;
@@ -68,6 +68,7 @@ export type WorldMarker = {
   z: number;
   chunkX: number;
   chunkZ: number;
+  rotation: number;
 };
 
 export type WorldMarkersResponse = {

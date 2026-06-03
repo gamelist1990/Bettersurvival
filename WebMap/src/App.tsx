@@ -16,6 +16,20 @@ type MarkerBundle = {
   marker: L.Marker;
 };
 
+type WaypointBundle = {
+  marker: L.Marker;
+  tooltipHtml: string;
+};
+
+type ChunkLoaderBundle = {
+  rectangle: L.Rectangle;
+  color: string;
+  fading: boolean;
+  fadeTimer: number | null;
+  visibleOpacity: number;
+  visibleFillOpacity: number;
+};
+
 type ChangedTile = {
   x: number;
   z: number;
@@ -96,6 +110,15 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+function formatWaypointLabel(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replaceAll("\\n", "\n")
+    .split("\n")
+    .map((line) => escapeHtml(line))
+    .join("<br>");
+}
+
 function copyableCoords(coords: MapCoords | null) {
   if (!coords) {
     return "x: --- y: ? z: ---";
@@ -136,14 +159,12 @@ function makeWaypointIcon(marker: WorldMarker) {
   return L.divIcon({
     className: `waypoint-marker-wrap waypoint-kind-${marker.kind}`,
     html: `
-      <div class="waypoint-marker" style="--waypoint-color:${marker.color}">
-        <div class="waypoint-pin">
-          <div class="waypoint-pin-core"></div>
-        </div>
+      <div class="waypoint-marker" style="--waypoint-color:${marker.color}; --waypoint-rotation:${marker.rotation}deg">
+        <span class="waypoint-player-icon"></span>
       </div>
     `,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
   });
 }
 
@@ -157,7 +178,10 @@ function normalizeMarkersResponse(payload: unknown): WorldMarkersResponse {
           return null;
         }
         const row = entry as Record<string, unknown>;
-        const kind = row.kind === "chunkloader" || row.kind === "waypoint" ? row.kind : "waypoint";
+        const kind =
+          row.kind === "loadedchunk" || row.kind === "persistentchunk" || row.kind === "waypoint"
+            ? row.kind
+            : "waypoint";
         const id = typeof row.id === "string" ? row.id : "";
         if (!id) {
           return null;
@@ -172,6 +196,7 @@ function normalizeMarkersResponse(payload: unknown): WorldMarkersResponse {
           z: Number.isFinite(row.z) ? Number(row.z) : 0,
           chunkX: Number.isFinite(row.chunkX) ? Number(row.chunkX) : 0,
           chunkZ: Number.isFinite(row.chunkZ) ? Number(row.chunkZ) : 0,
+          rotation: Number.isFinite(row.rotation) ? Number(row.rotation) : 0,
         };
       })
       .filter((entry): entry is WorldMarker => entry !== null),
@@ -414,7 +439,7 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
       tile.alt = "";
       tile.setAttribute("role", "presentation");
       const url = this.getTileUrl(coords);
-      fetch(url, { cache: "default" })
+      fetch(url, { cache: "no-store" })
         .then(async (response) => {
           if (!response.ok) {
             // @ts-expect-error Leaflet private hook
@@ -442,6 +467,7 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
 }
 
 export default function App() {
+  const chunkFadeDurationMs = 420;
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const activeTileLayerRef = useRef<WebMapTileLayer | null>(null);
@@ -450,8 +476,12 @@ export default function App() {
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
   const waypointLayerRef = useRef<L.LayerGroup | null>(null);
   const chunkLoaderLayerRef = useRef<L.LayerGroup | null>(null);
+  const chunkLoaderRendererRef = useRef<L.SVG | null>(null);
   const bundlesRef = useRef<Map<string, MarkerBundle>>(new Map());
+  const waypointBundlesRef = useRef<Map<string, WaypointBundle>>(new Map());
+  const chunkLoaderBundlesRef = useRef<Map<string, ChunkLoaderBundle>>(new Map());
   const latestTileUpdateRef = useRef(0);
+  const lastForcedTileRefreshRef = useRef(0);
   const latestMarkerUpdateRef = useRef(0);
   const initializedWorldViewRef = useRef<string>("");
   const loadedWorldUrlRef = useRef<string>("");
@@ -469,6 +499,7 @@ export default function App() {
   const [coords, setCoords] = useState<MapCoords | null>(null);
   const [contextMenu, setContextMenu] = useState<MapContextMenuState | null>(null);
   const [chunkLoadVisible, setChunkLoadVisible] = useState(false);
+  const [persistentChunkVisible, setPersistentChunkVisible] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -543,9 +574,11 @@ export default function App() {
       noWrap: true,
       zoomControl: true,
     });
-    map.createPane("chunkloader").style.zIndex = "350";
+    map.createPane("chunkloader").style.zIndex = "450";
     map.createPane("waypoint").style.zIndex = "650";
     map.createPane("nameplate").style.zIndex = "1000";
+    chunkLoaderRendererRef.current = L.svg({ pane: "chunkloader" });
+    chunkLoaderRendererRef.current.addTo(map);
     markerLayerRef.current = L.layerGroup().addTo(map);
     waypointLayerRef.current = L.layerGroup().addTo(map);
     chunkLoaderLayerRef.current = L.layerGroup().addTo(map);
@@ -764,6 +797,49 @@ export default function App() {
     if (!activeTileLayerRef.current || !mapRef.current || !worldDetail || !worldDetail.changesUrl) {
       return;
     }
+    const activateTileLayer = (nextLayer: WebMapTileLayer, revision: number) => {
+      const previousLayer = activeTileLayerRef.current;
+      nextLayer.setOpacity(1);
+      window.setTimeout(() => {
+        if (previousLayer && previousLayer !== nextLayer) {
+          previousLayer.remove();
+        }
+        nextLayer.setZIndex(1);
+        activeTileLayerRef.current = nextLayer;
+        incomingTileLayerRef.current = null;
+        tileSwapPendingRef.current = false;
+        latestTileUpdateRef.current = Math.max(latestTileUpdateRef.current, revision);
+      }, 260);
+    };
+    const swapTileLayer = (revision: number, advanceLatest: boolean) => {
+      const map = mapRef.current;
+      const currentLayer = activeTileLayerRef.current;
+      if (!map || !currentLayer || tileSwapPendingRef.current) {
+        return;
+      }
+      if (incomingTileLayerRef.current) {
+        incomingTileLayerRef.current.remove();
+        incomingTileLayerRef.current = null;
+      }
+      const nextLayer = SquaremapTileLayer(worldDetail.tileTemplate, worldDetail.zoom.maxNative);
+      nextLayer.setRevision(revision);
+      nextLayer.addTo(map).setZIndex(2);
+      nextLayer.setOpacity(0);
+      incomingTileLayerRef.current = nextLayer;
+      tileSwapPendingRef.current = true;
+      const timeout = window.setTimeout(() => {
+        const incoming = incomingTileLayerRef.current;
+        if (incoming === nextLayer) {
+          incoming.remove();
+          incomingTileLayerRef.current = null;
+        }
+        tileSwapPendingRef.current = false;
+      }, 5000);
+      nextLayer.once("load", () => {
+        window.clearTimeout(timeout);
+        activateTileLayer(nextLayer, advanceLatest ? revision : latestTileUpdateRef.current);
+      });
+    };
     const refreshTimer = window.setInterval(async () => {
       if (tileSwapPendingRef.current) {
         return;
@@ -775,54 +851,16 @@ export default function App() {
           return;
         }
         const changes = normalizeWorldChanges(await response.json());
+        const now = Date.now();
         if (changes.tiles.length > 0) {
-          const map = mapRef.current;
-          const currentLayer = activeTileLayerRef.current;
-          if (!map || !currentLayer) {
-            return;
-          }
-          if (incomingTileLayerRef.current) {
-            incomingTileLayerRef.current.remove();
-            incomingTileLayerRef.current = null;
-          }
-          const nextLayer = SquaremapTileLayer(worldDetail.tileTemplate, worldDetail.zoom.maxNative);
-          nextLayer.setRevision(changes.latest);
-          nextLayer.addTo(map).setZIndex(2);
-          nextLayer.setOpacity(0);
-          incomingTileLayerRef.current = nextLayer;
-          tileSwapPendingRef.current = true;
-          const activateNextLayer = () => {
-            const incoming = incomingTileLayerRef.current;
-            if (!incoming) {
-              tileSwapPendingRef.current = false;
-              return;
-            }
-            incoming.setOpacity(1);
-            window.setTimeout(() => {
-              const activeBeforeSwap = activeTileLayerRef.current;
-              if (activeBeforeSwap && activeBeforeSwap !== incoming) {
-                activeBeforeSwap.remove();
-              }
-              incoming.setZIndex(1);
-              activeTileLayerRef.current = incoming;
-              incomingTileLayerRef.current = null;
-              tileSwapPendingRef.current = false;
-            }, 220);
-          };
-          const fallbackTimer = window.setTimeout(() => {
-            const incoming = incomingTileLayerRef.current;
-            if (incoming) {
-              incoming.remove();
-              incomingTileLayerRef.current = null;
-            }
-            tileSwapPendingRef.current = false;
-          }, 4000);
-          nextLayer.once("load", () => {
-            window.clearTimeout(fallbackTimer);
-            activateNextLayer();
-          });
+          swapTileLayer(Math.max(changes.latest, now), true);
+          lastForcedTileRefreshRef.current = now;
+        } else if (now - lastForcedTileRefreshRef.current >= 5000) {
+          swapTileLayer(now, false);
+          lastForcedTileRefreshRef.current = now;
+        } else {
+          latestTileUpdateRef.current = Math.max(latestTileUpdateRef.current, changes.latest);
         }
-        latestTileUpdateRef.current = Math.max(latestTileUpdateRef.current, changes.latest);
       } catch {
         tileSwapPendingRef.current = false;
       }
@@ -838,54 +876,135 @@ export default function App() {
     }
     const waypointLayer = waypointLayerRef.current;
     const chunkLayer = chunkLoaderLayerRef.current;
+    const waypointBundles = waypointBundlesRef.current;
+    const chunkLoaderBundles = chunkLoaderBundlesRef.current;
     let active = true;
 
     const renderMarkers = (markers: WorldMarker[]) => {
-      waypointLayer.clearLayers();
-      chunkLayer.clearLayers();
+      const seenWaypoints = new Set<string>();
+      const seenChunkLoaders = new Set<string>();
       for (const marker of markers) {
-        if (marker.kind === "chunkloader") {
-          if (!chunkLoadVisible) {
+        if (marker.kind === "loadedchunk" || marker.kind === "persistentchunk") {
+          seenChunkLoaders.add(marker.id);
+          const isVisible = marker.kind === "loadedchunk" ? chunkLoadVisible : persistentChunkVisible;
+          const visibleOpacity = marker.kind === "loadedchunk" ? 0.72 : 0.86;
+          const visibleFillOpacity = marker.kind === "loadedchunk" ? 0.26 : 0.34;
+          let bundle = chunkLoaderBundles.get(marker.id);
+          if (!bundle) {
+            const rectangle = L.rectangle(toChunkBounds(marker.chunkX, marker.chunkZ), {
+              pane: "chunkloader",
+              renderer: chunkLoaderRendererRef.current ?? undefined,
+              className: "chunkloader-area",
+              color: marker.color,
+              weight: 1,
+              fill: true,
+              fillColor: marker.color,
+              fillOpacity: isVisible ? visibleFillOpacity : 0,
+              opacity: isVisible ? visibleOpacity : 0,
+              interactive: false,
+            }).addTo(chunkLayer);
+            bundle = {
+              rectangle,
+              color: marker.color,
+              fading: false,
+              fadeTimer: null,
+              visibleOpacity,
+              visibleFillOpacity,
+            };
+            chunkLoaderBundles.set(marker.id, bundle);
+          } else {
+            if (bundle.fadeTimer != null) {
+              window.clearTimeout(bundle.fadeTimer);
+              bundle.fadeTimer = null;
+            }
+            bundle.fading = false;
+            bundle.rectangle.setBounds(toChunkBounds(marker.chunkX, marker.chunkZ));
+            if (bundle.color !== marker.color) {
+              bundle.rectangle.setStyle({
+                color: marker.color,
+                fillColor: marker.color,
+              });
+              bundle.color = marker.color;
+            }
+            bundle.visibleOpacity = visibleOpacity;
+            bundle.visibleFillOpacity = visibleFillOpacity;
+          }
+          if (!isVisible) {
+            bundle.rectangle.setStyle({ opacity: 0, fillOpacity: 0 });
             continue;
           }
-          L.rectangle(toChunkBounds(marker.chunkX, marker.chunkZ), {
-            pane: "chunkloader",
-            color: marker.color,
-            weight: 0,
-            fill: true,
-            fillColor: marker.color,
-            fillOpacity: 0.22,
-            opacity: 0,
-            interactive: false,
-          }).addTo(chunkLayer);
+          bundle.rectangle.setStyle({ opacity: bundle.visibleOpacity, fillOpacity: bundle.visibleFillOpacity });
           continue;
         }
+        seenWaypoints.add(marker.id);
         const point = toLatLng(marker.x, marker.z);
-        const waypoint = L.marker(point, {
-          icon: makeWaypointIcon(marker),
-          keyboard: false,
-          pane: "waypoint",
-        }).addTo(waypointLayer);
         const waypointName = marker.name || marker.displayName || "Waypoint";
-        waypoint.bindTooltip(
-          `${escapeHtml(waypointName)}<br>X ${marker.x} / Z ${marker.z}`,
-          {
+        const tooltipHtml = `${formatWaypointLabel(waypointName)}<br>X ${marker.x} / Z ${marker.z}`;
+        let bundle = waypointBundles.get(marker.id);
+        if (!bundle) {
+          const waypoint = L.marker(point, {
+            icon: makeWaypointIcon(marker),
+            keyboard: false,
+            pane: "waypoint",
+          }).addTo(waypointLayer);
+          waypoint.bindTooltip(tooltipHtml, {
             direction: "top",
             offset: [0, -10],
             opacity: 0.96,
             pane: "nameplate",
             className: "waypoint-tooltip",
+          });
+          waypoint.on("contextmenu", (event) => {
+            event.originalEvent.preventDefault();
+            event.originalEvent.stopPropagation();
+            openContextMenuAt(
+              event.originalEvent.clientX,
+              event.originalEvent.clientY,
+              toLatLng(marker.x, marker.z)
+            );
+          });
+          bundle = {
+            marker: waypoint,
+            tooltipHtml,
+          };
+          waypointBundles.set(marker.id, bundle);
+        } else {
+          bundle.marker.setLatLng(point);
+          bundle.marker.setIcon(makeWaypointIcon(marker));
+          if (bundle.tooltipHtml !== tooltipHtml) {
+            bundle.marker.setTooltipContent(tooltipHtml);
+            bundle.tooltipHtml = tooltipHtml;
           }
-        );
-        waypoint.on("contextmenu", (event) => {
-          event.originalEvent.preventDefault();
-          event.originalEvent.stopPropagation();
-          openContextMenuAt(
-            event.originalEvent.clientX,
-            event.originalEvent.clientY,
-            toLatLng(marker.x, marker.z)
-          );
-        });
+        }
+      }
+      for (const [id, bundle] of waypointBundles) {
+        if (seenWaypoints.has(id)) {
+          continue;
+        }
+        waypointLayer.removeLayer(bundle.marker);
+        bundle.marker.remove();
+        waypointBundles.delete(id);
+      }
+      for (const [id, bundle] of chunkLoaderBundles) {
+        if (seenChunkLoaders.has(id)) {
+          continue;
+        }
+        if (!chunkLoadVisible && !persistentChunkVisible) {
+          chunkLayer.removeLayer(bundle.rectangle);
+          bundle.rectangle.remove();
+          chunkLoaderBundles.delete(id);
+          continue;
+        }
+        if (bundle.fading) {
+          continue;
+        }
+        bundle.fading = true;
+        bundle.rectangle.setStyle({ opacity: 0, fillOpacity: 0 });
+        bundle.fadeTimer = window.setTimeout(() => {
+          chunkLayer.removeLayer(bundle.rectangle);
+          bundle.rectangle.remove();
+          chunkLoaderBundles.delete(id);
+        }, chunkFadeDurationMs);
       }
     };
 
@@ -911,8 +1030,21 @@ export default function App() {
     return () => {
       active = false;
       window.clearInterval(markerTimer);
+      for (const bundle of waypointBundles.values()) {
+        waypointLayer.removeLayer(bundle.marker);
+        bundle.marker.remove();
+      }
+      waypointBundles.clear();
+      for (const bundle of chunkLoaderBundles.values()) {
+        if (bundle.fadeTimer != null) {
+          window.clearTimeout(bundle.fadeTimer);
+        }
+        chunkLayer.removeLayer(bundle.rectangle);
+        bundle.rectangle.remove();
+      }
+      chunkLoaderBundles.clear();
     };
-  }, [worldDetail, chunkLoadVisible]);
+  }, [worldDetail, chunkLoadVisible, persistentChunkVisible]);
 
   useEffect(() => {
     if (!mapRef.current || !markerLayerRef.current || !worldDetail) {
@@ -1087,7 +1219,16 @@ export default function App() {
               setContextMenu(null);
             }}
           >
-            ChunkLoad: {chunkLoadVisible ? "ON" : "OFF"}
+            Loaded Chunks: {chunkLoadVisible ? "ON" : "OFF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPersistentChunkVisible((value) => !value);
+              setContextMenu(null);
+            }}
+          >
+            Persistent Chunks: {persistentChunkVisible ? "ON" : "OFF"}
           </button>
         </div>
       ) : null}

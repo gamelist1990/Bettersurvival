@@ -1,12 +1,12 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Bot;
 
 import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
 
 import javax.annotation.Nonnull;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -39,19 +39,30 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
             return;
         }
 
+        // 更新: メッセージ内容と添付ファイルを両方処理するように変更
         Member member = event.getMember();
         String authorName = member != null ? member.getEffectiveName() : event.getAuthor().getGlobalName() != null ? event.getAuthor().getGlobalName() : event.getAuthor().getName();
         String content = event.getMessage().getContentRaw().trim();
-        if (content.isBlank()) {
-            List<String> attachmentUrls = new ArrayList<>();
-            event.getMessage().getAttachments().forEach(attachment -> attachmentUrls.add(attachment.getUrl()));
-            content = String.join(" ", attachmentUrls).trim();
-        }
-        if (content.isBlank()) {
+        List<Message.Attachment> attachments = event.getMessage().getAttachments();
+        if (content.isBlank() && attachments.isEmpty()) {
             return;
         }
-
-        messageConsumer.accept(new DiscordIncomingMessage(authorName, content));
+        if (attachments.isEmpty()) {
+            messageConsumer.accept(new DiscordIncomingMessage(authorName, content));
+            return;
+        }
+        StringBuilder attachmentText = new StringBuilder();
+        if (!content.isBlank()) {
+            attachmentText.append(content).append(' ');
+        }
+        for (Message.Attachment attachment : attachments) {
+            attachmentText.append('[')
+                    .append(attachment.getFileName())
+                    .append("](")
+                    .append(attachment.getUrl())
+                    .append(") ");
+        }
+        messageConsumer.accept(new DiscordIncomingMessage(authorName, attachmentText.toString().trim()));
     }
 
     public record DiscordIncomingMessage(String authorName, String content) {

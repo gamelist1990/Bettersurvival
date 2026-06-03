@@ -13,6 +13,7 @@ public class DiscordWebhookSettings {
     private boolean joinEnabled;
     private boolean leaveEnabled;
     private boolean statusEnabled;
+    private boolean statusEmbedEnabled;
     private boolean statusAutoUpdateEnabled;
 
     public boolean isEnabled() {
@@ -109,6 +110,14 @@ public class DiscordWebhookSettings {
 
     public void setStatusEnabled(boolean statusEnabled) {
         this.statusEnabled = statusEnabled;
+    }
+
+    public boolean isStatusEmbedEnabled() {
+        return statusEmbedEnabled;
+    }
+
+    public void setStatusEmbedEnabled(boolean statusEmbedEnabled) {
+        this.statusEmbedEnabled = statusEmbedEnabled;
     }
 
     public boolean isStatusAutoUpdateEnabled() {

@@ -16,6 +16,7 @@ import net.dv8tion.jda.api.modals.Modal;
 import net.dv8tion.jda.api.components.label.Label;
 import net.dv8tion.jda.api.components.textinput.TextInput;
 import net.dv8tion.jda.api.components.textinput.TextInputStyle;
+import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
@@ -28,6 +29,7 @@ import javax.annotation.Nonnull;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -54,6 +56,7 @@ public class DiscordWhitelistListener extends ListenerAdapter {
     private static final int COLOR_PENDING = 0xF39C12;
     private static final int COLOR_SUCCESS = 0x57F287;
     private static final int COLOR_DENIED = 0xED4245;
+    private static final int APPLICATION_HISTORY_LOOKUP_LIMIT = 50;
 
     private final Plugin plugin;
     private final PendingWhitelistModule whitelistModule;
@@ -167,12 +170,26 @@ public class DiscordWhitelistListener extends ListenerAdapter {
     }
 
     private void handleValidatedApplication(ModalInteractionEvent event, String username, String lookupName, boolean isBedrock) {
-        if (getSettings().getWhitelistApprovalMode() == DiscordWhitelistApprovalMode.REACTION) {
-            sendPendingApprovalRecord(event, username, isBedrock);
-            event.getHook().sendMessage("🟧 申請を受け付けました。Discord 承認待ちです").queue();
+        if (whitelistModule.isAlreadyWhitelisted(lookupName, isBedrock)) {
+            event.getHook().sendMessage(buildAlreadyWhitelistedNotice(lookupName, isBedrock)).queue();
             return;
         }
-        processWhitelistAdd(event, username, lookupName, isBedrock);
+        if (whitelistModule.getPendingNames().stream().anyMatch(name -> name.equalsIgnoreCase(username))) {
+            event.getHook().sendMessage(buildAlreadyPendingNotice(username, isBedrock)).queue();
+            return;
+        }
+        findExistingApplicationStatus(event.getChannel(), event.getUser().getAsMention(), username, isBedrock, existingStatus -> {
+            if (!existingStatus.isEmpty()) {
+                event.getHook().sendMessage(buildDuplicateApplicationNotice(username, isBedrock, existingStatus)).queue();
+                return;
+            }
+            if (getSettings().getWhitelistApprovalMode() == DiscordWhitelistApprovalMode.REACTION) {
+                sendPendingApprovalRecord(event, username, isBedrock);
+                event.getHook().sendMessage("🟧 申請を受け付けました。Discord 承認待ちです").queue();
+                return;
+            }
+            processWhitelistAdd(event, username, lookupName, isBedrock);
+        });
     }
 
     private void processWhitelistAdd(ModalInteractionEvent event, String username, String lookupName, boolean isBedrock) {
@@ -185,6 +202,9 @@ public class DiscordWhitelistListener extends ListenerAdapter {
                     break;
                 case ALREADY_PENDING:
                     event.getHook().sendMessage("ℹ️ すでにホワイトリスト申請済みです: `" + username + "`").queue();
+                    break;
+                case ALREADY_WHITELISTED:
+                    event.getHook().sendMessage(buildAlreadyWhitelistedNotice(lookupName, isBedrock)).queue();
                     break;
                 default:
                     event.getHook().sendMessage("❌ ホワイトリストへの追加に失敗しました。管理者に問い合わせてください").queue();
@@ -255,8 +275,22 @@ public class DiscordWhitelistListener extends ListenerAdapter {
             return;
         }
         boolean isBedrock = "bedrock".equalsIgnoreCase(getFieldValue(embed, FIELD_PLATFORM));
+        String lookupName = isBedrock ? FloodgateUtil.stripPrefix(username).replace("_", " ") : username;
         String approver = user.getAsMention() + " (" + user.getName() + ")";
         if (APPROVE_EMOJI.equals(emoji)) {
+            if (whitelistModule.isAlreadyWhitelisted(lookupName, isBedrock)) {
+                updateApprovalMessage(message, buildResolvedEmbed(
+                        "✅ ホワイトリスト申請承認済み",
+                        COLOR_SUCCESS,
+                        username,
+                        isBedrock,
+                        getFieldValue(embed, FIELD_APPLICANT),
+                        STATUS_APPROVED,
+                        approver,
+                        "すでに whitelist 登録済みでした。"
+                ));
+                return;
+            }
             Bukkit.getScheduler().runTask(plugin, () -> {
                 PendingWhitelistModule.AddResult result = whitelistModule.addPending(username);
                 switch (result) {
@@ -282,6 +316,18 @@ public class DiscordWhitelistListener extends ListenerAdapter {
                                 STATUS_APPROVED,
                                 approver,
                                 "すでに承認待ち一覧に登録済みでした。"
+                        ));
+                        break;
+                    case ALREADY_WHITELISTED:
+                        updateApprovalMessage(message, buildResolvedEmbed(
+                                "✅ ホワイトリスト申請承認済み",
+                                COLOR_SUCCESS,
+                                username,
+                                isBedrock,
+                                getFieldValue(embed, FIELD_APPLICANT),
+                                STATUS_APPROVED,
+                                approver,
+                                "すでに whitelist 登録済みでした。"
                         ));
                         break;
                     default:
@@ -351,7 +397,6 @@ public class DiscordWhitelistListener extends ListenerAdapter {
                 event.getUser().getAsMention() + " (" + event.getUser().getName() + ")"
         );
         embed.addField(FIELD_STATUS, STATUS_PENDING, true);
-        embed.setDescription("管理者または許可ユーザーが " + APPROVE_EMOJI + " / " + DENY_EMOJI + " で判定します。");
 
         event.getChannel().sendMessageEmbeds(embed.build()).queue(
                 message -> {
@@ -479,5 +524,63 @@ public class DiscordWhitelistListener extends ListenerAdapter {
     private boolean isValidName(String name) {
         if (name.length() > 50) return false;
         return name.matches("[\\w .\\-']+");
+    }
+
+    private void findExistingApplicationStatus(
+            MessageChannel channel,
+            String applicantMention,
+            String username,
+            boolean isBedrock,
+            Consumer<String> callback
+    ) {
+        channel.getHistory().retrievePast(APPLICATION_HISTORY_LOOKUP_LIMIT).queue(messages -> {
+            String targetPlatform = isBedrock ? "Bedrock" : "Java";
+            for (Message message : messages) {
+                MessageEmbed embed = getApprovalEmbed(message.getEmbeds());
+                if (embed == null) {
+                    continue;
+                }
+                if (!username.equalsIgnoreCase(stripCode(getFieldValue(embed, FIELD_USERNAME)))) {
+                    continue;
+                }
+                if (!targetPlatform.equalsIgnoreCase(getFieldValue(embed, FIELD_PLATFORM))) {
+                    continue;
+                }
+                String applicant = getFieldValue(embed, FIELD_APPLICANT);
+                if (applicant == null || !applicant.startsWith(applicantMention)) {
+                    continue;
+                }
+                callback.accept(getFieldValue(embed, FIELD_STATUS));
+                return;
+            }
+            callback.accept("");
+        }, error -> {
+            plugin.getLogger().warning("[DiscordBot] 申請履歴の取得に失敗しました: " + error.getMessage());
+            callback.accept("");
+        });
+    }
+
+    private @Nonnull String buildAlreadyWhitelistedNotice(String lookupName, boolean isBedrock) {
+        String platform = isBedrock ? "Bedrock" : "Java";
+        return "ℹ️ " + platform + " プレイヤー `" + lookupName + "` はすでに whitelist に登録されています";
+    }
+
+    private @Nonnull String buildAlreadyPendingNotice(String username, boolean isBedrock) {
+        String platform = isBedrock ? "Bedrock" : "Java";
+        return "ℹ️ " + platform + " プレイヤー `" + username + "` はすでに接続待機 whitelist に登録されています";
+    }
+
+    private @Nonnull String buildDuplicateApplicationNotice(String username, boolean isBedrock, String status) {
+        String platform = isBedrock ? "Bedrock" : "Java";
+        if (STATUS_PENDING.equals(status)) {
+            return "ℹ️ " + platform + " プレイヤー `" + username + "` の申請はすでに承認待ちです";
+        }
+        if (STATUS_APPROVED.equals(status)) {
+            return "ℹ️ " + platform + " プレイヤー `" + username + "` はすでに申請承認済みです";
+        }
+        if (STATUS_DENIED.equals(status)) {
+            return "ℹ️ " + platform + " プレイヤー `" + username + "` はすでに申請履歴があります。再申請が必要なら管理者に連絡してください";
+        }
+        return "ℹ️ " + platform + " プレイヤー `" + username + "` の申請履歴がすでに存在します";
     }
 }

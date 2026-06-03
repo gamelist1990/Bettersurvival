@@ -4,8 +4,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.block.Biome;
+import org.bukkit.block.data.Ageable;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
@@ -28,6 +32,9 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -44,6 +51,7 @@ public class WebMapModule implements Listener {
     private static final int PLAYER_CAPTURE_RADIUS = 3;
     private static final int PLAYER_SWEEP_RADIUS = 3;
     private static final int CHUNKS_PER_TILE = 32;
+    private static final NmsMapColorResolver NMS_MAP_COLOR_RESOLVER = NmsMapColorResolver.create();
 
     private final Loader plugin;
     private final WebMapStore store;
@@ -79,6 +87,8 @@ public class WebMapModule implements Listener {
         syncKnownWorlds();
         store.saveSettings(settings);
         refreshGlobalEnabled();
+        restorePersistedMarkerSnapshots();
+        refreshMarkerSnapshots();
         startTasks();
         syncRuntimeState();
     }
@@ -310,7 +320,16 @@ public class WebMapModule implements Listener {
 
     public List<WebMapMarkerRecord> snapshotMarkers(String worldKey) {
         List<WebMapMarkerRecord> markers = markerSnapshots.get(worldKey);
-        return markers == null ? List.of() : List.copyOf(markers);
+        if (markers != null) {
+            return List.copyOf(markers);
+        }
+        Map<String, WebMapMarkerRecord> storedWaypoints = dataStore.snapshotWaypoints(worldKey);
+        if (storedWaypoints.isEmpty()) {
+            return List.of();
+        }
+        List<WebMapMarkerRecord> restored = new ArrayList<>(storedWaypoints.values());
+        restored.sort(Comparator.comparing(WebMapMarkerRecord::kind).thenComparing(WebMapMarkerRecord::displayName));
+        return List.copyOf(restored);
     }
 
     public void shutdown() {
@@ -465,7 +484,7 @@ public class WebMapModule implements Listener {
         if (chunk == null) {
             return;
         }
-        org.bukkit.ChunkSnapshot mcsnapshot = chunk.getChunkSnapshot(true, false, false);
+        org.bukkit.ChunkSnapshot mcsnapshot = chunk.getChunkSnapshot(true, true, false);
         String worldKey = world.getKey().toString();
         String worldName = world.getName();
         String envName = world.getEnvironment().name();
@@ -497,8 +516,11 @@ public class WebMapModule implements Listener {
             int previousHeight = Integer.MIN_VALUE;
             for (int localX = 0; localX < 16; localX++) {
                 int topY = mcsnapshot.getHighestBlockYAt(localX, localZ);
-                Material type = mcsnapshot.getBlockType(localX, Math.max(minHeight, topY), localZ);
-                int[] color = materialColor(type, environment);
+                int sampleY = Math.max(minHeight, topY);
+                Material type = mcsnapshot.getBlockType(localX, sampleY, localZ);
+                BlockData blockData = mcsnapshot.getBlockData(localX, sampleY, localZ);
+                Biome biome = mcsnapshot.getBiome(localX, sampleY, localZ);
+                int[] color = materialColor(type, blockData, biome, environment);
                 if (previousHeight != Integer.MIN_VALUE) {
                     color = applyShade(color, topY - previousHeight);
                 }
@@ -517,21 +539,217 @@ public class WebMapModule implements Listener {
         return new ChunkSnapshot(toHex(average), pixels);
     }
 
-    private int[] materialColor(Material material, String environment) {
-        String name = material.name();
-        if (name.contains("WATER")) return new int[]{44, 112, 201};
-        if (name.contains("LAVA")) return new int[]{222, 108, 38};
-        if (name.contains("GRASS") || name.contains("MOSS")) return new int[]{84, 147, 76};
-        if (name.contains("LEAVES") || name.contains("AZALEA")) return new int[]{61, 120, 56};
-        if (name.contains("SNOW") || name.contains("ICE")) return new int[]{218, 236, 243};
-        if (name.contains("SAND") || name.contains("END_STONE")) return new int[]{215, 206, 130};
-        if (name.contains("NETHERRACK") || environment.contains("NETHER")) return new int[]{120, 46, 46};
-        if (name.contains("STONE") || name.contains("DEEPSLATE") || name.contains("COBBLE")) return new int[]{112, 112, 112};
-        if (name.contains("DIRT") || name.contains("MUD") || name.contains("SOUL")) return new int[]{126, 94, 61};
-        if (name.contains("LOG") || name.contains("WOOD") || name.contains("PLANKS")) return new int[]{132, 98, 62};
-        if (name.contains("COPPER")) return new int[]{160, 132, 95};
-        if (name.contains("AMETHYST")) return new int[]{137, 103, 191};
-        return new int[]{145, 145, 145};
+    private int[] materialColor(Material material, BlockData blockData, Biome biome, String environment) {
+        if (material == Material.WATER) return waterColor(biome);
+        if (blockData instanceof Ageable ageable) return cropColor(material, ageable);
+        if (isGrassTinted(material)) return grassColor(biome);
+        if (Tag.LEAVES.isTagged(material)) return foliageColor(material, biome);
+        int[] nmsColor = NMS_MAP_COLOR_RESOLVER.color(blockData);
+        if (nmsColor != null) return nmsColor;
+        if (Tag.LOGS.isTagged(material) || Tag.PLANKS.isTagged(material)) return woodColor(material);
+        int[] dyed = dyedBlockColor(material);
+        if (dyed != null) return dyed;
+        return switch (material) {
+            case LAVA -> new int[]{207, 92, 36};
+            case FARMLAND -> new int[]{118, 82, 43};
+            case MOSS_BLOCK, MOSS_CARPET, AZALEA, FLOWERING_AZALEA -> new int[]{78, 119, 58};
+            case SNOW, SNOW_BLOCK, POWDER_SNOW -> new int[]{238, 248, 248};
+            case ICE, PACKED_ICE, BLUE_ICE, FROSTED_ICE -> new int[]{156, 203, 231};
+            case SAND, SANDSTONE, SMOOTH_SANDSTONE, CHISELED_SANDSTONE, CUT_SANDSTONE -> new int[]{219, 207, 163};
+            case RED_SAND, RED_SANDSTONE, SMOOTH_RED_SANDSTONE, CHISELED_RED_SANDSTONE, CUT_RED_SANDSTONE -> new int[]{154, 94, 63};
+            case END_STONE, END_STONE_BRICKS -> new int[]{221, 223, 165};
+            case NETHERRACK, NETHER_WART_BLOCK, NETHER_WART -> new int[]{111, 48, 48};
+            case WARPED_WART_BLOCK, WARPED_NYLIUM, WARPED_STEM, WARPED_HYPHAE, WARPED_PLANKS -> new int[]{45, 133, 118};
+            case CRIMSON_NYLIUM, CRIMSON_STEM, CRIMSON_HYPHAE, CRIMSON_PLANKS -> new int[]{126, 43, 57};
+            case BASALT, SMOOTH_BASALT, POLISHED_BASALT, BLACKSTONE, POLISHED_BLACKSTONE -> new int[]{51, 47, 55};
+            case SOUL_SAND, SOUL_SOIL -> new int[]{82, 64, 51};
+            case DEEPSLATE, COBBLED_DEEPSLATE, POLISHED_DEEPSLATE, DEEPSLATE_BRICKS, DEEPSLATE_TILES -> new int[]{76, 76, 82};
+            case STONE, COBBLESTONE, MOSSY_COBBLESTONE, ANDESITE, POLISHED_ANDESITE, TUFF, POLISHED_TUFF, TUFF_BRICKS -> new int[]{127, 127, 127};
+            case DIORITE, POLISHED_DIORITE, CALCITE -> new int[]{189, 189, 183};
+            case GRANITE, POLISHED_GRANITE -> new int[]{151, 103, 86};
+            case DIRT, COARSE_DIRT, ROOTED_DIRT, PODZOL, DIRT_PATH -> new int[]{134, 96, 67};
+            case MUD, PACKED_MUD, MUD_BRICKS -> new int[]{64, 58, 60};
+            case COPPER_BLOCK, CUT_COPPER, EXPOSED_COPPER, EXPOSED_CUT_COPPER, WEATHERED_COPPER, WEATHERED_CUT_COPPER, OXIDIZED_COPPER, OXIDIZED_CUT_COPPER -> new int[]{160, 132, 95};
+            case AMETHYST_BLOCK, BUDDING_AMETHYST, AMETHYST_CLUSTER -> new int[]{137, 103, 191};
+            default -> "NETHER".equals(environment) ? new int[]{111, 48, 48} : new int[]{145, 145, 145};
+        };
+    }
+
+    private int[] cropColor(Material material, Ageable ageable) {
+        double growth = ageable.getMaximumAge() <= 0 ? 1D : ageable.getAge() / (double) ageable.getMaximumAge();
+        if (material == Material.BEETROOTS) return mix(new int[]{58, 118, 48}, new int[]{143, 38, 50}, growth);
+        if (material == Material.CARROTS) return mix(new int[]{69, 132, 51}, new int[]{191, 122, 35}, growth);
+        if (material == Material.POTATOES) return mix(new int[]{73, 129, 50}, new int[]{154, 133, 78}, growth);
+        if (material == Material.NETHER_WART) return mix(new int[]{91, 27, 35}, new int[]{128, 22, 34}, growth);
+        if (material == Material.MELON_STEM || material == Material.PUMPKIN_STEM) return mix(new int[]{82, 130, 44}, new int[]{151, 143, 54}, growth);
+        if (material == Material.SWEET_BERRY_BUSH) return mix(new int[]{58, 102, 55}, new int[]{128, 55, 59}, growth);
+        return mix(new int[]{79, 129, 48}, new int[]{191, 169, 73}, growth);
+    }
+
+    private int[] grassColor(Biome biome) {
+        return switch (biomeKey(biome)) {
+            case "swamp", "mangrove_swamp" -> new int[]{77, 99, 43};
+            case "jungle", "sparse_jungle", "bamboo_jungle", "lush_caves" -> new int[]{48, 142, 52};
+            case "savanna", "savanna_plateau", "windswept_savanna", "badlands", "wooded_badlands", "eroded_badlands", "desert" -> new int[]{167, 157, 81};
+            case "taiga", "old_growth_pine_taiga", "old_growth_spruce_taiga", "grove" -> new int[]{92, 137, 74};
+            case "snowy_plains", "snowy_taiga", "snowy_slopes", "frozen_peaks", "frozen_river", "frozen_ocean", "deep_frozen_ocean", "ice_spikes" -> new int[]{130, 153, 103};
+            case "pale_garden" -> new int[]{116, 124, 106};
+            default -> new int[]{91, 155, 70};
+        };
+    }
+
+    private int[] foliageColor(Material material, Biome biome) {
+        return switch (material) {
+            case SPRUCE_LEAVES -> new int[]{78, 101, 64};
+            case BIRCH_LEAVES -> new int[]{128, 167, 85};
+            case MANGROVE_LEAVES -> new int[]{71, 113, 56};
+            case PALE_OAK_LEAVES -> new int[]{126, 132, 116};
+            default -> switch (biomeKey(biome)) {
+                case "swamp", "mangrove_swamp" -> new int[]{75, 95, 43};
+                case "jungle", "sparse_jungle", "bamboo_jungle", "lush_caves" -> new int[]{42, 127, 47};
+                case "savanna", "savanna_plateau", "windswept_savanna", "desert" -> new int[]{128, 128, 61};
+                case "taiga", "old_growth_pine_taiga", "old_growth_spruce_taiga", "snowy_taiga", "snowy_plains" -> new int[]{86, 111, 67};
+                default -> new int[]{72, 131, 55};
+            };
+        };
+    }
+
+    private int[] waterColor(Biome biome) {
+        return switch (biomeKey(biome)) {
+            case "swamp", "mangrove_swamp" -> new int[]{66, 87, 59};
+            case "warm_ocean" -> new int[]{67, 177, 191};
+            case "lukewarm_ocean", "deep_lukewarm_ocean" -> new int[]{69, 141, 174};
+            case "cold_ocean", "deep_cold_ocean", "frozen_ocean", "deep_frozen_ocean", "frozen_river" -> new int[]{58, 83, 161};
+            case "river" -> new int[]{49, 98, 180};
+            default -> new int[]{44, 112, 201};
+        };
+    }
+
+    private int[] woodColor(Material material) {
+        return switch (material) {
+            case BIRCH_LOG, BIRCH_WOOD, STRIPPED_BIRCH_LOG, STRIPPED_BIRCH_WOOD, BIRCH_PLANKS -> new int[]{194, 176, 119};
+            case SPRUCE_LOG, SPRUCE_WOOD, STRIPPED_SPRUCE_LOG, STRIPPED_SPRUCE_WOOD, SPRUCE_PLANKS -> new int[]{93, 68, 42};
+            case DARK_OAK_LOG, DARK_OAK_WOOD, STRIPPED_DARK_OAK_LOG, STRIPPED_DARK_OAK_WOOD, DARK_OAK_PLANKS -> new int[]{66, 43, 24};
+            case JUNGLE_LOG, JUNGLE_WOOD, STRIPPED_JUNGLE_LOG, STRIPPED_JUNGLE_WOOD, JUNGLE_PLANKS -> new int[]{151, 109, 77};
+            case ACACIA_LOG, ACACIA_WOOD, STRIPPED_ACACIA_LOG, STRIPPED_ACACIA_WOOD, ACACIA_PLANKS -> new int[]{168, 91, 51};
+            case MANGROVE_LOG, MANGROVE_WOOD, STRIPPED_MANGROVE_LOG, STRIPPED_MANGROVE_WOOD, MANGROVE_PLANKS -> new int[]{118, 54, 47};
+            case CHERRY_LOG, CHERRY_WOOD, STRIPPED_CHERRY_LOG, STRIPPED_CHERRY_WOOD, CHERRY_PLANKS -> new int[]{214, 149, 158};
+            case PALE_OAK_LOG, PALE_OAK_WOOD, STRIPPED_PALE_OAK_LOG, STRIPPED_PALE_OAK_WOOD, PALE_OAK_PLANKS -> new int[]{194, 190, 174};
+            case WARPED_STEM, WARPED_HYPHAE, STRIPPED_WARPED_STEM, STRIPPED_WARPED_HYPHAE, WARPED_PLANKS -> new int[]{54, 131, 127};
+            case CRIMSON_STEM, CRIMSON_HYPHAE, STRIPPED_CRIMSON_STEM, STRIPPED_CRIMSON_HYPHAE, CRIMSON_PLANKS -> new int[]{126, 58, 86};
+            default -> new int[]{139, 101, 60};
+        };
+    }
+
+    private int[] dyedBlockColor(Material material) {
+        return switch (material) {
+            case WHITE_WOOL, WHITE_CONCRETE, WHITE_GLAZED_TERRACOTTA, WHITE_TERRACOTTA -> new int[]{207, 213, 214};
+            case LIGHT_GRAY_WOOL, LIGHT_GRAY_CONCRETE, LIGHT_GRAY_GLAZED_TERRACOTTA, LIGHT_GRAY_TERRACOTTA -> new int[]{142, 142, 134};
+            case GRAY_WOOL, GRAY_CONCRETE, GRAY_GLAZED_TERRACOTTA, GRAY_TERRACOTTA -> new int[]{62, 68, 71};
+            case BLACK_WOOL, BLACK_CONCRETE, BLACK_GLAZED_TERRACOTTA, BLACK_TERRACOTTA -> new int[]{21, 22, 26};
+            case BROWN_WOOL, BROWN_CONCRETE, BROWN_GLAZED_TERRACOTTA, BROWN_TERRACOTTA -> new int[]{114, 71, 40};
+            case RED_WOOL, RED_CONCRETE, RED_GLAZED_TERRACOTTA, RED_TERRACOTTA -> new int[]{160, 39, 34};
+            case ORANGE_WOOL, ORANGE_CONCRETE, ORANGE_GLAZED_TERRACOTTA, ORANGE_TERRACOTTA -> new int[]{240, 118, 19};
+            case YELLOW_WOOL, YELLOW_CONCRETE, YELLOW_GLAZED_TERRACOTTA, YELLOW_TERRACOTTA -> new int[]{248, 197, 39};
+            case LIME_WOOL, LIME_CONCRETE, LIME_GLAZED_TERRACOTTA, LIME_TERRACOTTA -> new int[]{112, 185, 25};
+            case GREEN_WOOL, GREEN_CONCRETE, GREEN_GLAZED_TERRACOTTA, GREEN_TERRACOTTA -> new int[]{84, 109, 27};
+            case CYAN_WOOL, CYAN_CONCRETE, CYAN_GLAZED_TERRACOTTA, CYAN_TERRACOTTA -> new int[]{21, 137, 145};
+            case LIGHT_BLUE_WOOL, LIGHT_BLUE_CONCRETE, LIGHT_BLUE_GLAZED_TERRACOTTA, LIGHT_BLUE_TERRACOTTA -> new int[]{58, 175, 217};
+            case BLUE_WOOL, BLUE_CONCRETE, BLUE_GLAZED_TERRACOTTA, BLUE_TERRACOTTA -> new int[]{53, 57, 157};
+            case PURPLE_WOOL, PURPLE_CONCRETE, PURPLE_GLAZED_TERRACOTTA, PURPLE_TERRACOTTA -> new int[]{121, 42, 172};
+            case MAGENTA_WOOL, MAGENTA_CONCRETE, MAGENTA_GLAZED_TERRACOTTA, MAGENTA_TERRACOTTA -> new int[]{189, 68, 179};
+            case PINK_WOOL, PINK_CONCRETE, PINK_GLAZED_TERRACOTTA, PINK_TERRACOTTA -> new int[]{237, 141, 172};
+            default -> null;
+        };
+    }
+
+    private boolean isGrassTinted(Material material) {
+        return switch (material) {
+            case GRASS_BLOCK, SHORT_GRASS, TALL_GRASS, FERN, LARGE_FERN, VINE -> true;
+            default -> false;
+        };
+    }
+
+    private String biomeKey(Biome biome) {
+        return biome == null ? "" : biome.getKey().getKey();
+    }
+
+    private static final class NmsMapColorResolver {
+        private static final NmsMapColorResolver DISABLED = new NmsMapColorResolver(null, null, null, null, null, null);
+
+        private final Class<?> craftBlockDataClass;
+        private final MethodHandle getState;
+        private final MethodHandle getMapColor;
+        private final MethodHandle getColorValue;
+        private final Object emptyBlockGetter;
+        private final Object blockPosZero;
+
+        private NmsMapColorResolver(
+                Class<?> craftBlockDataClass,
+                MethodHandle getState,
+                MethodHandle getMapColor,
+                MethodHandle getColorValue,
+                Object emptyBlockGetter,
+                Object blockPosZero
+        ) {
+            this.craftBlockDataClass = craftBlockDataClass;
+            this.getState = getState;
+            this.getMapColor = getMapColor;
+            this.getColorValue = getColorValue;
+            this.emptyBlockGetter = emptyBlockGetter;
+            this.blockPosZero = blockPosZero;
+        }
+
+        public static NmsMapColorResolver create() {
+            try {
+                // NMS v26.1.2 時点の実装。リフレクションで呼び出すメソッドは、CraftBlockData#getState() -> BlockState#getMapColor(BlockGetter, BlockPos) -> MapColor.col の順。
+                MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+                Class<?> craftBlockDataClass = Class.forName("org.bukkit.craftbukkit.block.data.CraftBlockData");
+                Class<?> blockStateClass = Class.forName("net.minecraft.world.level.block.state.BlockState");
+                Class<?> blockGetterClass = Class.forName("net.minecraft.world.level.BlockGetter");
+                Class<?> blockPosClass = Class.forName("net.minecraft.core.BlockPos");
+                Class<?> mapColorClass = Class.forName("net.minecraft.world.level.material.MapColor");
+                Class<?> emptyBlockGetterClass = Class.forName("net.minecraft.world.level.EmptyBlockGetter");
+                MethodHandle getState = lookup.findVirtual(craftBlockDataClass, "getState", MethodType.methodType(blockStateClass));
+                MethodHandle getMapColor = lookup.findVirtual(blockStateClass, "getMapColor", MethodType.methodType(mapColorClass, blockGetterClass, blockPosClass));
+                MethodHandle getColorValue = lookup.findGetter(mapColorClass, "col", int.class);
+                Object emptyBlockGetter = lookup.findStaticGetter(emptyBlockGetterClass, "INSTANCE", emptyBlockGetterClass).invoke();
+                Object blockPosZero = lookup.findStaticGetter(blockPosClass, "ZERO", blockPosClass).invoke();
+                return new NmsMapColorResolver(craftBlockDataClass, getState, getMapColor, getColorValue, emptyBlockGetter, blockPosZero);
+            } catch (Throwable ignored) {
+                return DISABLED;
+            }
+        }
+
+        public int[] color(BlockData blockData) {
+            if (craftBlockDataClass == null || blockData == null || !craftBlockDataClass.isInstance(blockData)) {
+                return null;
+            }
+            try {
+                Object state = getState.invoke(blockData);
+                Object mapColor = getMapColor.invoke(state, emptyBlockGetter, blockPosZero);
+                int color = (int) getColorValue.invoke(mapColor);
+                if (color == 0) {
+                    return null;
+                }
+                return new int[]{
+                        (color >> 16) & 0xFF,
+                        (color >> 8) & 0xFF,
+                        color & 0xFF
+                };
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+    }
+
+    private int[] mix(int[] from, int[] to, double amount) {
+        double clamped = Math.max(0D, Math.min(1D, amount));
+        return new int[]{
+                clampColor((int) Math.round(from[0] + ((to[0] - from[0]) * clamped))),
+                clampColor((int) Math.round(from[1] + ((to[1] - from[1]) * clamped))),
+                clampColor((int) Math.round(from[2] + ((to[2] - from[2]) * clamped)))
+        };
     }
 
     private int[] applyShade(int[] color, int delta) {
@@ -554,6 +772,26 @@ public class WebMapModule implements Listener {
     private void syncKnownWorlds() {
         for (World world : plugin.getServer().getWorlds()) {
             store.ensureDimensionSettings(settings, world);
+        }
+    }
+
+    private void restorePersistedMarkerSnapshots() {
+        markerSnapshots.clear();
+        waypointSnapshots.clear();
+        for (World world : plugin.getServer().getWorlds()) {
+            WebMapDimensionSettings dimension = getDimensionSettings(world);
+            if (!dimension.isVisible()) {
+                continue;
+            }
+            String worldKey = world.getKey().toString();
+            Map<String, WebMapMarkerRecord> storedWaypoints = dataStore.snapshotWaypoints(worldKey);
+            if (storedWaypoints.isEmpty()) {
+                continue;
+            }
+            waypointSnapshots.put(worldKey, new LinkedHashMap<>(storedWaypoints));
+            List<WebMapMarkerRecord> restoredMarkers = new ArrayList<>(storedWaypoints.values());
+            restoredMarkers.sort(Comparator.comparing(WebMapMarkerRecord::kind).thenComparing(WebMapMarkerRecord::displayName));
+            markerSnapshots.put(worldKey, restoredMarkers);
         }
     }
 
@@ -693,8 +931,12 @@ public class WebMapModule implements Listener {
                 continue;
             }
             String worldKey = world.getKey().toString();
-            Map<String, WebMapMarkerRecord> previousWaypoints = waypointSnapshots.getOrDefault(worldKey, Map.of());
+            Map<String, WebMapMarkerRecord> previousWaypoints = dataStore.snapshotWaypoints(worldKey);
+            if (previousWaypoints.isEmpty()) {
+                previousWaypoints = waypointSnapshots.getOrDefault(worldKey, Map.of());
+            }
             MarkerSnapshot markerSnapshot = collectMarkers(world, previousWaypoints);
+            dataStore.replaceWaypoints(worldKey, world.getName(), markerSnapshot.waypointByChunk());
             nextSnapshots.put(worldKey, markerSnapshot.markers());
             nextWaypointSnapshots.put(worldKey, markerSnapshot.waypointByChunk());
         }
@@ -764,12 +1006,33 @@ public class WebMapModule implements Listener {
                     frame.getLocation().getBlockX(),
                     frame.getLocation().getBlockZ(),
                     chunkX,
-                    chunkZ
+                    chunkZ,
+                    waypointRotation(frame)
             ));
         }
 
         List<WebMapMarkerRecord> markers = new ArrayList<>(waypointByChunk.values());
         java.util.Set<String> chunkLoaderKeys = new java.util.HashSet<>();
+        for (Chunk chunk : world.getLoadedChunks()) {
+            int chunkX = chunk.getX();
+            int chunkZ = chunk.getZ();
+            String chunkKey = chunkX + ":" + chunkZ;
+            if (!chunkLoaderKeys.add(chunkKey)) {
+                continue;
+            }
+            markers.add(new WebMapMarkerRecord(
+                    world.getKey() + ":loaded-chunk:" + chunkX + ":" + chunkZ,
+                    "loadedchunk",
+                    "Loaded Chunk",
+                    "Loaded Chunk",
+                    "#8fd8ff",
+                    (chunkX << 4) + 8,
+                    (chunkZ << 4) + 8,
+                    chunkX,
+                    chunkZ,
+                    0
+            ));
+        }
         for (Chunk chunk : world.getForceLoadedChunks()) {
             int chunkX = chunk.getX();
             int chunkZ = chunk.getZ();
@@ -779,14 +1042,15 @@ public class WebMapModule implements Listener {
             }
             markers.add(new WebMapMarkerRecord(
                     world.getKey() + ":chunkloader:" + chunkX + ":" + chunkZ,
-                    "chunkloader",
-                    "Chunk Loader",
-                    "Chunk Loader",
-                    "#8fd8ff",
+                    "persistentchunk",
+                    "Persistent Chunk",
+                    "Persistent Chunk",
+                    "#66d1ff",
                     (chunkX << 4) + 8,
                     (chunkZ << 4) + 8,
                     chunkX,
-                    chunkZ
+                    chunkZ,
+                    0
             ));
         }
 
@@ -801,14 +1065,15 @@ public class WebMapModule implements Listener {
                 }
                 markers.add(new WebMapMarkerRecord(
                         world.getKey() + ":plugin-loader:" + chunkX + ":" + chunkZ,
-                        "chunkloader",
+                        "persistentchunk",
                         "Plugin Ticket (" + pluginName + ")",
                         "Plugin Ticket (" + pluginName + ")",
-                        "#8fd8ff",
+                        "#66d1ff",
                         (chunkX << 4) + 8,
                         (chunkZ << 4) + 8,
                         chunkX,
-                        chunkZ
+                        chunkZ,
+                        0
                 ));
             }
         }
@@ -817,6 +1082,27 @@ public class WebMapModule implements Listener {
     }
 
     private record MarkerSnapshot(List<WebMapMarkerRecord> markers, Map<String, WebMapMarkerRecord> waypointByChunk) {
+    }
+
+    private int waypointRotation(ItemFrame frame) {
+        int base = switch (frame.getFacing()) {
+            case NORTH -> 180;
+            case EAST -> 270;
+            case SOUTH -> 0;
+            case WEST -> 90;
+            default -> 0;
+        };
+        int itemRotation = switch (frame.getRotation()) {
+            case NONE -> 0;
+            case CLOCKWISE_45 -> 45;
+            case CLOCKWISE -> 90;
+            case CLOCKWISE_135 -> 135;
+            case FLIPPED -> 180;
+            case FLIPPED_45 -> 225;
+            case COUNTER_CLOCKWISE -> 270;
+            case COUNTER_CLOCKWISE_45 -> 315;
+        };
+        return Math.floorMod(base + itemRotation, 360);
     }
 
     private boolean isSimilarMarkerName(String normalizedName, List<String> acceptedNames) {

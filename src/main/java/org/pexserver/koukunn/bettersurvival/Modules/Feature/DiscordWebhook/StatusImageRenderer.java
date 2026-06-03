@@ -43,7 +43,7 @@ public final class StatusImageRenderer {
 
         drawCard(g, 42, 38, WIDTH - 84, HEIGHT - 76, new Color(7, 12, 23, 220));
 
-        drawText(g, clip(sanitize(data.serverName()), 21), 74, 78, 6, 2, Color.WHITE);
+        drawFittedText(g, data.serverName(), 74, 78, 1000, 6, 4, 2, Color.WHITE);
         drawText(g, "MINECRAFT SERVER STATUS", 76, 126, 3, 1, new Color(173, 194, 255));
 
         drawBadge(g, 76, 164, 220, 76, new Color(63, 190, 120), "ONLINE",
@@ -52,14 +52,16 @@ public final class StatusImageRenderer {
                 TIME_FORMAT.format(data.updatedAt()));
 
         drawPanel(g, 74, 276, 330, 250, "OVERVIEW");
-        drawMetric(g, 98, 334, "PLAYERS", data.onlinePlayers() + " / " + data.maxPlayers(), new Color(127, 236, 173));
+        drawMetric(g, 98, 334, "TOTAL PLAYERS", data.onlinePlayers() + " / " + data.maxPlayers(), new Color(127, 236, 173));
         drawMetric(g, 98, 404, "WORLD TIME", clip(sanitize(data.minecraftTime()), 15), new Color(120, 190, 255));
         drawMetric(g, 98, 474, "TPS", clip(sanitize(data.tpsText()), 14), new Color(255, 131, 131));
 
         drawPanel(g, 430, 276, 696, 286, "SERVER");
         drawMetric(g, 454, 334, "CPU", clip(sanitize(data.cpuText()), 22), new Color(255, 196, 111));
         drawMetric(g, 454, 404, "HEAP", clip(sanitize(data.heapText()), 22), new Color(255, 196, 111));
-        drawMetric(g, 454, 474, "PLAYERS ONLINE", String.valueOf(data.onlinePlayers()), new Color(127, 236, 173));
+        drawMetric(g, 454, 474, "BOT MODE", sanitize(data.botModeText()), botModeAccent(data.botModeText()));
+        drawMetric(g, 760, 334, "DISCORD BOT", sanitize(data.botStatusText()), botStatusAccent(data.botStatusText()));
+        drawMetric(g, 760, 404, "BOT PING", sanitize(data.botPingText()), new Color(120, 190, 255));
 
         drawPanel(g, 676, 164, 450, 86, "ONLINE PLAYERS");
         drawPlayers(g, 700, 202, 402, 34, data.onlinePlayerNames());
@@ -102,6 +104,48 @@ public final class StatusImageRenderer {
     private static void drawMetric(Graphics2D g, int x, int y, String label, String value, Color accent) {
         drawText(g, label, x, y, 2, 1, accent);
         drawText(g, sanitize(value), x, y + 22, 2, 1, Color.WHITE);
+    }
+
+    private static void drawFittedText(Graphics2D g, String text, int x, int y, int maxWidth, int maxScale, int minScale, int spacing, Color color) {
+        String sanitized = sanitize(text);
+        for (int scale = maxScale; scale >= minScale; scale--) {
+            if (measureTextWidth(sanitized, scale, spacing) <= maxWidth) {
+                drawText(g, sanitized, x, y, scale, spacing, color);
+                return;
+            }
+        }
+
+        int scale = Math.max(1, minScale);
+        drawText(g, clipToWidth(sanitized, maxWidth, scale, spacing), x, y, scale, spacing, color);
+    }
+
+    private static int measureTextWidth(String text, int scale, int spacing) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        int width = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                break;
+            }
+            width += (6 * scale) + spacing;
+        }
+        return width;
+    }
+
+    private static String clipToWidth(String text, int maxWidth, int scale, int spacing) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        int advance = (6 * scale) + spacing;
+        int maxChars = Math.max(1, maxWidth / Math.max(1, advance));
+        if (text.length() <= maxChars) {
+            return text;
+        }
+        if (maxChars == 1) {
+            return ".";
+        }
+        return text.substring(0, maxChars - 1) + ".";
     }
 
     private static void drawPlayers(Graphics2D g, int x, int y, int width, int height, List<String> names) {
@@ -194,6 +238,31 @@ public final class StatusImageRenderer {
         return value.substring(0, Math.max(0, maxChars - 1)) + ".";
     }
 
+    private static Color botStatusAccent(String value) {
+        String status = sanitize(value);
+        if (status.contains("ONLINE")) {
+            return new Color(127, 236, 173);
+        }
+        if (status.contains("START") || status.contains("RECONNECT") || status.contains("LOGIN")) {
+            return new Color(255, 196, 111);
+        }
+        if (status.contains("OFFLINE") || status.contains("FAILED") || status.contains("DISABLED") || status.contains("NOT")) {
+            return new Color(255, 131, 131);
+        }
+        return new Color(193, 205, 230);
+    }
+
+    private static Color botModeAccent(String value) {
+        String mode = sanitize(value);
+        if (mode.contains("ENABLED") || mode.contains("ON")) {
+            return new Color(127, 236, 173);
+        }
+        if (mode.contains("OFF") || mode.contains("DISABLED")) {
+            return new Color(255, 131, 131);
+        }
+        return new Color(193, 205, 230);
+    }
+
     private static Map<Character, String[]> createGlyphs() {
         Map<Character, String[]> glyphs = new HashMap<>();
         glyphs.put('A', glyph("01110", "10001", "10001", "11111", "10001", "10001", "10001"));
@@ -260,6 +329,9 @@ public final class StatusImageRenderer {
             String tpsText,
             String cpuText,
             String heapText,
+            String botStatusText,
+            String botPingText,
+            String botModeText,
             Instant updatedAt) {
     }
 }

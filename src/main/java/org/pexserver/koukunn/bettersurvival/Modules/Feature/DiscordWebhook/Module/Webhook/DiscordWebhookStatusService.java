@@ -2,12 +2,14 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Modu
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import net.dv8tion.jda.api.JDA;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.StatusImageRenderer;
@@ -98,23 +100,44 @@ public class DiscordWebhookStatusService {
     }
 
     private void recreateStatusMessage(DiscordWebhookSettings current, Player sender) {
-        JsonObject payload = createStatusPayload();
+        JsonObject payload = createStatusPayload(current);
+        String previousMessageId = current.getStatusMessageId();
+        if (!previousMessageId.isBlank()) {
+            client.deleteMessage(current.getStatusWebhookUrl(), previousMessageId)
+                    .whenComplete((deleted, deleteError) -> sendStatusMessage(current, payload, sender));
+            return;
+        }
+        sendStatusMessage(current, payload, sender);
+    }
+
+    private void sendStatusMessage(DiscordWebhookSettings current, JsonObject payload, Player sender) {
+        if (current.isStatusEmbedEnabled()) {
+            sendStatusMessage(current.getStatusWebhookUrl(), payload, sender);
+            return;
+        }
+
         byte[] imageBytes = createStatusImageBytes();
         if (imageBytes.length == 0) {
             sendStatusMessage(sender, "§cStatus画像の生成に失敗しました");
             return;
         }
-
-        String previousMessageId = current.getStatusMessageId();
-        if (!previousMessageId.isBlank()) {
-            client.deleteMessage(current.getStatusWebhookUrl(), previousMessageId)
-                    .whenComplete((deleted, deleteError) -> createStatusMessage(current.getStatusWebhookUrl(), payload, imageBytes, sender));
-            return;
-        }
-        createStatusMessage(current.getStatusWebhookUrl(), payload, imageBytes, sender);
+        sendStatusMessage(current.getStatusWebhookUrl(), payload, imageBytes, sender);
     }
 
-    private void createStatusMessage(String webhookUrl, JsonObject payload, byte[] imageBytes, Player sender) {
+    private void sendStatusMessage(String webhookUrl, JsonObject payload, Player sender) {
+        client.sendAndReturnMessageId(webhookUrl, payload).thenAccept(messageId -> {
+            if (messageId.isBlank()) {
+                sendStatusMessageSync(sender, "§cStatus/Listメッセージの再投稿に失敗しました");
+                return;
+            }
+            runSync(() -> {
+                statusMessageIdSaver.accept(messageId);
+                sendStatusMessage(sender, "§aStatus/Listメッセージを再投稿しました");
+            });
+        });
+    }
+
+    private void sendStatusMessage(String webhookUrl, JsonObject payload, byte[] imageBytes, Player sender) {
         client.sendAndReturnMessageId(webhookUrl, payload, STATUS_IMAGE_FILE_NAME, imageBytes).thenAccept(messageId -> {
             if (messageId.isBlank()) {
                 sendStatusMessageSync(sender, "§cStatus/Listメッセージの再投稿に失敗しました");
@@ -127,16 +150,28 @@ public class DiscordWebhookStatusService {
         });
     }
 
-    private JsonObject createStatusPayload() {
+    private JsonObject createStatusPayload(DiscordWebhookSettings current) {
         JsonObject embed = new JsonObject();
-        embed.addProperty("title", "Status/List");
         embed.addProperty("color", STATUS_COLOR);
         embed.addProperty("timestamp", Instant.now().toString());
-        embed.addProperty("description", "Current server status");
-
-        JsonObject image = new JsonObject();
-        image.addProperty("url", "attachment://" + STATUS_IMAGE_FILE_NAME);
-        embed.add("image", image);
+        if (current.isStatusEmbedEnabled()) {
+            embed.addProperty("title", "サーバー状態");
+            embed.addProperty("description", "現在のサーバー情報です。");
+            addField(embed, "サーバー名", ServerInfoUtil.getServerName(), false);
+            addField(embed, "総プレイヤー", Bukkit.getOnlinePlayers().size() + " / " + Bukkit.getMaxPlayers(), true);
+            addField(embed, "ワールド時間", minecraftTimeText(), true);
+            addField(embed, "TPS", tpsText(), true);
+            addField(embed, "CPU", cpuLoadText(), true);
+            addField(embed, "メモリ", heapText(), true);
+            addField(embed, "Discord Bot", discordBotStatusJapaneseText() + " / " + discordBotPingText(), false);
+            addField(embed, "Botモード", botModeJapaneseText(), true);
+        } else {
+            embed.addProperty("title", "Status/List");
+            embed.addProperty("description", "Current server status");
+            JsonObject image = new JsonObject();
+            image.addProperty("url", "attachment://" + STATUS_IMAGE_FILE_NAME);
+            embed.add("image", image);
+        }
 
         JsonObject payload = new JsonObject();
         payload.addProperty("username", ServerInfoUtil.getServerName());
@@ -157,6 +192,9 @@ public class DiscordWebhookStatusService {
                     tpsText(),
                     cpuLoadText(),
                     heapText(),
+                    discordBotStatusText(),
+                    discordBotPingText(),
+                    botModeText(),
                     Instant.now());
             return StatusImageRenderer.render(data);
         } catch (Exception e) {
@@ -207,15 +245,108 @@ public class DiscordWebhookStatusService {
         return usedMb + "/" + maxMb + "MB (" + heapPercent + "%)";
     }
 
+    private String discordBotStatusText() {
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        if (botModule == null || !botModule.isBotTokenConfigured()) {
+            return "NOT CONFIGURED";
+        }
+
+        JDA jda = botModule.getJda();
+        if (jda == null) {
+            return "OFFLINE";
+        }
+
+        return switch (jda.getStatus()) {
+            case CONNECTED -> "ONLINE";
+            case INITIALIZING, LOGGING_IN, AWAITING_LOGIN_CONFIRMATION, LOADING_SUBSYSTEMS -> "STARTING";
+            case DISCONNECTED, RECONNECT_QUEUED, WAITING_TO_RECONNECT -> "RECONNECTING";
+            case SHUTTING_DOWN, SHUTDOWN -> "OFFLINE";
+            case FAILED_TO_LOGIN -> "LOGIN FAILED";
+            default -> jda.getStatus().name().replace('_', ' ');
+        };
+    }
+
+    private String discordBotPingText() {
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        if (botModule == null || !botModule.isBotTokenConfigured()) {
+            return "N/A";
+        }
+
+        JDA jda = botModule.getJda();
+        if (jda == null || jda.getStatus() != JDA.Status.CONNECTED) {
+            return "N/A";
+        }
+
+        long ping = jda.getGatewayPing();
+        return ping >= 0 ? ping + "ms" : "UNKNOWN";
+    }
+
+    private String botModeText() {
+        DiscordWebhookSettings current = settingsSupplier.get();
+        if (current == null) {
+            return "DISABLED";
+        }
+        return current.isBotModeEnabled() ? "ENABLED" : "DISABLED";
+    }
+
+    private String botModeJapaneseText() {
+        DiscordWebhookSettings current = settingsSupplier.get();
+        if (current == null) {
+            return "無効";
+        }
+        return current.isBotModeEnabled() ? "有効" : "無効";
+    }
+
+    private String discordBotStatusJapaneseText() {
+        DiscordBotModule botModule = plugin.getDiscordBotModule();
+        if (botModule == null || !botModule.isBotTokenConfigured()) {
+            return "未設定";
+        }
+
+        JDA jda = botModule.getJda();
+        if (jda == null) {
+            return "オフライン";
+        }
+
+        return switch (jda.getStatus()) {
+            case CONNECTED -> "オンライン";
+            case INITIALIZING, LOGGING_IN, AWAITING_LOGIN_CONFIRMATION, LOADING_SUBSYSTEMS -> "起動中";
+            case DISCONNECTED, RECONNECT_QUEUED, WAITING_TO_RECONNECT -> "再接続中";
+            case SHUTTING_DOWN, SHUTDOWN -> "オフライン";
+            case FAILED_TO_LOGIN -> "ログイン失敗";
+            default -> jda.getStatus().name().replace('_', ' ');
+        };
+    }
+
+    private void addField(JsonObject embed, String name, String value, boolean inline) {
+        JsonArray fields = embed.has("fields") ? embed.getAsJsonArray("fields") : new JsonArray();
+        JsonObject field = new JsonObject();
+        field.addProperty("name", name);
+        field.addProperty("value", value == null || value.isBlank() ? "-" : value);
+        field.addProperty("inline", inline);
+        fields.add(field);
+        embed.add("fields", fields);
+    }
+
     private String cpuLoadText() {
         java.lang.management.OperatingSystemMXBean bean = ManagementFactory.getOperatingSystemMXBean();
         if (bean instanceof com.sun.management.OperatingSystemMXBean operatingSystem) {
-            double load = operatingSystem.getProcessCpuLoad();
-            if (load >= 0) {
-                return String.format(Locale.ROOT, "%.1f%%", load * 100.0);
+            double processLoad = operatingSystem.getProcessCpuLoad();
+            if (processLoad >= 0) {
+                return String.format(Locale.ROOT, "%.1f%%", processLoad * 100.0);
+            }
+
+            double systemLoad = operatingSystem.getCpuLoad();
+            if (systemLoad >= 0) {
+                return String.format(Locale.ROOT, "%.1f%%", systemLoad * 100.0);
             }
         }
-        return "unknown";
+
+        double averageTickTime = plugin.getServer().getAverageTickTime();
+        if (averageTickTime > 0) {
+            return String.format(Locale.ROOT, "N/A (%.1fmspt)", averageTickTime);
+        }
+        return "N/A";
     }
 
     private void sendStatusMessage(Player sender, String message) {

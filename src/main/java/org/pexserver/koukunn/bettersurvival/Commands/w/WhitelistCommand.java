@@ -60,6 +60,10 @@ public class WhitelistCommand extends BaseCommand {
                     sendError(sender, "追加するユーザー名を指定してください: /w add <username>");
                     return true;
                 }
+                if (whitelistModule.isAlreadyWhitelisted(args[1])) {
+                    sendInfo(sender, "既に whitelist に登録されています: " + args[1]);
+                    return true;
+                }
                 switch (whitelistModule.addPending(args[1])) {
                     case PENDING_ADDED:
                         sendSuccess(sender, "接続待機 whitelist に追加しました: " + args[1]);

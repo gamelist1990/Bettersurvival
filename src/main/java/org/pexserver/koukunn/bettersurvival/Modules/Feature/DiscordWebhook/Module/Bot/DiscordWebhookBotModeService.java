@@ -31,8 +31,9 @@ import java.util.regex.Pattern;
 public class DiscordWebhookBotModeService {
     private static final int JOIN_COLOR = 0x57F287;
     private static final int LEAVE_COLOR = 0xED4245;
-    private static final Pattern URL_PATTERN = Pattern.compile(
-            "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+");
+    private static final String URL_REGEX = "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+";
+    private static final Pattern LINK_OR_URL_PATTERN = Pattern.compile(
+            "\\[([^\\]\\r\\n]+)]\\((" + URL_REGEX + ")\\)|(" + URL_REGEX + ")");
 
     private final Loader plugin;
     private final DiscordWebhookClient client;
@@ -240,18 +241,24 @@ public class DiscordWebhookBotModeService {
 
     private Component buildMessageComponent(String text) {
         Component result = Component.empty();
-        Matcher matcher = URL_PATTERN.matcher(text);
+        Matcher matcher = LINK_OR_URL_PATTERN.matcher(text);
         int last = 0;
         while (matcher.find()) {
             if (matcher.start() > last) {
                 result = result.append(Component.text(text.substring(last, matcher.start()), NamedTextColor.GRAY));
             }
-            String url = matcher.group();
+
+            String label = matcher.group(1);
+            String markdownUrl = matcher.group(2);
+            String plainUrl = matcher.group(3);
+            String displayText = label != null ? label : plainUrl;
+            String openUrl = markdownUrl != null ? markdownUrl : plainUrl;
+
             result = result.append(
-                    Component.text(url)
+                    Component.text(displayText)
                             .color(NamedTextColor.BLUE)
                             .decorate(TextDecoration.UNDERLINED)
-                            .clickEvent(ClickEvent.openUrl(url)));
+                            .clickEvent(ClickEvent.openUrl(openUrl)));
             last = matcher.end();
         }
         if (last < text.length()) {

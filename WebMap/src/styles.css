@@ -32,6 +32,9 @@ img.leaflet-tile {
     image-rendering: -moz-crisp-edges;
     transition: none;
 }
+.leaflet-tile-pane .leaflet-layer {
+    transition: opacity 0.26s ease-out;
+}
 .nameplate-container {
     display: flex;
     gap: 0.375rem;
@@ -81,6 +84,17 @@ div.leaflet-nameplate-pane div img.health {
 }
 div.leaflet-nameplate-pane div {
     transition: all 0.25s;
+}
+.leaflet-tooltip,
+.leaflet-tooltip.waypoint-tooltip,
+.leaflet-tooltip.waypoint-tooltip:before,
+div.leaflet-nameplate-pane div {
+    transition: none !important;
+    animation: none !important;
+}
+.leaflet-pane.chunkloader svg path.chunkloader-area,
+.chunkloader-area {
+    transition: stroke-opacity 0.42s ease, fill-opacity 0.42s ease;
 }
 .leaflet-marker-pane img,
 .player-face-icon,
@@ -143,28 +157,39 @@ div.leaflet-control-layers.coordinates {
     align-items: center;
     justify-content: center;
     color: var(--waypoint-color, #ffffff);
-    text-shadow: 0 0 8px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(0, 0, 0, 0.9);
-    transform: translateY(-2px);
     pointer-events: auto;
 }
-.waypoint-pin {
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
+.waypoint-player-icon {
+    position: relative;
+    width: 22px;
+    height: 21px;
+    display: block;
+    background: url("/images/icon/player.png") center / contain no-repeat;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.95)) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.95));
+    transform: rotate(var(--waypoint-rotation, 0deg));
+    transform-origin: center;
+}
+.waypoint-player-icon::before,
+.waypoint-player-icon::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.waypoint-player-icon::before {
+    background: url("/images/icon/player.png") center / 100% 100% no-repeat;
+    mask: url("/images/icon/player-color-mask.png") center / 100% 100% no-repeat;
+    -webkit-mask: url("/images/icon/player-color-mask.png") center / 100% 100% no-repeat;
+    opacity: 0.32;
+}
+.waypoint-player-icon::after {
     background: var(--waypoint-color, #ffffff);
-    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 12px color-mix(in srgb, var(--waypoint-color, #ffffff) 65%, transparent);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-.waypoint-pin-core {
-    width: 5px;
-    height: 5px;
-    border-radius: 999px;
-    background: rgba(4, 8, 12, 0.72);
-}
-.waypoint-kind-chunkloader .waypoint-pin {
-    background: #8fd8ff;
+    mask: url("/images/icon/player-color-mask.png") center / 100% 100% no-repeat;
+    -webkit-mask: url("/images/icon/player-color-mask.png") center / 100% 100% no-repeat;
+    mix-blend-mode: multiply;
+    opacity: 0.82;
 }
 .leaflet-tooltip.waypoint-tooltip {
     border: 1px solid rgba(255, 255, 255, 0.16);

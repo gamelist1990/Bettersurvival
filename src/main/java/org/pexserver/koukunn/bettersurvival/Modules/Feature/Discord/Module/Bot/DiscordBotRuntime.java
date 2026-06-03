@@ -3,6 +3,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.requests.GatewayIntent;
+import okhttp3.OkHttpClient;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Whitelist.DiscordWhitelistListener;
@@ -10,7 +11,12 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhi
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 
@@ -22,6 +28,11 @@ public class DiscordBotRuntime {
     private final List<Object> additionalListeners = new CopyOnWriteArrayList<>();
 
     private JDA jda;
+    private OkHttpClient httpClient;
+    private ScheduledExecutorService gatewayPool;
+    private ScheduledExecutorService rateLimitScheduler;
+    private ExecutorService rateLimitElastic;
+    private ExecutorService callbackPool;
 
     public DiscordBotRuntime(
             Loader plugin,
@@ -41,9 +52,15 @@ public class DiscordBotRuntime {
         if (token.isEmpty())
             return;
         try {
+            prepareManagedResources();
 
             JDABuilder builder = JDABuilder.createLight(token)
                     .enableIntents(GatewayIntent.MESSAGE_CONTENT, GatewayIntent.GUILD_MEMBERS)
+                    .setHttpClient(httpClient)
+                    .setGatewayPool(gatewayPool, false)
+                    .setRateLimitScheduler(rateLimitScheduler, false)
+                    .setRateLimitElastic(rateLimitElastic, false)
+                    .setCallbackPool(callbackPool, false)
                     .addEventListeners(
                             new DiscordWhitelistListener(plugin, whitelistModule, mcApiClient, settingsSupplier));
 
@@ -56,6 +73,7 @@ public class DiscordBotRuntime {
 
         } catch (Exception e) {
             plugin.getLogger().log(Level.SEVERE, "[DiscordBot] Bot の起動に失敗しました: " + e.getMessage());
+            shutdownManagedResources();
             jda = null;
         }
     }
@@ -77,7 +95,63 @@ public class DiscordBotRuntime {
             plugin.getLogger().log(Level.WARNING, "[DiscordBot] Bot 停止中にエラー: " + e.getMessage());
         } finally {
             jda = null;
+            shutdownManagedResources();
         }
+    }
+
+    private void prepareManagedResources() {
+        if (httpClient != null || gatewayPool != null || rateLimitScheduler != null || rateLimitElastic != null || callbackPool != null) {
+            return;
+        }
+        gatewayPool = Executors.newSingleThreadScheduledExecutor(threadFactory("DiscordBot-Gateway"));
+        rateLimitScheduler = Executors.newSingleThreadScheduledExecutor(threadFactory("DiscordBot-RateLimitScheduler"));
+        rateLimitElastic = Executors.newCachedThreadPool(threadFactory("DiscordBot-RateLimit"));
+        callbackPool = Executors.newCachedThreadPool(threadFactory("DiscordBot-Callback"));
+        httpClient = new OkHttpClient.Builder().build();
+    }
+
+    private void shutdownManagedResources() {
+        if (httpClient != null) {
+            httpClient.dispatcher().cancelAll();
+            httpClient.dispatcher().executorService().shutdownNow();
+            httpClient.connectionPool().evictAll();
+            if (httpClient.cache() != null) {
+                try {
+                    httpClient.cache().close();
+                } catch (Exception ignored) {
+                }
+            }
+            httpClient = null;
+        }
+        shutdownExecutor(callbackPool);
+        callbackPool = null;
+        shutdownExecutor(rateLimitElastic);
+        rateLimitElastic = null;
+        shutdownExecutor(rateLimitScheduler);
+        rateLimitScheduler = null;
+        shutdownExecutor(gatewayPool);
+        gatewayPool = null;
+    }
+
+    private void shutdownExecutor(ExecutorService executor) {
+        if (executor == null) {
+            return;
+        }
+        executor.shutdownNow();
+        try {
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private ThreadFactory threadFactory(String prefix) {
+        AtomicInteger counter = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, prefix + "-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 
     public synchronized boolean isOnline() {

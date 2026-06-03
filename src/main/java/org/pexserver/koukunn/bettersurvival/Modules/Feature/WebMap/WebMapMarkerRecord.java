@@ -9,6 +9,7 @@ public record WebMapMarkerRecord(
         int x,
         int z,
         int chunkX,
-        int chunkZ
+        int chunkZ,
+        int rotation
 ) {
 }

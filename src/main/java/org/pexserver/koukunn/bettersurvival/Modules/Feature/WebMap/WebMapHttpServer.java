@@ -13,9 +13,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.SocketException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -72,6 +74,10 @@ public class WebMapHttpServer {
             try {
                 delegate.handle(exchange);
             } catch (Throwable throwable) {
+                if (isClientDisconnect(throwable)) {
+                    exchange.close();
+                    return;
+                }
                 module.getPlugin().getLogger().log(java.util.logging.Level.WARNING,
                         "WebMap HTTP handler failed: " + exchange.getRequestURI(), throwable);
                 try {
@@ -83,6 +89,29 @@ public class WebMapHttpServer {
                 }
             }
         };
+    }
+
+    private boolean isClientDisconnect(Throwable throwable) {
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            if (current instanceof SocketException) {
+                return true;
+            }
+            if (current instanceof IOException ioException) {
+                String message = ioException.getMessage();
+                if (message == null) {
+                    continue;
+                }
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("stream is closed")
+                        || normalized.contains("broken pipe")
+                        || normalized.contains("connection reset")
+                        || normalized.contains("forcibly closed")
+                        || normalized.contains("an existing connection was forcibly closed")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public synchronized void stop() {
@@ -426,7 +455,8 @@ public class WebMapHttpServer {
         }
         int tileX = parseInt(tileSegment.substring(0, underscore), 0);
         int tileZ = parseInt(tileSegment.substring(underscore + 1, dot), 0);
-        String cacheKey = worldKey + ":" + tileZoom + ":" + tileX + ":" + tileZ;
+        String revision = queryValue(exchange, "v");
+        String cacheKey = worldKey + ":" + tileZoom + ":" + tileX + ":" + tileZ + ":" + revision;
         
         List<WebMapChunkRecord> tileChunks = new ArrayList<>();
         boolean hasPixels = false;

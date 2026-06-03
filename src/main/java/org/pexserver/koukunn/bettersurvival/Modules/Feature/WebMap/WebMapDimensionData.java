@@ -8,6 +8,7 @@ public class WebMapDimensionData {
     private String worldKey = "";
     private String worldName = "";
     private Map<String, WebMapChunkRecord> chunks = new LinkedHashMap<>();
+    private Map<String, WebMapMarkerRecord> waypoints = new LinkedHashMap<>();
 
     public String getWorldKey() {
         return worldKey;
@@ -35,5 +36,17 @@ public class WebMapDimensionData {
 
     public Collection<WebMapChunkRecord> chunkValues() {
         return chunks.values();
+    }
+
+    public Map<String, WebMapMarkerRecord> getWaypoints() {
+        return waypoints;
+    }
+
+    public void setWaypoints(Map<String, WebMapMarkerRecord> waypoints) {
+        this.waypoints = waypoints == null ? new LinkedHashMap<>() : waypoints;
+    }
+
+    public Collection<WebMapMarkerRecord> waypointValues() {
+        return waypoints.values();
     }
 }
