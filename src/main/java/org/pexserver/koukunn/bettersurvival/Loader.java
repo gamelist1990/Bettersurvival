@@ -43,7 +43,7 @@ import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.hotp.HotpCommand;
-import org.pexserver.koukunn.bettersurvival.Commands.webmap.WebMapCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.webservice.WebServiceCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
@@ -305,8 +305,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new DiscordCommand(this));
         // Pending whitelist command: 初回参加前ユーザーを接続待機登録
         commandManager.register(new WhitelistCommand(this));
-        // WebMap command
-        commandManager.register(new WebMapCommand(this));
+        // WebService command: OP専用の WebService / WebMap 統合管理
+        commandManager.register(new WebServiceCommand(this));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます

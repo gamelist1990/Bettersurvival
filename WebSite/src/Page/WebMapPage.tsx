@@ -467,7 +467,11 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
   });
 }
 
-export default function WebMapPage() {
+type WebMapPageProps = {
+  full?: boolean;
+};
+
+export default function WebMapPage({ full = false }: WebMapPageProps) {
   const chunkFadeDurationMs = 420;
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -489,6 +493,7 @@ export default function WebMapPage() {
   const tileSwapPendingRef = useRef(false);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressMovedRef = useRef(false);
+  const lockedScrollYRef = useRef(0);
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse>(DEFAULT_BOOTSTRAP);
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -503,6 +508,9 @@ export default function WebMapPage() {
   const [persistentChunkVisible, setPersistentChunkVisible] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [worldPanelVisible, setWorldPanelVisible] = useState(true);
+  const [playersPanelVisible, setPlayersPanelVisible] = useState(true);
 
   const closeContextMenu = () => setContextMenu(null);
 
@@ -544,6 +552,28 @@ export default function WebMapPage() {
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+    const invalidate = () => map.invalidateSize({ animate: false, pan: false });
+    const frame = window.requestAnimationFrame(invalidate);
+    const timer = window.setTimeout(invalidate, 260);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [panelOpen, mobileSidebarOpen, worldPanelVisible, playersPanelVisible, isMobileLayout]);
+  useEffect(() => {
+    const onResize = () => mapRef.current?.invalidateSize({ animate: false, pan: false });
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
 
   const activePlayers = useMemo(
     () => (players?.players ?? []).filter((player) => player.worldKey === activeWorldKey),
@@ -564,6 +594,12 @@ export default function WebMapPage() {
     if (!mapElementRef.current) {
       return;
     }
+    lockedScrollYRef.current = window.scrollY;
+    document.body.classList.add("webmap-page-active");
+    if (full) {
+      document.body.classList.add("webmap-full-active");
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
     const map = L.map(mapElementRef.current, {
       crs: L.CRS.Simple,
       center: [0, 0],
@@ -583,6 +619,17 @@ export default function WebMapPage() {
     markerLayerRef.current = L.layerGroup().addTo(map);
     waypointLayerRef.current = L.layerGroup().addTo(map);
     chunkLoaderLayerRef.current = L.layerGroup().addTo(map);
+
+    const zoomControl = map.zoomControl.getContainer();
+    if (zoomControl) {
+      L.DomEvent.disableClickPropagation(zoomControl);
+      L.DomEvent.disableScrollPropagation(zoomControl);
+      zoomControl.querySelectorAll("a").forEach((anchor) => {
+        anchor.removeAttribute("href");
+        anchor.setAttribute("role", "button");
+        anchor.setAttribute("tabindex", "0");
+      });
+    }
 
     const clearLongPress = () => {
       if (longPressTimerRef.current != null) {
@@ -653,8 +700,11 @@ export default function WebMapPage() {
       clearLongPress();
       map.remove();
       mapRef.current = null;
+      document.body.classList.remove("webmap-page-active");
+      document.body.classList.remove("webmap-full-active");
+      window.scrollTo({ top: lockedScrollYRef.current, left: 0, behavior: "instant" as ScrollBehavior });
     };
-  }, []);
+  }, [full]);
 
   useEffect(() => {
     const loadBootstrap = async () => {
@@ -1110,12 +1160,55 @@ export default function WebMapPage() {
   }, [renderablePlayers, followUuid, worldDetail]);
 
   const coordsLabel = coords ? `X ${coords.x} / Y ? / Z ${coords.z}` : "X --- / Y --- / Z ---";
-  const sidebarShown = isMobileLayout ? mobileSidebarOpen : true;
+  const sidebarShown = isMobileLayout ? mobileSidebarOpen : panelOpen;
+  const serviceOffline = status?.running === false;
+  const switchFullMapView = () => {
+    const targetPath = full ? "/webmap/" : "/webmap/full";
+    const suffix = `${window.location.search}${window.location.hash}`;
+    window.history.pushState({}, "", `${targetPath}${suffix}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
 
   return (
     <>
+      {!full ? (
+        <div className="webmap-route-toolbar">
+          <div className="webmap-route-copy">
+            <strong>WebMap</strong>
+            <span>全画面表示はマップとは別画面で開けます</span>
+          </div>
+          <button type="button" className="webmap-route-button" onClick={switchFullMapView}>
+            全画面マップを開く
+          </button>
+        </div>
+      ) : null}
+      <section className={`webmap-shell${full ? " webmap-full-shell" : ""}${serviceOffline ? " is-offline" : ""}`}>
       <div id="map" ref={mapElementRef} />
-      {isMobileLayout ? (
+      <div className="map-topbar" onClick={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className="map-topbar-button"
+          onClick={() => {
+            if (isMobileLayout) {
+              setMobileSidebarOpen((value) => !value);
+              return;
+            }
+            setPanelOpen((value) => !value);
+          }}
+          aria-expanded={sidebarShown}
+          aria-controls="sidebar"
+        >
+          {sidebarShown ? "パネルを隠す" : "パネルを開く"}
+        </button>
+        <div className="map-topbar-status">
+          <strong>{activeWorld?.displayName ?? "World"}</strong>
+          <span>{activePlayers.length}/{players?.max ?? 0} players</span>
+        </div>
+        <button type="button" className="map-topbar-button" onClick={() => mapRef.current?.setView(toLatLng(worldDetail?.spawn.x ?? 0, worldDetail?.spawn.z ?? 0), worldDetail?.zoom.default ?? 0)}>
+          Spawn
+        </button>
+      </div>
+      {isMobileLayout && full ? (
         <button
           type="button"
           className={`mobile-hamburger${mobileSidebarOpen ? " is-open" : ""}`}
@@ -1137,44 +1230,60 @@ export default function WebMapPage() {
         className={sidebarShown ? "show" : ""}
         onClick={(event) => event.stopPropagation()}
       >
-        <fieldset id="worlds">
-          <legend>Worlds</legend>
-          {worlds.map((world) => (
-            <a
-              key={world.key}
-              className={world.key === activeWorldKey ? "following" : ""}
-              onClick={() => {
-                setFollowUuid("");
-                setActiveWorldKey(world.key);
-                if (isMobileLayout) {
-                  setMobileSidebarOpen(false);
-                }
-              }}
-            >
-              <img src={worldIcon(world.type, world.icon)} alt="" />
-              <span>{world.displayName}</span>
-            </a>
-          ))}
-        </fieldset>
-        <fieldset id="players">
-          <legend>Players ({activePlayers.length}/{players?.max ?? 0})</legend>
-          {activePlayers.map((player) => (
-            <a
-              key={player.uuid}
-              id={player.uuid}
-              className={player.uuid === followUuid ? "following" : ""}
-              onClick={() => {
-                setFollowUuid(player.uuid);
-                if (isMobileLayout) {
-                  setMobileSidebarOpen(false);
-                }
-              }}
-            >
-              <img className="head" src={player.faceUrl} alt="" />
-              <span>{player.displayName}</span>
-            </a>
-          ))}
-        </fieldset>
+        <div className="map-panel-header">
+          <div>
+            <strong>WebMap</strong>
+            <span>{activeWorld?.displayName ?? "World"}</span>
+          </div>
+        </div>
+        <div className="map-panel-controls" aria-label="表示切替">
+          <button className={worldPanelVisible ? "is-active" : ""} type="button" onClick={() => setWorldPanelVisible((value) => !value)}>ワールド</button>
+          <button className={playersPanelVisible ? "is-active" : ""} type="button" onClick={() => setPlayersPanelVisible((value) => !value)}>プレイヤー</button>
+          <button className={chunkLoadVisible ? "is-active" : ""} type="button" onClick={() => setChunkLoadVisible((value) => !value)}>読込範囲</button>
+          <button className={persistentChunkVisible ? "is-active" : ""} type="button" onClick={() => setPersistentChunkVisible((value) => !value)}>固定範囲</button>
+        </div>
+        {worldPanelVisible ? (
+          <fieldset id="worlds">
+            <legend>ワールド</legend>
+            {worlds.length ? worlds.map((world) => (
+              <a
+                key={world.key}
+                className={world.key === activeWorldKey ? "following" : ""}
+                onClick={() => {
+                  setFollowUuid("");
+                  setActiveWorldKey(world.key);
+                  if (isMobileLayout) {
+                    setMobileSidebarOpen(false);
+                  }
+                }}
+              >
+                <img src={worldIcon(world.type, world.icon)} alt="" />
+                <span>{world.displayName}</span>
+              </a>
+            )) : <p className="map-panel-empty">ワールド情報を取得中です。</p>}
+          </fieldset>
+        ) : null}
+        {playersPanelVisible ? (
+          <fieldset id="players">
+            <legend>プレイヤー ({activePlayers.length}/{players?.max ?? 0})</legend>
+            {activePlayers.length ? activePlayers.map((player) => (
+              <a
+                key={player.uuid}
+                id={player.uuid}
+                className={player.uuid === followUuid ? "following" : ""}
+                onClick={() => {
+                  setFollowUuid(player.uuid);
+                  if (isMobileLayout) {
+                    setMobileSidebarOpen(false);
+                  }
+                }}
+              >
+                <img className="head" src={player.faceUrl} alt="" />
+                <span>{player.displayName}</span>
+              </a>
+            )) : <p className="map-panel-empty">現在表示できるプレイヤーはいません。</p>}
+          </fieldset>
+        ) : null}
       </div>
       <div className="leaflet-bottom leaflet-left">
         <div className="leaflet-control-layers coordinates">{coordsLabel}</div>
@@ -1227,7 +1336,17 @@ export default function WebMapPage() {
           </button>
         </div>
       ) : null}
-      {status?.running === false ? <div className="map-warning">WebMap Offline</div> : null}
+      {serviceOffline ? (
+        <div className="map-service-overlay" role="status" aria-live="polite">
+          <div className="map-service-card">
+            <p className="map-service-label">WebMap Service</p>
+            <h1>Webマップは停止中です</h1>
+            <p>現在、マップ配信サービスが有効ではありません。サービスが再開されると、ワールド一覧・プレイヤー位置・タイル表示が自動的に戻ります。</p>
+            <span>Offline</span>
+          </div>
+        </div>
+      ) : null}
+      </section>
     </>
   );
 }

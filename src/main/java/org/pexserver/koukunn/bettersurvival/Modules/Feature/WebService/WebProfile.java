@@ -10,9 +10,16 @@ public class WebProfile {
     private String passwordHash = "";
     private boolean passkeyEnabled = false;
     private String passkeyLabel = "";
+    private String nickname = "";
     private String bio = "Minecraft と BetterSurvival のプロフィール";
     private String location = "";
+    private String country = "";
+    private String region = "";
+    private String bannerUrl = "";
     private String website = "";
+    private String xUrl = "";
+    private String youtubeUrl = "";
+    private String instagramUrl = "";
     private long createdAt = System.currentTimeMillis();
     private long updatedAt = System.currentTimeMillis();
 
@@ -92,6 +99,14 @@ public class WebProfile {
         return bio;
     }
 
+    public String getNickname() {
+        return nickname;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname == null ? "" : nickname;
+    }
+
     public void setBio(String bio) {
         this.bio = bio == null ? "" : bio;
     }
@@ -104,12 +119,60 @@ public class WebProfile {
         this.location = location == null ? "" : location;
     }
 
+    public String getCountry() {
+        return country;
+    }
+
+    public void setCountry(String country) {
+        this.country = country == null ? "" : country;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region == null ? "" : region;
+    }
+
+    public String getBannerUrl() {
+        return bannerUrl;
+    }
+
+    public void setBannerUrl(String bannerUrl) {
+        this.bannerUrl = bannerUrl == null ? "" : bannerUrl;
+    }
+
     public String getWebsite() {
         return website;
     }
 
     public void setWebsite(String website) {
         this.website = website == null ? "" : website;
+    }
+
+    public String getXUrl() {
+        return xUrl;
+    }
+
+    public void setXUrl(String xUrl) {
+        this.xUrl = xUrl == null ? "" : xUrl;
+    }
+
+    public String getYoutubeUrl() {
+        return youtubeUrl;
+    }
+
+    public void setYoutubeUrl(String youtubeUrl) {
+        this.youtubeUrl = youtubeUrl == null ? "" : youtubeUrl;
+    }
+
+    public String getInstagramUrl() {
+        return instagramUrl;
+    }
+
+    public void setInstagramUrl(String instagramUrl) {
+        this.instagramUrl = instagramUrl == null ? "" : instagramUrl;
     }
 
     public long getCreatedAt() {

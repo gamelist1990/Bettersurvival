@@ -1,0 +1,136 @@
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: visible;
+  isolation: isolate;
+}
+
+.page-noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.32;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 999px;
+  filter: blur(4px);
+}
+
+.app-shell::before {
+  width: 360px;
+  height: 360px;
+  right: -120px;
+  top: 8%;
+  background: rgba(35, 83, 71, 0.12);
+}
+
+.app-shell::after {
+  width: 300px;
+  height: 300px;
+  left: 18%;
+  bottom: -140px;
+  background: rgba(199, 91, 57, 0.13);
+}
+
+.app-main {
+  position: relative;
+  z-index: 1;
+  width: min(1220px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 108px 0 76px;
+  min-height: 100dvh;
+}
+
+.app-main-wide { width: min(1440px, calc(100% - 32px)); }
+
+body.webmap-page-active .app-shell {
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+body.webmap-page-active .app-main,
+body.webmap-page-active .app-main-wide {
+  height: calc(100dvh - 108px);
+  min-height: 0;
+  padding-bottom: 16px;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+.page-grid { display: grid; gap: 28px; }
+.section-block {
+  display: grid;
+  gap: 24px;
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+.section-heading { max-width: 760px; }
+.section-heading h1,
+.section-heading h2 {
+  margin: 0;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.055em;
+}
+.section-text { color: var(--muted); line-height: 1.75; font-size: 0.96rem; }
+.eyebrow, .panel-label, .card-eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.page-grid-home .section-block {
+  padding: 34px;
+}
+
+@media (max-width: 860px) {
+  .app-main,
+  .app-main-wide {
+    width: min(100% - 24px, 820px);
+    margin: 0 auto;
+    padding-top: 18px;
+  }
+
+  body.webmap-page-active .app-main,
+  body.webmap-page-active .app-main-wide {
+    height: calc(100dvh - 76px);
+    padding-top: 76px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-main,
+  .app-main-wide {
+    width: min(100% - 18px, 820px);
+    padding-bottom: 42px;
+  }
+
+  .section-block,
+  .page-grid-home .section-block {
+    padding: 22px;
+    border-radius: 24px;
+  }
+}

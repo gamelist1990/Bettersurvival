@@ -1018,7 +1018,7 @@ public class WebMapModule implements Listener {
         if (shutdownRequested) {
             return;
         }
-        if ((!isGloballyEnabled() && !isWebServiceEnabled()) || !settings.isEnabled() || settings.isPaused()) {
+        if (!isWebServiceEnabled() || !settings.isEnabled() || settings.isPaused()) {
             httpServer.stop();
             return;
         }

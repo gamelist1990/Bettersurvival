@@ -1,4 +1,10 @@
 @import "leaflet/dist/leaflet.css";
+@import "./css/base.css";
+@import "./css/layout.css";
+@import "./css/navigation.css";
+@import "./css/components.css";
+@import "./css/home.css";
+@import "./css/auth.css";
+@import "./css/profile.css";
+@import "./css/feed.css";
 @import "./css/webmap.css";
-@import "./css/website.css";
-

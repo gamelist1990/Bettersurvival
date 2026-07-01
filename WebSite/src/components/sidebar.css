@@ -1,0 +1,30 @@
+.sidebar {
+  width: 220px;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  background: rgba(255, 248, 239, 0.92);
+  border-right: 1px solid rgba(23, 23, 23, 0.1);
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.sidebar-title {
+  color: #c75b39;
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+
+.sidebar-link {
+  display: block;
+  color: #171717;
+  text-decoration: none;
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.sidebar-link:hover {
+  background: rgba(199, 91, 57, 0.12);
+}

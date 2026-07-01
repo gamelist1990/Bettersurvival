@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.bukkit.World;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebProfile;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebPost;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 
 import javax.imageio.ImageIO;
@@ -66,6 +67,10 @@ public class WebMapHttpServer {
         server.createContext("/api/v1/auth/login", safe(this::handleAuthLogin));
         server.createContext("/api/v1/auth/logout", safe(this::handleAuthLogout));
         server.createContext("/api/v1/auth/me", safe(this::handleAuthMe));
+        server.createContext("/api/v1/profile/update", safe(this::handleProfileUpdate));
+        server.createContext("/api/v1/feed", safe(this::handleFeed));
+        server.createContext("/api/v1/feed/post", safe(this::handleFeedPost));
+        server.createContext("/api/v1/feed/updates", safe(this::handleFeedUpdates));
         server.createContext("/api/v1/worlds", safe(this::handleApiWorlds));
         server.createContext("/api/v1/players", safe(this::handleApiPlayers));
         server.createContext("/api/status", safe(this::handleStatus));
@@ -753,10 +758,108 @@ public class WebMapHttpServer {
                 stringValue(request.get("username")),
                 stringValue(request.get("code")),
                 stringValue(request.get("email")),
-                stringValue(request.get("password")),
-                booleanValue(request.get("passkeyRequested"))
+                stringValue(request.get("password"))
         );
         writeAuthResult(exchange, service, result);
+    }
+
+    private void handleProfileUpdate(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        WebServiceModule.ProfileResult result = service.updateProfile(bearerToken(exchange), readJsonObject(exchange));
+        if (!result.success()) {
+            writeJson(exchange, Map.of("success", false, "message", result.message()), 0);
+            return;
+        }
+        writeJson(exchange, Map.of(
+                "success", true,
+                "profile", service.profilePayload(result.profile())
+        ), 0);
+    }
+
+    private void handleFeed(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        long since = parseLong(queryValue(exchange, "since"), 0L);
+        int limit = parseInt(queryValue(exchange, "limit"), 50);
+        List<Map<String, Object>> posts = service.listPosts(since, limit).stream()
+                .map(service::postPayload)
+                .toList();
+        writeJson(exchange, Map.of(
+                "success", true,
+                "posts", posts,
+                "retentionDays", service.getFeedRetentionDays(),
+                "updatedAt", System.currentTimeMillis()
+        ), 0);
+    }
+
+    private void handleFeedUpdates(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        long since = parseLong(queryValue(exchange, "since"), 0L);
+        long deadline = System.currentTimeMillis() + 15_000L;
+        List<WebPost> posts;
+        do {
+            posts = service.listPosts(since, 50);
+            if (!posts.isEmpty() || System.currentTimeMillis() >= deadline) {
+                break;
+            }
+            try {
+                Thread.sleep(500L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        } while (true);
+        List<Map<String, Object>> payloadPosts = posts.stream().map(service::postPayload).toList();
+        writeJson(exchange, Map.of(
+                "success", true,
+                "posts", payloadPosts,
+                "updatedAt", System.currentTimeMillis()
+        ), 0);
+    }
+
+    private void handleFeedPost(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        WebServiceModule.PostResult result = service.createWebPost(
+                bearerToken(exchange),
+                stringValue(request.get("text")),
+            attachmentList(request.get("attachments"))
+        );
+        if (!result.success()) {
+            writeJson(exchange, Map.of("success", false, "message", result.message()), 0);
+            return;
+        }
+        writeJson(exchange, Map.of(
+                "success", true,
+                "post", service.postPayload(result.post())
+        ), 0);
     }
 
     private void handleAuthLogin(HttpExchange exchange) throws IOException {
@@ -832,10 +935,11 @@ public class WebMapHttpServer {
     }
 
     private boolean guardWebMap(HttpExchange exchange) throws IOException {
-        if (module.isGloballyEnabled()) {
+        WebServiceModule service = module.getPlugin().getWebServiceModule();
+        if (service != null && service.isWebMapAccessEnabled()) {
             return true;
         }
-        writePlain(exchange, 404, "WebMap disabled");
+        writePlain(exchange, 404, "WebMap disabled by WebService safety gate");
         return false;
     }
 
@@ -868,8 +972,39 @@ public class WebMapHttpServer {
         return value instanceof String string ? string : "";
     }
 
-    private boolean booleanValue(Object value) {
-        return value instanceof Boolean bool && bool;
+    private List<WebPost.Attachment> attachmentList(Object value) {
+        if (!(value instanceof List<?> rawList)) {
+            return List.of();
+        }
+        List<WebPost.Attachment> attachments = new ArrayList<>();
+        for (Object item : rawList) {
+            if (!(item instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Object url = map.get("url");
+            if (!(url instanceof String urlString) || urlString.isBlank()) {
+                continue;
+            }
+            if (!urlString.startsWith("data:image/")) {
+                continue;
+            }
+            WebPost.Attachment attachment = new WebPost.Attachment();
+            attachment.setType("image");
+            attachment.setUrl(urlString.length() > 1_200_000 ? urlString.substring(0, 1_200_000) : urlString);
+            Object width = map.get("width");
+            Object height = map.get("height");
+            if (width instanceof Number number) {
+                attachment.setWidth(number.intValue());
+            }
+            if (height instanceof Number number) {
+                attachment.setHeight(number.intValue());
+            }
+            attachments.add(attachment);
+            if (attachments.size() >= 4) {
+                break;
+            }
+        }
+        return attachments;
     }
 
     private World resolveWorldByName(String worldName) {

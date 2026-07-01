@@ -1,0 +1,99 @@
+.panel,
+.hero-panel,
+.feature-card,
+.profile-card {
+  border: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-soft);
+  border-radius: var(--radius-xl);
+}
+
+.panel,
+.hero-panel,
+.feature-card {
+  padding: 28px;
+}
+
+.primary-button,
+.secondary-button,
+.profile-actions button,
+.profile-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  font-weight: 900;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24);
+  transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.primary-button {
+  background: #171717;
+  color: #fff6ee;
+}
+
+.secondary-button,
+.profile-actions button,
+.profile-actions a {
+  background: rgba(255, 248, 239, 0.64);
+  color: var(--ink);
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.profile-actions button:hover,
+.profile-actions a:hover {
+  transform: translateY(-2px);
+  border-color: rgba(199, 91, 57, 0.28);
+  box-shadow: 0 12px 24px rgba(31,24,18,.1);
+}
+
+.full-button { width: fit-content; }
+.primary-button:disabled { opacity: 0.6; cursor: progress; }
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  border-top: 0;
+}
+
+.feature-card {
+  min-height: 220px;
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  align-content: start;
+}
+
+.feature-card h3 {
+  margin: 0 0 10px;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-size: clamp(1.55rem, 2.6vw, 2.25rem);
+  letter-spacing: -0.04em;
+}
+
+.feature-card p:last-child {
+  max-width: 68ch;
+  color: var(--muted);
+  line-height: 1.85;
+}
+
+.surface-line {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .feature-grid { grid-template-columns: 1fr; }
+  .feature-card { min-height: auto; padding: 22px; }
+  .full-button { width: 100%; }
+}
+
+@media (min-width: 761px) and (max-width: 1120px) {
+  .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
