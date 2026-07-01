@@ -10,7 +10,7 @@ import type {
   WorldMarkersResponse,
   WorldDetail,
   WorldSummary,
-} from "./types";
+} from "../types";
 
 type MarkerBundle = {
   marker: L.Marker;
@@ -409,12 +409,12 @@ function normalizeWorldChanges(payload: unknown): WorldChangesResponse {
 function SquaremapTileLayer(template: string, maxNativeZoom: number) {
   const SquaremapTileLayerImpl = L.TileLayer.extend({
     initialize(url: string, options: L.TileLayerOptions) {
-      // @ts-expect-error Leaflet internal initialize
+      // @ts-ignore Leaflet internal initialize
       L.TileLayer.prototype.initialize.call(this, url, options);
       this._revision = 0;
     },
     getTileUrl(coords: L.Coords) {
-      // @ts-expect-error Leaflet internal getTileUrl
+      // @ts-ignore Leaflet internal getTileUrl
       const base = L.TileLayer.prototype.getTileUrl.call(this, coords);
       const separator = base.includes("?") ? "&" : "?";
       return `${base}${separator}v=${this._revision ?? 0}`;
@@ -426,11 +426,11 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
       const tile = document.createElement("img");
       L.DomEvent.on(tile, "load", () => {
         URL.revokeObjectURL(tile.src);
-        // @ts-expect-error Leaflet private hook
+        // @ts-ignore Leaflet private hook
         this._tileOnLoad(done, tile);
       });
       L.DomEvent.on(tile, "error", L.Util.bind(
-        // @ts-expect-error Leaflet private hook
+        // @ts-ignore Leaflet private hook
         this._tileOnError,
         this,
         done,
@@ -442,20 +442,21 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
       fetch(url, { cache: "no-store" })
         .then(async (response) => {
           if (!response.ok) {
-            // @ts-expect-error Leaflet private hook
+            // @ts-ignore Leaflet private hook
             this._tileOnError(done, tile, null);
             return;
           }
           tile.src = URL.createObjectURL(await response.blob());
         })
         .catch(() => {
-          // @ts-expect-error Leaflet private hook
+          // @ts-ignore Leaflet private hook
           this._tileOnError(done, tile, null);
         });
       return tile;
     },
   });
-  return new SquaremapTileLayerImpl(template, {
+  const TileLayerConstructor = SquaremapTileLayerImpl as unknown as new (url: string, options: L.TileLayerOptions) => WebMapTileLayer;
+  return new TileLayerConstructor(template, {
     tileSize: 512,
     noWrap: true,
     minNativeZoom: 0,
@@ -463,10 +464,10 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
     minZoom: -6,
     maxZoom: maxNativeZoom + 6,
     errorTileUrl: "/images/clear.png",
-  }) as WebMapTileLayer;
+  });
 }
 
-export default function App() {
+export default function WebMapPage() {
   const chunkFadeDurationMs = 420;
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -573,7 +574,7 @@ export default function App() {
       attributionControl: false,
       noWrap: true,
       zoomControl: true,
-    });
+    } as L.MapOptions);
     map.createPane("chunkloader").style.zIndex = "450";
     map.createPane("waypoint").style.zIndex = "650";
     map.createPane("nameplate").style.zIndex = "1000";
@@ -602,8 +603,9 @@ export default function App() {
       event.originalEvent.preventDefault();
       openContextMenuAt(event.originalEvent.clientX, event.originalEvent.clientY, event.latlng);
     });
-    map.on("touchstart", (event: L.LeafletEvent & { originalEvent: TouchEvent }) => {
-      const touch = event.originalEvent.touches?.[0];
+    map.on("touchstart", (event: L.LeafletEvent) => {
+      const originalEvent = (event as L.LeafletEvent & { originalEvent?: TouchEvent }).originalEvent;
+      const touch = originalEvent?.touches?.[0];
       if (!touch) {
         return;
       }
@@ -1229,3 +1231,4 @@ export default function App() {
     </>
   );
 }
+

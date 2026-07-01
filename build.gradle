@@ -78,38 +78,38 @@ processResources {
     }
 }
 
-def webMapDir = file("$projectDir/WebMap")
-def webMapDistDir = file("$projectDir/WebMap/dist")
+def webSiteDir = file("$projectDir/WebSite")
+def webSiteDistDir = file("$projectDir/WebSite/dist")
 def npmCommand = org.gradle.internal.os.OperatingSystem.current().isWindows() ? 'npm.cmd' : 'npm'
 
-tasks.register('npmInstallWebMap', Exec) {
-    onlyIf { webMapDir.exists() }
-    workingDir webMapDir
+tasks.register('npmInstallWebSite', Exec) {
+    onlyIf { webSiteDir.exists() }
+    workingDir webSiteDir
     commandLine npmCommand, 'install'
-    inputs.file(file("$webMapDir/package.json"))
-    outputs.dir(file("$webMapDir/node_modules"))
+    inputs.file(file("$webSiteDir/package.json"))
+    outputs.dir(file("$webSiteDir/node_modules"))
 }
 
-tasks.register('buildWebMapFrontend', Exec) {
-    onlyIf { webMapDir.exists() }
-    dependsOn tasks.named('npmInstallWebMap')
-    workingDir webMapDir
+tasks.register('buildWebSiteFrontend', Exec) {
+    onlyIf { webSiteDir.exists() }
+    dependsOn tasks.named('npmInstallWebSite')
+    workingDir webSiteDir
     commandLine npmCommand, 'run', 'build'
     inputs.files(
-            file("$webMapDir/package.json"),
-            file("$webMapDir/vite.config.js"),
-            file("$webMapDir/index.html")
+            file("$webSiteDir/package.json"),
+            file("$webSiteDir/vite.config.js"),
+            file("$webSiteDir/index.html")
     )
-    inputs.dir(file("$webMapDir/src"))
-    inputs.dir(file("$webMapDir/public"))
-    outputs.dir(webMapDistDir)
+    inputs.dir(file("$webSiteDir/src"))
+    inputs.dir(file("$webSiteDir/public"))
+    outputs.dir(webSiteDistDir)
 }
 
 processResources {
-    if (webMapDir.exists()) {
-        dependsOn tasks.named('buildWebMapFrontend')
-        from(webMapDistDir) {
-            into 'webmap'
+    if (webSiteDir.exists()) {
+        dependsOn tasks.named('buildWebSiteFrontend')
+        from(webSiteDistDir) {
+            into 'website'
         }
     }
 }

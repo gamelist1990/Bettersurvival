@@ -131,6 +131,10 @@ public class WebMapModule implements Listener {
         return globalEnabled;
     }
 
+    public boolean isWebServiceEnabled() {
+        return plugin.getWebServiceModule() != null && plugin.getWebServiceModule().isGloballyEnabled();
+    }
+
     public boolean isServerRunning() {
         return httpServer.isRunning();
     }
@@ -1014,7 +1018,7 @@ public class WebMapModule implements Listener {
         if (shutdownRequested) {
             return;
         }
-        if (!isGloballyEnabled() || !settings.isEnabled() || settings.isPaused()) {
+        if ((!isGloballyEnabled() && !isWebServiceEnabled()) || !settings.isEnabled() || settings.isPaused()) {
             httpServer.stop();
             return;
         }

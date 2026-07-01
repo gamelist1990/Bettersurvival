@@ -42,12 +42,14 @@ import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.hotp.HotpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.webmap.WebMapCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChunkLoader.ChunkLoaderModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
@@ -72,6 +74,7 @@ public final class Loader extends JavaPlugin {
     private ChestShopModule chestShopModule;
     private BetterMenuModule betterMenuModule;
     private CopperGolemModule copperGolemModule;
+    private WebServiceModule webServiceModule;
     private WebMapModule webMapModule;
     private ChunkLoaderModule chunkLoaderModule;
 
@@ -152,6 +155,8 @@ public final class Loader extends JavaPlugin {
         }
         chunkLoaderModule = new ChunkLoaderModule(this, toggleModule, itemCombineModule);
         getServer().getPluginManager().registerEvents(chunkLoaderModule, this);
+        webServiceModule = new WebServiceModule(this);
+        getServer().getPluginManager().registerEvents(webServiceModule, this);
         webMapModule = new WebMapModule(this);
         getServer().getPluginManager().registerEvents(webMapModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
@@ -203,6 +208,8 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("geysersmithing", "Geyser鍛冶台", "Geyser/Bedrock対応の鍛冶台UIを有効/無効にします", Material.SMITHING_TABLE, false));
         toggleModule.registerFeature(
             new ToggleFeature("webmap", "WebMap", "軽量な Web マップと ChunkGen を有効/無効にします", Material.FILLED_MAP, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("webservice", "WebService", "ホームページ、ログイン、プロフィール機能を有効/無効にします", Material.BOOK, false));
         toggleModule.registerFeature(
             new ToggleFeature("chunkloader", "ChunkLoader", "コンパス+名札(chunkloader)で作るチャンクローダーを有効/無効にします", Material.CALIBRATED_SCULK_SENSOR, false));
         if (!toggleModule.hasGlobal("treemine")) {
@@ -265,6 +272,9 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("webmap")) {
             toggleModule.setGlobal("webmap", false);
         }
+        if (!toggleModule.hasGlobal("webservice")) {
+            toggleModule.setGlobal("webservice", true);
+        }
 
         getLogger().info("Better Survival Plugin が有効になりました");
     }
@@ -289,6 +299,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new InvseeCommand(this));
         // List command: オンラインのプレイヤー一覧を表示
         commandManager.register(new ListCommand());
+        // HOTP command: WebSite 登録用ワンタイムコード
+        commandManager.register(new HotpCommand(this));
         // DiscordWebhook command: Discord通知設定UI（OP専用）
         commandManager.register(new DiscordCommand(this));
         // Pending whitelist command: 初回参加前ユーザーを接続待機登録
@@ -357,6 +369,10 @@ public final class Loader extends JavaPlugin {
         return webMapModule;
     }
 
+    public WebServiceModule getWebServiceModule() {
+        return webServiceModule;
+    }
+
     @Override
     public void onDisable() {
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -364,6 +380,9 @@ public final class Loader extends JavaPlugin {
         }
         if (webMapModule != null) {
             webMapModule.shutdown();
+        }
+        if (webServiceModule != null) {
+            webServiceModule.shutdown();
         }
         if (discordWebhookModule != null) {
             discordWebhookModule.shutdown();

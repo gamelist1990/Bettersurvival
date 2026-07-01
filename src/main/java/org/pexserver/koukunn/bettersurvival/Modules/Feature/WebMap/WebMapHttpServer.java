@@ -6,6 +6,8 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import org.bukkit.World;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebProfile;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -60,6 +62,10 @@ public class WebMapHttpServer {
         server = HttpServer.create(new InetSocketAddress(host, settings.getPort()), 0);
         server.createContext("/api/v1/bootstrap", safe(this::handleBootstrap));
         server.createContext("/api/v1/status", safe(this::handleStatus));
+        server.createContext("/api/v1/auth/register", safe(this::handleAuthRegister));
+        server.createContext("/api/v1/auth/login", safe(this::handleAuthLogin));
+        server.createContext("/api/v1/auth/logout", safe(this::handleAuthLogout));
+        server.createContext("/api/v1/auth/me", safe(this::handleAuthMe));
         server.createContext("/api/v1/worlds", safe(this::handleApiWorlds));
         server.createContext("/api/v1/players", safe(this::handleApiPlayers));
         server.createContext("/api/status", safe(this::handleStatus));
@@ -154,6 +160,9 @@ public class WebMapHttpServer {
     }
 
     private void handleApiWorlds(HttpExchange exchange) throws IOException {
+        if (!guardWebMap(exchange)) {
+            return;
+        }
         String path = exchange.getRequestURI().getPath();
         if (!"/api/v1/worlds".equals(path)) {
             handleApiWorld(exchange);
@@ -196,6 +205,9 @@ public class WebMapHttpServer {
     }
 
     private void handleApiPlayers(HttpExchange exchange) throws IOException {
+        if (!guardWebMap(exchange)) {
+            return;
+        }
         if (!guardApi(exchange)) {
             return;
         }
@@ -207,6 +219,9 @@ public class WebMapHttpServer {
     }
 
     private void handleTiles(HttpExchange exchange) throws IOException {
+        if (!guardWebMap(exchange)) {
+            return;
+        }
         if (!guardTile(exchange)) {
             return;
         }
@@ -236,6 +251,9 @@ public class WebMapHttpServer {
     }
 
     private void handleApiWorld(HttpExchange exchange) throws IOException {
+        if (!guardWebMap(exchange)) {
+            return;
+        }
         if (!guardApi(exchange)) {
             return;
         }
@@ -528,7 +546,7 @@ public class WebMapHttpServer {
             return;
         }
         String path = exchange.getRequestURI().getPath();
-        if (path == null || path.equals("/") || path.isBlank()) {
+        if (path == null || path.equals("/") || path.isBlank() || path.equals("/webmap") || path.startsWith("/webmap/")) {
             path = "/index.html";
         }
         if (path.startsWith("/api/") || path.startsWith("/tiles")) {
@@ -713,12 +731,145 @@ public class WebMapHttpServer {
 
     private byte[] staticResource(String path) throws IOException {
         String normalized = path.startsWith("/") ? path.substring(1) : path;
-        try (InputStream inputStream = module.getPlugin().getClass().getClassLoader().getResourceAsStream("webmap/" + normalized)) {
+        try (InputStream inputStream = module.getPlugin().getClass().getClassLoader().getResourceAsStream("website/" + normalized)) {
             if (inputStream == null) {
                 return null;
             }
             return inputStream.readAllBytes();
         }
+    }
+
+    private void handleAuthRegister(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        WebServiceModule.AuthResult result = service.register(
+                stringValue(request.get("username")),
+                stringValue(request.get("code")),
+                stringValue(request.get("email")),
+                stringValue(request.get("password")),
+                booleanValue(request.get("passkeyRequested"))
+        );
+        writeAuthResult(exchange, service, result);
+    }
+
+    private void handleAuthLogin(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        WebServiceModule.AuthResult result = service.login(
+                stringValue(request.get("username")),
+                stringValue(request.get("password"))
+        );
+        writeAuthResult(exchange, service, result);
+    }
+
+    private void handleAuthLogout(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        service.logout(bearerToken(exchange));
+        writeJson(exchange, Map.of("success", true), 0);
+    }
+
+    private void handleAuthMe(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!guardApi(exchange)) {
+            return;
+        }
+        WebProfile profile = service.findProfileBySession(bearerToken(exchange)).orElse(null);
+        if (profile == null) {
+            writeJson(exchange, Map.of("authenticated", false), 0);
+            return;
+        }
+        writeJson(exchange, Map.of(
+                "authenticated", true,
+                "profile", service.profilePayload(profile)
+        ), 0);
+    }
+
+    private void writeAuthResult(HttpExchange exchange, WebServiceModule service, WebServiceModule.AuthResult result) throws IOException {
+        if (!result.success()) {
+            writeJson(exchange, Map.of(
+                    "success", false,
+                    "message", result.message()
+            ), 0);
+            return;
+        }
+        writeJson(exchange, Map.of(
+                "success", true,
+                "token", result.token(),
+                "profile", service.profilePayload(result.profile())
+        ), 0);
+    }
+
+    private WebServiceModule webServiceOrReject(HttpExchange exchange) throws IOException {
+        WebServiceModule service = module.getPlugin().getWebServiceModule();
+        if (service == null || !service.isGloballyEnabled()) {
+            writeJson(exchange, Map.of("success", false, "message", "WebService disabled"), 0);
+            return null;
+        }
+        if (!guardApi(exchange)) {
+            return null;
+        }
+        return service;
+    }
+
+    private boolean guardWebMap(HttpExchange exchange) throws IOException {
+        if (module.isGloballyEnabled()) {
+            return true;
+        }
+        writePlain(exchange, 404, "WebMap disabled");
+        return false;
+    }
+
+    private Map<String, Object> readJsonObject(HttpExchange exchange) throws IOException {
+        try (InputStream inputStream = exchange.getRequestBody()) {
+            Object payload = GSON.fromJson(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8), Object.class);
+            if (payload instanceof Map<?, ?> map) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() instanceof String key) {
+                        result.put(key, entry.getValue());
+                    }
+                }
+                return result;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return Map.of();
+    }
+
+    private String bearerToken(HttpExchange exchange) {
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return "";
+        }
+        return authorization.substring("Bearer ".length()).trim();
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof String string ? string : "";
+    }
+
+    private boolean booleanValue(Object value) {
+        return value instanceof Boolean bool && bool;
     }
 
     private World resolveWorldByName(String worldName) {
