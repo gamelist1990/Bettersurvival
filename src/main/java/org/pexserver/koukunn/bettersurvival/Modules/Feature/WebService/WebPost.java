@@ -14,6 +14,14 @@ public class WebPost {
     private String text = "";
     private List<Attachment> attachments = new ArrayList<>();
     private long createdAt = System.currentTimeMillis();
+    private String replyToId = "";
+    private String replyToUsername = "";
+    private int likes;
+    private int replies;
+    private int reposts;
+    private List<String> likedBy = new ArrayList<>();
+    private List<String> repostedBy = new ArrayList<>();
+    private boolean deleted;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id == null ? "" : id; }
@@ -35,6 +43,53 @@ public class WebPost {
     public void setAttachments(List<Attachment> attachments) { this.attachments = attachments == null ? new ArrayList<>() : attachments; }
     public long getCreatedAt() { return createdAt; }
     public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
+    public String getReplyToId() { return replyToId; }
+    public void setReplyToId(String replyToId) { this.replyToId = replyToId == null ? "" : replyToId; }
+    public String getReplyToUsername() { return replyToUsername; }
+    public void setReplyToUsername(String replyToUsername) { this.replyToUsername = replyToUsername == null ? "" : replyToUsername; }
+    public int getLikes() { return Math.max(0, likes); }
+    public void setLikes(int likes) { this.likes = Math.max(0, likes); }
+    public int getReplies() { return Math.max(0, replies); }
+    public void setReplies(int replies) { this.replies = Math.max(0, replies); }
+    public int getReposts() { return Math.max(0, reposts); }
+    public void setReposts(int reposts) { this.reposts = Math.max(0, reposts); }
+    public List<String> getLikedBy() { return likedBy == null ? new ArrayList<>() : likedBy; }
+    public void setLikedBy(List<String> likedBy) { this.likedBy = likedBy == null ? new ArrayList<>() : likedBy; }
+    public List<String> getRepostedBy() { return repostedBy == null ? new ArrayList<>() : repostedBy; }
+    public void setRepostedBy(List<String> repostedBy) { this.repostedBy = repostedBy == null ? new ArrayList<>() : repostedBy; }
+    public boolean isDeleted() { return deleted; }
+    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+
+    public boolean isLikedBy(String uuid) { return uuid != null && !uuid.isBlank() && getLikedBy().contains(uuid); }
+    public boolean isRepostedBy(String uuid) { return uuid != null && !uuid.isBlank() && getRepostedBy().contains(uuid); }
+
+    public boolean toggleLike(String uuid) {
+        if (uuid == null || uuid.isBlank()) return false;
+        List<String> users = getLikedBy();
+        if (users.remove(uuid)) {
+            setLikedBy(users);
+            setLikes(users.size());
+            return false;
+        }
+        users.add(uuid);
+        setLikedBy(users);
+        setLikes(users.size());
+        return true;
+    }
+
+    public boolean toggleRepost(String uuid) {
+        if (uuid == null || uuid.isBlank()) return false;
+        List<String> users = getRepostedBy();
+        if (users.remove(uuid)) {
+            setRepostedBy(users);
+            setReposts(users.size());
+            return false;
+        }
+        users.add(uuid);
+        setRepostedBy(users);
+        setReposts(users.size());
+        return true;
+    }
 
     public static class Attachment {
         private String type = "image";

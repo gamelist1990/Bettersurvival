@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { postJson, saveToken, storedToken } from './api';
+import { postJson, saveCsrfToken, saveToken, storedToken } from './api';
 import type { AuthProfile, AuthResponse, ProfileDraft, WebPost, WebPostAttachment } from './types';
 
 function mergePosts(current: WebPost[], incoming: WebPost[]) {
@@ -26,6 +26,7 @@ export function useWebService() {
       return false;
     }
     saveToken(payload.token);
+    saveCsrfToken(payload.csrfToken ?? "");
     setToken(payload.token);
     setProfile(payload.profile);
     setMessage('ログインしました');
@@ -97,12 +98,41 @@ export function useWebService() {
     try {
       const response = await fetch(`/api/v1/feed?since=${since}&limit=80`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
         cache: 'no-store',
       });
       const payload = (await response.json()) as AuthResponse;
       if (payload.posts) setFeedPosts((current) => mergePosts(current, payload.posts ?? []));
     } catch {
       // feed is optional while the service is unavailable
+    }
+  };
+
+  const likePost = async (postId: string) => {
+    if (!token) return false;
+    try {
+      const payload = await postJson('/api/v1/feed/like', { postId }, token);
+      if (payload.success && payload.post) {
+        setFeedPosts((current) => mergePosts(current.filter((post) => post.id !== payload.post!.id), [payload.post as WebPost]));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const repostPost = async (postId: string) => {
+    if (!token) return false;
+    try {
+      const payload = await postJson('/api/v1/feed/repost', { postId }, token);
+      if (payload.success && payload.post) {
+        setFeedPosts((current) => mergePosts(current.filter((post) => post.id !== payload.post!.id), [payload.post as WebPost]));
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
     }
   };
 
@@ -134,16 +164,22 @@ export function useWebService() {
   };
 
   useEffect(() => {
-    if (!token) return;
     const loadMe = async () => {
       try {
         const response = await fetch('/api/v1/auth/me', {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: 'include',
           cache: 'no-store',
         });
         const payload = (await response.json()) as AuthResponse;
-        if (payload.authenticated && payload.profile) setProfile(payload.profile);
-        else {
+        if (payload.authenticated && payload.profile) {
+          setProfile(payload.profile);
+          saveCsrfToken(payload.csrfToken ?? "");
+          if (payload.token && payload.token !== token) {
+            saveToken(payload.token);
+            setToken(payload.token);
+          }
+        } else if (token) {
           saveToken('');
           setToken('');
         }
@@ -152,7 +188,9 @@ export function useWebService() {
       }
     };
     void loadMe();
-  }, [token]);
+    // runs once on mount: the session cookie (if any) restores login even without a stored token
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     void loadFeed();
@@ -171,5 +209,6 @@ export function useWebService() {
     };
   }, [feedPosts, token]);
 
-  return { token, profile, feedPosts, message, busy, setMessage, register, login, logout, updateProfile, postFeed, loadFeed };
+  return { token, profile, feedPosts, message, busy, setMessage, register, login, logout, updateProfile, postFeed, likePost, repostPost, loadFeed };
 }
+

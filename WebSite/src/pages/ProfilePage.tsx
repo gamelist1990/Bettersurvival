@@ -3,6 +3,7 @@ import { SectionHeader } from '../components/common/SectionHeader';
 import { AuthPanel } from '../features/auth/AuthPanel';
 import { ProfileEditor } from '../features/profile/ProfileEditor';
 import { profileToDraft } from '../features/webservice/api';
+import { IconArrowLeft, IconPin, IconLink, IconCalendar, IconTrend } from '../components/common/Icons';
 import type { AuthProfile, ProfileDraft, WebPost } from '../features/webservice/types';
 
 type ProfilePageProps = {
@@ -32,10 +33,16 @@ type PublicProfile = {
   xUrl: string;
   youtubeUrl: string;
   instagramUrl: string;
+  createdAt?: number;
 };
 
 function publicName(profile: PublicProfile) {
   return profile.nickname || profile.displayName || profile.username;
+}
+
+function joinedLabel(createdAt?: number) {
+  if (!createdAt) return '';
+  return new Date(createdAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long' });
 }
 
 function profileFromAuth(profile: AuthProfile): PublicProfile {
@@ -54,6 +61,7 @@ function profileFromAuth(profile: AuthProfile): PublicProfile {
     xUrl: profile.xUrl,
     youtubeUrl: profile.youtubeUrl,
     instagramUrl: profile.instagramUrl,
+    createdAt: profile.createdAt,
   };
 }
 
@@ -104,6 +112,7 @@ function requestedProfileName() {
 export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister, onLogout, onSave, onNavigate }: ProfilePageProps) {
   const [draft, setDraft] = useState(profileToDraft(profile));
   const [copied, setCopied] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   useEffect(() => setDraft(profileToDraft(profile)), [profile]);
 
   const requestedUsername = requestedProfileName();
@@ -122,7 +131,7 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
 
   if (!profile && !requestedUsername) {
     return (
-      <div className="profile-login-grid">
+      <div className="profile-login-grid x-scope">
         <section className="panel profile-login-intro">
           <SectionHeader eyebrow="Profile" title="ログインが必要です" text="ログインするとプロフィールの編集やコミュニティ投稿を利用できます。" />
           <div className="profile-login-points">
@@ -138,9 +147,9 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
 
   if (!viewedProfile) {
     return (
-      <section className="twitter-profile-shell profile-empty-state">
+      <section className="twitter-profile-shell profile-empty-state x-scope">
         <div className="twitter-profile-topbar">
-          <button type="button" onClick={() => onNavigate('/feed')}>←</button>
+          <button className="x-icon-btn" type="button" aria-label="戻る" onClick={() => onNavigate('/feed')}><IconArrowLeft /></button>
           <div><strong>プロフィール</strong><span>見つかりません</span></div>
         </div>
         <div className="profile-not-found-card">
@@ -156,10 +165,10 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
   const bannerStyle = viewedProfile.bannerUrl ? { backgroundImage: `url(${viewedProfile.bannerUrl})` } : undefined;
 
   return (
-    <div className="twitter-profile-layout">
+    <div className="twitter-profile-layout x-scope">
       <main className="twitter-profile-shell">
         <div className="twitter-profile-topbar">
-          <button type="button" onClick={() => onNavigate('/feed')}>←</button>
+          <button className="x-icon-btn" type="button" aria-label="戻る" onClick={() => onNavigate('/feed')}><IconArrowLeft /></button>
           <div><strong>{publicName(viewedProfile)}</strong><span>{profilePosts.length} posts</span></div>
         </div>
         <div className="twitter-profile-banner" style={bannerStyle} />
@@ -167,21 +176,23 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
           <div className="twitter-profile-avatar-row">
             <img className="twitter-profile-avatar" src={viewedProfile.faceUrl || '/images/clear.png'} alt="" />
             <div className="twitter-profile-actions">
-              <button type="button" onClick={async () => { await copyText(profileUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1400); }}>{copied ? 'コピー済み' : 'URLコピー'}</button>
-              <button type="button" onClick={() => onNavigate(`/feed/@${viewedProfile.username}`)}>投稿を見る</button>
-              {isOwnProfile ? <button type="button" onClick={onLogout}>ログアウト</button> : null}
+              <button className="x-pill" type="button" onClick={async () => { await copyText(profileUrl); setCopied(true); window.setTimeout(() => setCopied(false), 1400); }}>{copied ? 'コピー済み' : 'URLコピー'}</button>
+              <button className="x-pill" type="button" onClick={() => onNavigate(`/feed/@${viewedProfile.username}`)}>投稿を見る</button>
+              {isOwnProfile ? <button className="x-pill" type="button" onClick={onLogout}>ログアウト</button> : null}
+              {isOwnProfile ? <button className="x-pill x-pill-outline-strong" type="button" onClick={() => setEditOpen(true)}>Edit profile</button> : null}
             </div>
           </div>
           <h1>{publicName(viewedProfile)}</h1>
           <p className="twitter-profile-handle">@{viewedProfile.username}</p>
           {viewedProfile.bio ? <p className="twitter-profile-bio">{viewedProfile.bio}</p> : <p className="twitter-profile-bio muted">まだ自己紹介はありません。</p>}
           <div className="twitter-profile-meta">
-            {viewedProfile.location ? <span>📍 {viewedProfile.location}</span> : null}
+            {viewedProfile.location ? <span><IconPin size={14} /> {viewedProfile.location}</span> : null}
             {viewedProfile.region || viewedProfile.country ? <span>{[viewedProfile.region, viewedProfile.country].filter(Boolean).join(' / ')}</span> : null}
-            {viewedProfile.website ? <a href={viewedProfile.website} target="_blank" rel="noreferrer">Website</a> : null}
-            {viewedProfile.xUrl ? <a href={viewedProfile.xUrl} target="_blank" rel="noreferrer">X</a> : null}
-            {viewedProfile.youtubeUrl ? <a href={viewedProfile.youtubeUrl} target="_blank" rel="noreferrer">YouTube</a> : null}
-            {viewedProfile.instagramUrl ? <a href={viewedProfile.instagramUrl} target="_blank" rel="noreferrer">Instagram</a> : null}
+            {viewedProfile.website ? <a href={viewedProfile.website} target="_blank" rel="noreferrer"><IconLink size={14} /> Website</a> : null}
+            {viewedProfile.xUrl ? <a href={viewedProfile.xUrl} target="_blank" rel="noreferrer"><IconLink size={14} /> X</a> : null}
+            {viewedProfile.youtubeUrl ? <a href={viewedProfile.youtubeUrl} target="_blank" rel="noreferrer"><IconLink size={14} /> YouTube</a> : null}
+            {viewedProfile.instagramUrl ? <a href={viewedProfile.instagramUrl} target="_blank" rel="noreferrer"><IconLink size={14} /> Instagram</a> : null}
+            {viewedProfile.createdAt ? <span className="twitter-profile-joined"><IconCalendar size={14} /> {joinedLabel(viewedProfile.createdAt)}から利用</span> : null}
           </div>
           <div className="twitter-profile-stats"><strong>{profilePosts.length}</strong><span>Posts</span><strong>{new Set(posts.map((post) => post.username)).size}</strong><span>Players</span></div>
         </section>
@@ -203,10 +214,23 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
           )) : <div className="profile-empty-posts">まだ投稿はありません。</div>}
         </div>
       </main>
-      {isOwnProfile ? (
-        <aside className="twitter-profile-edit-panel">
-          <ProfileEditor draft={draft} busy={busy} onChange={setDraft} onSave={() => onSave(draft).then(() => undefined)} />
-        </aside>
+      <aside className="feed-right-rail" aria-label="Minecraft Twitter side panel">
+        <section className="feed-widget">
+          <h2><IconTrend size={18} /> トレンド</h2>
+          <a href="/feed">#MinecraftTwitter</a>
+          <a href="/webmap/">#WebMap</a>
+          <a href="/features">#BetterSurvival</a>
+        </section>
+      </aside>
+      {isOwnProfile && editOpen ? (
+        <ProfileEditor
+          draft={draft}
+          busy={busy}
+          faceUrl={viewedProfile.faceUrl}
+          onChange={setDraft}
+          onClose={() => setEditOpen(false)}
+          onSave={() => onSave(draft).then(() => setEditOpen(false))}
+        />
       ) : null}
     </div>
   );

@@ -240,7 +240,7 @@ public class WebServiceModule implements Listener {
         return ProfileResult.success(profile);
     }
 
-    public PostResult createWebPost(String token, String text, List<WebPost.Attachment> attachments) {
+    public PostResult createWebPost(String token, String text, List<WebPost.Attachment> attachments, String replyToId) {
         if (!feedEnabled) {
             return PostResult.error("Web feed is disabled");
         }
@@ -249,12 +249,63 @@ public class WebServiceModule implements Listener {
             return PostResult.error("ログインが必要です");
         }
         WebProfile profile = optionalProfile.get();
-        WebPost post = buildPost(profile, "web", limit(text, MAX_POST_LENGTH), attachments);
+        String normalizedReplyToId = limit(replyToId, 80);
+        String replyToUsername = "";
+        if (!normalizedReplyToId.isBlank()) {
+            Optional<WebPost> parent = postStore.findById(normalizedReplyToId);
+            if (parent.isEmpty()) {
+                return PostResult.error("返信先の投稿が見つかりません");
+            }
+            WebPost parentPost = parent.get();
+            parentPost.setReplies(parentPost.getReplies() + 1);
+            postStore.save(parentPost);
+            replyToUsername = parentPost.getUsername();
+        }
+        WebPost post = buildPost(profile, "web", limit(text, MAX_POST_LENGTH), attachments, normalizedReplyToId, replyToUsername);
         postStore.add(post, feedRetentionDays);
         if (webPostToMinecraftEnabled && !post.getText().isBlank()) {
             plugin.getServer().sendMessage(Component.text("[Web] " + profile.getUsername() + ": " + post.getText()));
         }
         return PostResult.success(post);
+    }
+
+    public PostResult likePost(String token, String postId) {
+        Optional<WebProfile> optionalProfile = findProfileBySession(token);
+        if (optionalProfile.isEmpty()) {
+            return PostResult.error("ログインが必要です");
+        }
+        Optional<WebPost> optionalPost = postStore.findById(postId);
+        if (optionalPost.isEmpty()) {
+            return PostResult.error("投稿が見つかりません");
+        }
+        WebPost post = optionalPost.get();
+        post.toggleLike(optionalProfile.get().getUuid());
+        postStore.save(post);
+        return PostResult.success(post);
+    }
+
+    public PostResult repostPost(String token, String postId) {
+        Optional<WebProfile> optionalProfile = findProfileBySession(token);
+        if (optionalProfile.isEmpty()) {
+            return PostResult.error("ログインが必要です");
+        }
+        Optional<WebPost> optionalPost = postStore.findById(postId);
+        if (optionalPost.isEmpty()) {
+            return PostResult.error("投稿が見つかりません");
+        }
+        WebPost post = optionalPost.get();
+        post.toggleRepost(optionalProfile.get().getUuid());
+        postStore.save(post);
+        return PostResult.success(post);
+    }
+
+    public boolean deletePost(String token, String postId) {
+        Optional<WebProfile> optionalProfile = findProfileBySession(token);
+        return optionalProfile.isPresent() && postStore.softDelete(postId, optionalProfile.get().getUuid());
+    }
+
+    public Optional<String> sessionUuid(String token) {
+        return findProfileBySession(token).map(WebProfile::getUuid);
     }
 
     public List<WebPost> listPosts(long since, int limit) {
@@ -282,7 +333,7 @@ public class WebServiceModule implements Listener {
             fallback.setFaceUrl(McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil.isBedrock(player)));
             return fallback;
         });
-        postStore.add(buildPost(profile, "minecraft", limit(message, MAX_POST_LENGTH), List.of()), feedRetentionDays);
+        postStore.add(buildPost(profile, "minecraft", limit(message, MAX_POST_LENGTH), List.of(), "", ""), feedRetentionDays);
     }
 
     public Map<String, Object> profilePayload(WebProfile profile) {
@@ -309,6 +360,10 @@ public class WebServiceModule implements Listener {
     }
 
     public Map<String, Object> postPayload(WebPost post) {
+        return postPayload(post, "");
+    }
+
+    public Map<String, Object> postPayload(WebPost post, String viewerUuid) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", post.getId());
         payload.put("uuid", post.getUuid());
@@ -320,6 +375,13 @@ public class WebServiceModule implements Listener {
         payload.put("text", post.getText());
         payload.put("attachments", post.getAttachments());
         payload.put("createdAt", post.getCreatedAt());
+        payload.put("replyToId", post.getReplyToId());
+        payload.put("replyToUsername", post.getReplyToUsername());
+        payload.put("likes", post.getLikes());
+        payload.put("replies", post.getReplies());
+        payload.put("reposts", post.getReposts());
+        payload.put("likedByMe", post.isLikedBy(viewerUuid));
+        payload.put("repostedByMe", post.isRepostedBy(viewerUuid));
         return payload;
     }
 
@@ -372,7 +434,7 @@ public class WebServiceModule implements Listener {
         return fallback;
     }
 
-    private WebPost buildPost(WebProfile profile, String source, String text, List<WebPost.Attachment> attachments) {
+    private WebPost buildPost(WebProfile profile, String source, String text, List<WebPost.Attachment> attachments, String replyToId, String replyToUsername) {
         WebPost post = new WebPost();
         post.setId(UUID.randomUUID().toString());
         post.setUuid(profile.getUuid());
@@ -382,7 +444,9 @@ public class WebServiceModule implements Listener {
         post.setFaceUrl(profile.getFaceUrl());
         post.setSource(source);
         post.setText(text);
-        post.setAttachments(attachments);
+        post.setAttachments(attachments == null ? List.of() : attachments);
+        post.setReplyToId(replyToId);
+        post.setReplyToUsername(replyToUsername);
         post.setCreatedAt(System.currentTimeMillis());
         return post;
     }
@@ -402,12 +466,45 @@ public class WebServiceModule implements Listener {
         return trimmed.substring(0, maxLength);
     }
 
-    private String createSession(String uuid) {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        sessions.put(token, new WebSession(token, uuid, System.currentTimeMillis() + SESSION_TTL_MS));
-        return token;
+    private SessionPair createSession(String uuid) {
+        byte[] tokenBytes = new byte[32];
+        RANDOM.nextBytes(tokenBytes);
+        byte[] csrfBytes = new byte[32];
+        RANDOM.nextBytes(csrfBytes);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+        String csrfToken = Base64.getUrlEncoder().withoutPadding().encodeToString(csrfBytes);
+        sessions.put(token, new WebSession(token, uuid, csrfToken, System.currentTimeMillis() + SESSION_TTL_MS));
+        return new SessionPair(token, csrfToken);
+    }
+
+    public boolean verifyCsrfToken(String token, String csrfToken) {
+        cleanupExpiredSessions();
+        if (token == null || token.isBlank() || csrfToken == null || csrfToken.isBlank()) {
+            return false;
+        }
+        WebSession session = sessions.get(token);
+        if (session == null || session.isExpired(System.currentTimeMillis())) {
+            if (session != null) {
+                sessions.remove(token);
+            }
+            return false;
+        }
+        return java.security.MessageDigest.isEqual(
+                csrfToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                session.csrfToken().getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+    }
+
+    public String csrfTokenForSession(String token) {
+        cleanupExpiredSessions();
+        WebSession session = sessions.get(token);
+        if (session == null || session.isExpired(System.currentTimeMillis())) {
+            if (session != null) {
+                sessions.remove(token);
+            }
+            return "";
+        }
+        return session.csrfToken();
     }
 
     private PasswordHash hashPassword(String password) {
@@ -457,13 +554,16 @@ public class WebServiceModule implements Listener {
     private record PasswordHash(String salt, String hash) {
     }
 
-    public record AuthResult(boolean success, String message, WebProfile profile, String token) {
-        public static AuthResult success(WebProfile profile, String token) {
-            return new AuthResult(true, "OK", profile, token);
+    private record SessionPair(String token, String csrfToken) {
+    }
+
+    public record AuthResult(boolean success, String message, WebProfile profile, String token, String csrfToken) {
+        public static AuthResult success(WebProfile profile, SessionPair session) {
+            return new AuthResult(true, "OK", profile, session.token(), session.csrfToken());
         }
 
         public static AuthResult error(String message) {
-            return new AuthResult(false, message, null, "");
+            return new AuthResult(false, message, null, "", "");
         }
     }
 
@@ -487,3 +587,5 @@ public class WebServiceModule implements Listener {
         }
     }
 }
+
+

@@ -168,6 +168,7 @@
 }
 
 .header-user-popover button:hover { background: rgba(255,255,255,.62); }
+.header-user-popover-logout { color: #9f4327; border-top: 1px solid rgba(23,23,23,.08); margin-top: 4px; padding-top: 12px; }
 
 @media (max-width: 860px) {
   .app-sidebar {

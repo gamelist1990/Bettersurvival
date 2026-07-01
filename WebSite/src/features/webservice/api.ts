@@ -1,10 +1,19 @@
 import type { AuthResponse, ProfileDraft, WebPostAttachment } from './types';
 
 export const TOKEN_KEY = 'bettersurvival.website.token';
+export const CSRF_KEY = 'bettersurvival.website.csrf';
 
 export function storedToken() {
   try {
     return window.localStorage.getItem(TOKEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function storedCsrfToken() {
+  try {
+    return window.localStorage.getItem(CSRF_KEY) ?? '';
   } catch {
     return '';
   }
@@ -19,12 +28,24 @@ export function saveToken(token: string) {
   }
 }
 
+export function saveCsrfToken(token: string) {
+  try {
+    if (token) window.localStorage.setItem(CSRF_KEY, token);
+    else window.localStorage.removeItem(CSRF_KEY);
+  } catch {
+    // ignore private storage failures
+  }
+}
+
 export async function postJson(path: string, body: Record<string, unknown>, token = '') {
+  const csrfToken = token ? storedCsrfToken() : '';
   const response = await fetch(path, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { 'X-BetterSurvival-CSRF': csrfToken } : {}),
     },
     body: JSON.stringify(body),
   });

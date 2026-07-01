@@ -37,6 +37,13 @@ export type WebPost = {
   text: string;
   attachments: WebPostAttachment[];
   createdAt: number;
+  replyToId?: string;
+  replyToUsername?: string;
+  likes?: number;
+  replies?: number;
+  reposts?: number;
+  likedByMe?: boolean;
+  repostedByMe?: boolean;
 };
 
 export type ProfileDraft = {
@@ -56,9 +63,11 @@ export type AuthResponse = {
   success?: boolean;
   message?: string;
   token?: string;
+  csrfToken?: string;
   profile?: AuthProfile;
   authenticated?: boolean;
   posts?: WebPost[];
   post?: WebPost;
   updatedAt?: number;
 };
+

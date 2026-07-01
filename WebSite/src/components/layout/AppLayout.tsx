@@ -9,13 +9,14 @@ type AppLayoutProps = {
   profile: AuthProfile | null;
   wide?: boolean;
   onNavigate: (href: string) => void;
+  onLogout: () => Promise<void>;
 };
 
-export function AppLayout({ activePage, children, profile, wide, onNavigate }: AppLayoutProps) {
+export function AppLayout({ activePage, children, profile, wide, onNavigate, onLogout }: AppLayoutProps) {
   return (
     <div className="app-shell">
       <div className="page-noise" />
-      <Sidebar activePage={activePage} profile={profile} onNavigate={onNavigate} />
+      <Sidebar activePage={activePage} profile={profile} onNavigate={onNavigate} onLogout={onLogout} />
       <main className={`app-main${wide ? ' app-main-wide' : ''}`}>{children}</main>
     </div>
   );

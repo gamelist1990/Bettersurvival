@@ -70,6 +70,9 @@ public class WebMapHttpServer {
         server.createContext("/api/v1/profile/update", safe(this::handleProfileUpdate));
         server.createContext("/api/v1/feed", safe(this::handleFeed));
         server.createContext("/api/v1/feed/post", safe(this::handleFeedPost));
+        server.createContext("/api/v1/feed/like", safe(this::handleFeedLike));
+        server.createContext("/api/v1/feed/repost", safe(this::handleFeedRepost));
+        server.createContext("/api/v1/feed/delete", safe(this::handleFeedDelete));
         server.createContext("/api/v1/feed/updates", safe(this::handleFeedUpdates));
         server.createContext("/api/v1/worlds", safe(this::handleApiWorlds));
         server.createContext("/api/v1/players", safe(this::handleApiPlayers));
@@ -570,6 +573,10 @@ public class WebMapHttpServer {
         if (path.equals("/index.html")) {
             body = renderIndexHtml(exchange, body);
         }
+        securityHeaders(exchange);
+        if (path.equals("/index.html")) {
+            exchange.getResponseHeaders().set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+        }
         exchange.getResponseHeaders().set("Content-Type", mimeType(path));
         if (path.startsWith("/assets/") || path.startsWith("/images/") || path.endsWith(".ico") || path.endsWith(".svg")) {
             exchange.getResponseHeaders().set("Cache-Control", "public, max-age=31536000, immutable");
@@ -583,6 +590,7 @@ public class WebMapHttpServer {
     }
 
     private void writeJson(HttpExchange exchange, Object payload, int maxAgeSeconds) throws IOException {
+        securityHeaders(exchange);
         byte[] body = GSON.toJson(payload).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "public, max-age=" + Math.max(0, maxAgeSeconds));
@@ -593,6 +601,7 @@ public class WebMapHttpServer {
     }
 
     private void writePlain(HttpExchange exchange, int status, String text) throws IOException {
+        securityHeaders(exchange);
         byte[] body = text.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
         exchange.sendResponseHeaders(status, body.length);
@@ -602,6 +611,7 @@ public class WebMapHttpServer {
     }
 
     private void writePng(HttpExchange exchange, byte[] body, String etag, int maxAgeSeconds) throws IOException {
+        securityHeaders(exchange);
         exchange.getResponseHeaders().set("Content-Type", "image/png");
         exchange.getResponseHeaders().set("Cache-Control", "public, max-age=" + Math.max(0, maxAgeSeconds));
         exchange.getResponseHeaders().set("ETag", etag);
@@ -749,8 +759,7 @@ public class WebMapHttpServer {
         if (service == null) {
             return;
         }
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            writePlain(exchange, 405, "Method Not Allowed");
+        if (!guardJsonPost(exchange) || !guardSameOrigin(exchange)) {
             return;
         }
         Map<String, Object> request = readJsonObject(exchange);
@@ -768,8 +777,7 @@ public class WebMapHttpServer {
         if (service == null) {
             return;
         }
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            writePlain(exchange, 405, "Method Not Allowed");
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
             return;
         }
         WebServiceModule.ProfileResult result = service.updateProfile(bearerToken(exchange), readJsonObject(exchange));
@@ -794,8 +802,9 @@ public class WebMapHttpServer {
         }
         long since = parseLong(queryValue(exchange, "since"), 0L);
         int limit = parseInt(queryValue(exchange, "limit"), 50);
+        String viewerUuid = service.sessionUuid(bearerToken(exchange)).orElse("");
         List<Map<String, Object>> posts = service.listPosts(since, limit).stream()
-                .map(service::postPayload)
+                .map(post -> service.postPayload(post, viewerUuid))
                 .toList();
         writeJson(exchange, Map.of(
                 "success", true,
@@ -829,7 +838,8 @@ public class WebMapHttpServer {
                 break;
             }
         } while (true);
-        List<Map<String, Object>> payloadPosts = posts.stream().map(service::postPayload).toList();
+        String viewerUuid = service.sessionUuid(bearerToken(exchange)).orElse("");
+        List<Map<String, Object>> payloadPosts = posts.stream().map(post -> service.postPayload(post, viewerUuid)).toList();
         writeJson(exchange, Map.of(
                 "success", true,
                 "posts", payloadPosts,
@@ -842,15 +852,15 @@ public class WebMapHttpServer {
         if (service == null) {
             return;
         }
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            writePlain(exchange, 405, "Method Not Allowed");
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
             return;
         }
         Map<String, Object> request = readJsonObject(exchange);
         WebServiceModule.PostResult result = service.createWebPost(
                 bearerToken(exchange),
                 stringValue(request.get("text")),
-            attachmentList(request.get("attachments"))
+                attachmentList(request.get("attachments")),
+                stringValue(request.get("replyToId"))
         );
         if (!result.success()) {
             writeJson(exchange, Map.of("success", false, "message", result.message()), 0);
@@ -862,13 +872,57 @@ public class WebMapHttpServer {
         ), 0);
     }
 
+    private void handleFeedLike(HttpExchange exchange) throws IOException {
+        handleFeedReaction(exchange, "like");
+    }
+
+    private void handleFeedRepost(HttpExchange exchange) throws IOException {
+        handleFeedReaction(exchange, "repost");
+    }
+
+    private void handleFeedReaction(HttpExchange exchange, String action) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        String token = bearerToken(exchange);
+        WebServiceModule.PostResult result = "repost".equals(action)
+                ? service.repostPost(token, stringValue(request.get("postId")))
+                : service.likePost(token, stringValue(request.get("postId")));
+        if (!result.success()) {
+            writeJson(exchange, Map.of("success", false, "message", result.message()), 0);
+            return;
+        }
+        String viewerUuid = service.sessionUuid(token).orElse("");
+        writeJson(exchange, Map.of(
+                "success", true,
+                "post", service.postPayload(result.post(), viewerUuid)
+        ), 0);
+    }
+
+    private void handleFeedDelete(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        boolean deleted = service.deletePost(bearerToken(exchange), stringValue(request.get("postId")));
+        writeJson(exchange, Map.of("success", deleted, "message", deleted ? "OK" : "削除できませんでした"), 0);
+    }
+
     private void handleAuthLogin(HttpExchange exchange) throws IOException {
         WebServiceModule service = webServiceOrReject(exchange);
         if (service == null) {
             return;
         }
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            writePlain(exchange, 405, "Method Not Allowed");
+        if (!guardJsonPost(exchange) || !guardSameOrigin(exchange)) {
             return;
         }
         Map<String, Object> request = readJsonObject(exchange);
@@ -884,7 +938,11 @@ public class WebMapHttpServer {
         if (service == null) {
             return;
         }
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
+            return;
+        }
         service.logout(bearerToken(exchange));
+        clearSessionCookie(exchange);
         writeJson(exchange, Map.of("success", true), 0);
     }
 
@@ -896,14 +954,18 @@ public class WebMapHttpServer {
         if (!guardApi(exchange)) {
             return;
         }
-        WebProfile profile = service.findProfileBySession(bearerToken(exchange)).orElse(null);
+        String token = bearerToken(exchange);
+        WebProfile profile = service.findProfileBySession(token).orElse(null);
         if (profile == null) {
             writeJson(exchange, Map.of("authenticated", false), 0);
             return;
         }
+        setSessionCookie(exchange, token);
         writeJson(exchange, Map.of(
                 "authenticated", true,
-                "profile", service.profilePayload(profile)
+                "token", token,
+                "profile", service.profilePayload(profile),
+                "csrfToken", service.csrfTokenForSession(token)
         ), 0);
     }
 
@@ -915,9 +977,11 @@ public class WebMapHttpServer {
             ), 0);
             return;
         }
+        setSessionCookie(exchange, result.token());
         writeJson(exchange, Map.of(
                 "success", true,
                 "token", result.token(),
+                "csrfToken", result.csrfToken(),
                 "profile", service.profilePayload(result.profile())
         ), 0);
     }
@@ -960,12 +1024,42 @@ public class WebMapHttpServer {
         return Map.of();
     }
 
+    private static final String SESSION_COOKIE_NAME = "bs_token";
+    private static final int SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
     private String bearerToken(HttpExchange exchange) {
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
+        if (authorization != null && authorization.startsWith("Bearer ")) {
+            return authorization.substring("Bearer ".length()).trim();
+        }
+        return cookieValue(exchange, SESSION_COOKIE_NAME);
+    }
+
+    private String cookieValue(HttpExchange exchange, String name) {
+        String header = exchange.getRequestHeaders().getFirst("Cookie");
+        if (header == null || header.isBlank()) {
             return "";
         }
-        return authorization.substring("Bearer ".length()).trim();
+        for (String part : header.split(";")) {
+            String trimmed = part.trim();
+            int separator = trimmed.indexOf('=');
+            if (separator <= 0) {
+                continue;
+            }
+            if (trimmed.substring(0, separator).equals(name)) {
+                return trimmed.substring(separator + 1).trim();
+            }
+        }
+        return "";
+    }
+
+    private void setSessionCookie(HttpExchange exchange, String token) {
+        exchange.getResponseHeaders().add("Set-Cookie", SESSION_COOKIE_NAME + "=" + token
+                + "; Path=/; Max-Age=" + SESSION_COOKIE_MAX_AGE_SECONDS + "; SameSite=Lax; HttpOnly");
+    }
+
+    private void clearSessionCookie(HttpExchange exchange) {
+        exchange.getResponseHeaders().add("Set-Cookie", SESSION_COOKIE_NAME + "=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly");
     }
 
     private String stringValue(Object value) {
@@ -1067,6 +1161,61 @@ public class WebMapHttpServer {
         return "text/html; charset=utf-8";
     }
 
+    private void securityHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
+        exchange.getResponseHeaders().set("Referrer-Policy", "same-origin");
+        exchange.getResponseHeaders().set("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    }
+
+    private boolean guardJsonPost(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return false;
+        }
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        if (contentType == null || !contentType.toLowerCase(Locale.ROOT).contains("application/json")) {
+            writeJson(exchange, Map.of("success", false, "message", "JSON request required"), 0);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean guardAuthenticatedJsonPost(HttpExchange exchange, WebServiceModule service) throws IOException {
+        return guardJsonPost(exchange) && guardSameOrigin(exchange) && guardCsrf(exchange, service);
+    }
+
+    private boolean guardCsrf(HttpExchange exchange, WebServiceModule service) throws IOException {
+        String token = bearerToken(exchange);
+        String csrfToken = exchange.getRequestHeaders().getFirst("X-BetterSurvival-CSRF");
+        if (!service.verifyCsrfToken(token, csrfToken)) {
+            writeJson(exchange, Map.of("success", false, "message", "CSRF validation failed"), 403);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean guardSameOrigin(HttpExchange exchange) throws IOException {
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        String referer = exchange.getRequestHeaders().getFirst("Referer");
+        String expected = absoluteRequestBase(exchange);
+        if (origin != null && !origin.isBlank()) {
+            if (!origin.equalsIgnoreCase(expected)) {
+                writeJson(exchange, Map.of("success", false, "message", "Cross-origin request blocked"), 403);
+                return false;
+            }
+            return true;
+        }
+        if (referer != null && !referer.isBlank()) {
+            if (!referer.startsWith(expected + "/")) {
+                writeJson(exchange, Map.of("success", false, "message", "Cross-origin request blocked"), 403);
+                return false;
+            }
+            return true;
+        }
+        return true;
+    }
+
     private boolean guardApi(HttpExchange exchange) throws IOException {
         return guard(exchange, apiLimiter, "api");
     }
@@ -1089,3 +1238,5 @@ public class WebMapHttpServer {
         return false;
     }
 }
+
+

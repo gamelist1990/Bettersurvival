@@ -7,9 +7,10 @@ type SidebarProps = {
   activePage: PageKey;
   profile: AuthProfile | null;
   onNavigate: (href: string) => void;
+  onLogout: () => Promise<void>;
 };
 
-export function Sidebar({ activePage, profile, onNavigate }: SidebarProps) {
+export function Sidebar({ activePage, profile, onNavigate, onLogout }: SidebarProps) {
   const [open, setOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
 
@@ -72,6 +73,7 @@ export function Sidebar({ activePage, profile, onNavigate }: SidebarProps) {
                 <button type="button" onClick={() => go('/profile')}>プロフィール</button>
                 <button type="button">通知</button>
                 <button type="button" onClick={() => go('/feed')}>Minecraft Twitter</button>
+                <button type="button" className="header-user-popover-logout" onClick={() => { setOpen(false); void onLogout(); }}>ログアウト</button>
               </div>
             ) : null}
           </div>

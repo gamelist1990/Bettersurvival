@@ -22,8 +22,7 @@ import java.util.Optional;
 
 public class WebPostStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Type POST_LIST_TYPE = new TypeToken<List<WebPost>>() {
-    }.getType();
+    private static final Type POST_LIST_TYPE = new TypeToken<List<WebPost>>() {}.getType();
 
     private final ConfigManager configManager;
     private final File postFile;
@@ -42,9 +41,15 @@ public class WebPostStore {
         return post;
     }
 
+    public synchronized WebPost save(WebPost post) {
+        flush();
+        return post;
+    }
+
     public synchronized List<WebPost> listSince(long since, int limit, int retentionDays) {
         prune(retentionDays);
         return posts.stream()
+                .filter(post -> !post.isDeleted())
                 .filter(post -> post.getCreatedAt() > since)
                 .sorted(Comparator.comparingLong(WebPost::getCreatedAt).reversed())
                 .limit(Math.max(1, Math.min(200, limit)))
@@ -59,7 +64,21 @@ public class WebPostStore {
         if (id == null || id.isBlank()) {
             return Optional.empty();
         }
-        return posts.stream().filter(post -> id.equals(post.getId())).findFirst();
+        return posts.stream().filter(post -> !post.isDeleted()).filter(post -> id.equals(post.getId())).findFirst();
+    }
+
+    public synchronized boolean softDelete(String id, String ownerUuid) {
+        Optional<WebPost> optionalPost = findById(id);
+        if (optionalPost.isEmpty()) {
+            return false;
+        }
+        WebPost post = optionalPost.get();
+        if (ownerUuid == null || ownerUuid.isBlank() || !ownerUuid.equals(post.getUuid())) {
+            return false;
+        }
+        post.setDeleted(true);
+        flush();
+        return true;
     }
 
     public synchronized void prune(int retentionDays) {
