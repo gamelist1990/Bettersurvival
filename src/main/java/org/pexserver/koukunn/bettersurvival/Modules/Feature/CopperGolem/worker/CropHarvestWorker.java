@@ -40,7 +40,6 @@ public class CropHarvestWorker {
     private static final double MOVE_SPEED_MAX = 1.8D;
     private final Map<UUID, Integer> heldItemCycles = new HashMap<>();
 
-    @SuppressWarnings("null")
     public int runCropWorker(
             GolemProfile profile,
             CopperGolem golem,

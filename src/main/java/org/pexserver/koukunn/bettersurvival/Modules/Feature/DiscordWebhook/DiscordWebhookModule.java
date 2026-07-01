@@ -17,7 +17,6 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Modul
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 public class DiscordWebhookModule implements Listener {
-    private final Loader plugin;
     private final DiscordWebhookStore store;
     private final DiscordWebhookClient client;
     private final DiscordWebhookEventService webhookEventService;
@@ -26,7 +25,6 @@ public class DiscordWebhookModule implements Listener {
     private DiscordWebhookSettings settings;
 
     public DiscordWebhookModule(Loader plugin, ConfigManager configManager) {
-        this.plugin = plugin;
         this.store = new DiscordWebhookStore(configManager);
         this.client = new DiscordWebhookClient(plugin);
         this.settings = store.load();

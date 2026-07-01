@@ -302,9 +302,4 @@ public class TpaUI {
         }
         return item;
     }
-
-    private static String sanitizeName(String name) {
-        if (name == null) return "";
-        return name.replaceAll("[^A-Za-z0-9_]", "");
-    }
 }

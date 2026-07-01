@@ -651,9 +651,4 @@ public class ChestLockUI {
             }
         });
     }
-    
-    private static String sanitizeName(String name) {
-        if (name == null) return "";
-        return name.replaceAll("[^A-Za-z0-9_]", "");
-    }
 }

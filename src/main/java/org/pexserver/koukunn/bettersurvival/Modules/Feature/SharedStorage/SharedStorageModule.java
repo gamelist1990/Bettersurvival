@@ -979,10 +979,6 @@ public class SharedStorageModule implements Listener {
         redistributeNetwork(network, actor, announce, null, null);
     }
 
-    private void redistributeNetwork(SharedNetwork network, Player actor, boolean announce, List<ItemStack> trackedMainItems) {
-        redistributeNetwork(network, actor, announce, trackedMainItems, null);
-    }
-
     private void redistributeNetwork(SharedNetwork network, Player actor, boolean announce, List<ItemStack> trackedMainItems,
                                      List<ItemStack> injectedItems) {
         reindexAllPlacements();

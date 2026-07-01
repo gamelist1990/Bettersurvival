@@ -1581,7 +1581,6 @@ public class ChestShopModule implements Listener {
         ChestShopUI.closeForPlayer((Player) e.getPlayer());
     }
 
-    @SuppressWarnings("null")
     @EventHandler
     public void onInventoryClick(InventoryClickEvent e) {
         InventoryView view = e.getView();

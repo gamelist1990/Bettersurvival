@@ -1,30 +1,15 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.filter;
 
-import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.Tag;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.Recipe;
-import org.bukkit.inventory.RecipeChoice;
-import org.bukkit.inventory.ShapedRecipe;
-import org.bukkit.inventory.ShapelessRecipe;
-import org.bukkit.inventory.SmithingTransformRecipe;
-import org.bukkit.inventory.StonecuttingRecipe;
-import org.bukkit.inventory.TransmuteRecipe;
-import org.bukkit.inventory.CookingRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.model.SubFrameFilterMode;
 
-import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -34,9 +19,6 @@ public class SharedStorageFrameFilterRules {
 
     private static final String CLEAR_FILTER_NAME = "chest-clear";
     private static final Pattern ALL_FILTER_TOKEN = Pattern.compile("(^|[^a-z0-9])all([^a-z0-9]|$)");
-    private volatile Map<Material, Set<Material>> recipeIngredientToResultGraph;
-    private final Map<Material, Set<Material>> recipeReachabilityCache = new HashMap<>();
-
     public String resolveCategoryKey(ItemStack filter) {
         if (filter == null || filter.getType() == Material.AIR)
             return "nofilter";
@@ -444,120 +426,7 @@ public class SharedStorageFrameFilterRules {
         };
     }
 
-    private boolean matchesSingleTokenRecipeFamily(Material targetMaterial, Material baseMaterial, String baseToken) {
-        if (targetMaterial == null || baseMaterial == null || baseToken == null || baseToken.isEmpty())
-            return false;
-        String target = targetMaterial.name();
-        if (!(target.startsWith(baseToken + "_")
-                || target.endsWith("_" + baseToken)
-                || target.contains("_" + baseToken + "_")))
-            return false;
-        Set<Material> reachable = resolveRecipeReachability(baseMaterial);
-        return reachable.contains(targetMaterial);
-    }
-
-    private Set<Material> resolveRecipeReachability(Material baseMaterial) {
-        if (baseMaterial == null)
-            return Collections.emptySet();
-        Set<Material> cached = recipeReachabilityCache.get(baseMaterial);
-        if (cached != null)
-            return cached;
-        Map<Material, Set<Material>> graph = getRecipeIngredientToResultGraph();
-        Set<Material> visited = new HashSet<>();
-        ArrayDeque<Material> queue = new ArrayDeque<>();
-        queue.add(baseMaterial);
-        while (!queue.isEmpty()) {
-            Material current = queue.removeFirst();
-            Set<Material> next = graph.get(current);
-            if (next == null || next.isEmpty())
-                continue;
-            for (Material material : next) {
-                if (material == null || !visited.add(material))
-                    continue;
-                queue.addLast(material);
-            }
-        }
-        Set<Material> unmodifiable = Collections.unmodifiableSet(visited);
-        recipeReachabilityCache.put(baseMaterial, unmodifiable);
-        return unmodifiable;
-    }
-
-    private synchronized Map<Material, Set<Material>> getRecipeIngredientToResultGraph() {
-        if (recipeIngredientToResultGraph != null)
-            return recipeIngredientToResultGraph;
-        Map<Material, Set<Material>> graph = new HashMap<>();
-        var iterator = Bukkit.recipeIterator();
-        while (iterator.hasNext()) {
-            Recipe recipe = iterator.next();
-            if (recipe == null || recipe.getResult() == null)
-                continue;
-            Material result = recipe.getResult().getType();
-            if (result == null || result == Material.AIR)
-                continue;
-            Set<Material> ingredients = new HashSet<>();
-            collectRecipeIngredients(recipe, ingredients);
-            for (Material ingredient : ingredients) {
-                if (ingredient == null || ingredient == Material.AIR)
-                    continue;
-                graph.computeIfAbsent(ingredient, key -> new HashSet<>()).add(result);
-            }
-        }
-        Map<Material, Set<Material>> immutableGraph = new HashMap<>();
-        for (Map.Entry<Material, Set<Material>> entry : graph.entrySet()) {
-            immutableGraph.put(entry.getKey(), Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
-        }
-        recipeIngredientToResultGraph = Collections.unmodifiableMap(immutableGraph);
-        return recipeIngredientToResultGraph;
-    }
-
-    private void collectRecipeIngredients(Recipe recipe, Set<Material> ingredients) {
-        if (recipe instanceof ShapedRecipe shapedRecipe) {
-            for (RecipeChoice choice : shapedRecipe.getChoiceMap().values()) {
-                collectChoiceMaterials(choice, ingredients);
-            }
-            return;
-        }
-        if (recipe instanceof ShapelessRecipe shapelessRecipe) {
-            for (RecipeChoice choice : shapelessRecipe.getChoiceList()) {
-                collectChoiceMaterials(choice, ingredients);
-            }
-            return;
-        }
-        if (recipe instanceof StonecuttingRecipe stonecuttingRecipe) {
-            collectChoiceMaterials(stonecuttingRecipe.getInputChoice(), ingredients);
-            return;
-        }
-        if (recipe instanceof CookingRecipe<?> cookingRecipe) {
-            collectChoiceMaterials(cookingRecipe.getInputChoice(), ingredients);
-            return;
-        }
-        if (recipe instanceof SmithingTransformRecipe smithingTransformRecipe) {
-            collectChoiceMaterials(smithingTransformRecipe.getBase(), ingredients);
-            collectChoiceMaterials(smithingTransformRecipe.getAddition(), ingredients);
-            return;
-        }
-        if (recipe instanceof TransmuteRecipe transmuteRecipe) {
-            collectChoiceMaterials(transmuteRecipe.getInput(), ingredients);
-            collectChoiceMaterials(transmuteRecipe.getMaterial(), ingredients);
-        }
-    }
-
-    private void collectChoiceMaterials(RecipeChoice choice, Set<Material> ingredients) {
-        if (choice == null || ingredients == null)
-            return;
-        if (choice instanceof RecipeChoice.MaterialChoice materialChoice) {
-            ingredients.addAll(materialChoice.getChoices());
-            return;
-        }
-        if (choice instanceof RecipeChoice.ExactChoice exactChoice) {
-            for (ItemStack item : exactChoice.getChoices()) {
-                if (item == null)
-                    continue;
-                ingredients.add(item.getType());
-            }
-        }
-    }
-
+    
     private boolean isAnyGlassFamily(Material material) {
         if (material == null)
             return false;

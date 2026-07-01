@@ -378,16 +378,6 @@ public class WebMapStore {
         }
     }
 
-    private void writeJson(File file, Object value) throws IOException {
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-        try (Writer writer = java.nio.file.Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
-            GSON.toJson(value, writer);
-        }
-    }
-
     private WebMapWorldData normalize(WebMapWorldData data, String worldKey) {
         WebMapWorldData value = data == null ? new WebMapWorldData() : data;
         value.setWorldKey(worldKey);

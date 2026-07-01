@@ -660,9 +660,4 @@ public class InvseeUI {
         if (months < 12) return months + "ヶ月前";
         return (days / 365) + "年前";
     }
-
-    private static String sanitizeName(String name) {
-        if (name == null) return "";
-        return name.replaceAll("[^A-Za-z0-9_]", "");
-    }
 }

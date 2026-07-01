@@ -1595,10 +1595,6 @@ public class WebMapModule implements Listener {
         }
     }
 
-    private void processPendingChunkCaptures() {
-        processPendingChunkCaptures(4);
-    }
-
     private void processPendingChunkCaptures(int budget) {
         while (budget-- > 0) {
             QueuedChunkCapture queued = urgentChunkCaptures.pollFirst();
@@ -1630,7 +1626,6 @@ public class WebMapModule implements Listener {
         private int currentX;
         private int currentZ;
         private int stepLength = 1;
-        private int stepsTaken;
         private int legProgress;
         private int directionIndex;
         private boolean emitCenter = true;
@@ -1658,7 +1653,6 @@ public class WebMapModule implements Listener {
             currentX += direction[0];
             currentZ += direction[1];
             legProgress++;
-            stepsTaken++;
             if (legProgress >= stepLength) {
                 legProgress = 0;
                 directionIndex = (directionIndex + 1) % directions.length;
