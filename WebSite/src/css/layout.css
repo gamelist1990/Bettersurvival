@@ -112,12 +112,18 @@ body.webmap-page-active .app-main-wide {
     width: min(100% - 24px, 820px);
     margin: 0 auto;
     padding-top: 18px;
+    padding-bottom: 42px;
   }
 
   body.webmap-page-active .app-main,
   body.webmap-page-active .app-main-wide {
     height: calc(100dvh - 76px);
     padding-top: 76px;
+  }
+
+  .app-main,
+  .app-main-wide {
+    padding-top: 0 !important;
   }
 }
 

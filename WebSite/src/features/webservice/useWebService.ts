@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { postJson, saveCsrfToken, saveToken, storedToken } from './api';
+import { MOCK_MODE, mockFeedResponse, postJson, saveCsrfToken, saveToken, storedToken } from './api';
 import type { AuthProfile, AuthResponse, ProfileDraft, WebPost, WebPostAttachment } from './types';
 
 function mergePosts(current: WebPost[], incoming: WebPost[]) {
@@ -96,6 +96,12 @@ export function useWebService() {
 
   const loadFeed = async (since = 0) => {
     try {
+      if (MOCK_MODE) {
+        const payload = mockFeedResponse(since);
+        if (payload.posts) setFeedPosts((current) => mergePosts(current, payload.posts ?? []));
+        return;
+      }
+
       const response = await fetch(`/api/v1/feed?since=${since}&limit=80`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
@@ -166,6 +172,8 @@ export function useWebService() {
   useEffect(() => {
     const loadMe = async () => {
       try {
+        if (MOCK_MODE) return;
+
         const response = await fetch('/api/v1/auth/me', {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           credentials: 'include',

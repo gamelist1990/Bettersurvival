@@ -529,7 +529,7 @@ export default function HomePage() {
         <section id="features" className="section-block">
           <div className="section-heading">
             <p className="eyebrow">Guide</p>
-            <h2>一般公開向けの UX に整理</h2>
+            <h2>ガイドライン</h2>
           </div>
           <div className="feature-grid">
             <article className="feature-card"><p className="card-eyebrow">Profile</p><h3>プロフィールを利用</h3><p>Minecraftと連携したプロフィールを安全に利用できます。</p></article>

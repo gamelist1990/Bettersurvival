@@ -136,11 +136,26 @@
 .twitter-profile-topbar strong { font-size: 1.06rem; }
 .twitter-profile-topbar span { color: var(--xb-text-secondary); font-size: .8rem; margin-top: 1px; }
 
+@media (max-width: 860px) {
+  .twitter-profile-layout {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .twitter-profile-topbar {
+    position: relative;
+    top: 0;
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+}
+
 .twitter-profile-banner {
   height: 200px;
   background: linear-gradient(135deg, var(--xb-accent-soft), var(--xb-repost-soft));
   background-size: cover;
   background-position: center;
+  margin-top: 56px;
 }
 
 .twitter-profile-main { padding: 0 16px 16px; }
@@ -286,4 +301,62 @@
   .twitter-profile-actions { justify-content: flex-start; }
   .profile-post-row { grid-template-columns: 38px minmax(0,1fr); padding-inline: 12px; }
   .profile-post-row > img { width: 38px; height: 38px; }
+}
+
+@media (max-width: 860px) {
+  /* ===== mobile-barとtopbarを統合 ===== */
+  .mobile-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    background: var(--xb-bg);
+    border-bottom: 1px solid var(--xb-border);
+  }
+
+  /* topbarをバー内に吸収する見た目にする */
+  .twitter-profile-topbar {
+    position: static; /* sticky解除 */
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 12px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+
+  /* ハンバーガー左固定 */
+  .menu-toggle {
+    position: relative;
+    margin-right: 8px;
+  }
+
+  /* 名前中央寄せ風 */
+  .twitter-profile-topbar > div {
+    flex: 1;
+    margin: 10px -50px 10px;
+    text-align: center;
+  }
+
+  /* Feedボタン右 */
+  .twitter-profile-topbar .x-icon-btn {
+    margin-left: 10px;
+    flex: 1;
+    width: auto;
+    min-height: 34px;
+    padding: 0 16px;
+  }
+
+  /* ===== 下の構造を詰める ===== */
+  .twitter-profile-banner {
+    margin-top: 0;
+  }
+
+  .twitter-profile-shell {
+    padding-top: 0;
+  }
 }

@@ -1,4 +1,11 @@
-import type { AuthResponse, ProfileDraft, WebPostAttachment } from './types';
+import type { AuthProfile, AuthResponse, ProfileDraft, WebPost, WebPostAttachment } from './types';
+import users from '../../../debug/users.json';
+import posts from '../../../debug/posts.json';
+
+export const MOCK_MODE = import.meta.env.VITE_USE_MOCK_DATA === 'true';
+
+const mockUsers = users as AuthProfile[];
+const mockPosts = posts as WebPost[];
 
 export const TOKEN_KEY = 'bettersurvival.website.token';
 export const CSRF_KEY = 'bettersurvival.website.csrf';
@@ -38,6 +45,72 @@ export function saveCsrfToken(token: string) {
 }
 
 export async function postJson(path: string, body: Record<string, unknown>, token = '') {
+  if (MOCK_MODE) {
+    const profile = mockUsers[0];
+
+    if (path === '/api/v1/auth/login' || path === '/api/v1/auth/register') {
+      return {
+        success: true,
+        authenticated: true,
+        message: 'モックログインしました',
+        token: 'mock-token',
+        csrfToken: 'mock-csrf',
+        profile,
+      } as AuthResponse;
+    }
+
+    if (path === '/api/v1/auth/logout') {
+      return { success: true, message: 'モックログアウトしました' } as AuthResponse;
+    }
+
+    if (path === '/api/v1/feed/post') {
+      return {
+        success: true,
+        message: 'モック投稿しました',
+        post: {
+          id: `mock-post-${Date.now()}`,
+          uuid: profile.uuid,
+          username: profile.username,
+          displayName: profile.displayName,
+          nickname: profile.nickname,
+          faceUrl: profile.faceUrl,
+          source: 'web',
+          text: String(body.text ?? ''),
+          attachments: (body.attachments as WebPostAttachment[] | undefined) ?? [],
+          createdAt: Date.now(),
+          likes: 0,
+          replies: 0,
+          reposts: 0,
+          likedByMe: false,
+          repostedByMe: false,
+        },
+      } as AuthResponse;
+    }
+
+    if (path === '/api/v1/feed/like' || path === '/api/v1/feed/repost') {
+      const postId = String(body.postId ?? '');
+      const post = mockPosts.find((item) => item.id === postId);
+      if (!post) return { success: false, message: '投稿が見つかりません' } as AuthResponse;
+
+      return {
+        success: true,
+        post: path === '/api/v1/feed/like'
+          ? {
+              ...post,
+              likedByMe: !post.likedByMe,
+              likes: (post.likes ?? 0) + (post.likedByMe ? -1 : 1),
+            }
+          : {
+              ...post,
+              repostedByMe: !post.repostedByMe,
+              reposts: (post.reposts ?? 0) + (post.repostedByMe ? -1 : 1),
+            },
+      } as AuthResponse;
+    }
+
+    return { success: false, message: '未対応のモックPOSTです' } as AuthResponse;
+  }
+
   const csrfToken = token ? storedCsrfToken() : '';
   const response = await fetch(path, {
     method: 'POST',
@@ -50,6 +123,13 @@ export async function postJson(path: string, body: Record<string, unknown>, toke
     body: JSON.stringify(body),
   });
   return (await response.json()) as AuthResponse;
+}
+
+export function mockFeedResponse(since = 0): AuthResponse {
+  return {
+    success: true,
+    posts: mockPosts.filter((post) => post.createdAt > since),
+  };
 }
 
 export function profileToDraft(profile: Partial<ProfileDraft> | null | undefined): ProfileDraft {

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "mock-comment-1",
+    "postId": "mock-post-1",
+    "uuid": "mock-alex-uuid",
+    "username": "Alex",
+    "displayName": "Alex",
+    "nickname": "Alex",
+    "faceUrl": "/images/icon/icon-192.png",
+    "text": "1件目のコメントです。",
+    "createdAt": 1782925300000
+  },
+  {
+    "id": "mock-comment-2",
+    "postId": "mock-post-1",
+    "uuid": "mock-steve-uuid",
+    "username": "Steve",
+    "displayName": "Steve",
+    "nickname": "Steve",
+    "faceUrl": "/images/icon/icon-192.png",
+    "text": "同じ投稿への2件目コメントです。",
+    "createdAt": 1782925400000
+  },
+  {
+    "id": "mock-comment-3",
+    "postId": "mock-post-1",
+    "uuid": "mock-alex-uuid",
+    "username": "Alex",
+    "displayName": "Alex",
+    "nickname": "Alex",
+    "faceUrl": "/images/icon/icon-192.png",
+    "text": "返信数3件の確認用コメントです。",
+    "createdAt": 1782925500000
+  },
+  {
+    "id": "mock-comment-4",
+    "postId": "mock-post-2",
+    "uuid": "mock-steve-uuid",
+    "username": "Steve",
+    "displayName": "Steve",
+    "nickname": "Steve",
+    "faceUrl": "/images/icon/icon-192.png",
+    "text": "mock-post-2 へのコメントです。",
+    "createdAt": 1782928900000
+  },
+  {
+    "id": "mock-comment-5",
+    "postId": "mock-post-2",
+    "uuid": "mock-alex-uuid",
+    "username": "Alex",
+    "displayName": "Alex",
+    "nickname": "Alex",
+    "faceUrl": "/images/icon/icon-192.png",
+    "text": "複数コメント表示の確認です。",
+    "createdAt": 1782929000000
+  },
+  {
+    "id": "mock-comment-6",
+    "postId": "mock-post-3",
+    "uuid": "mock-steve-uuid",
+    "username": "Steve",
+    "displayName": "Steve",
+    "nickname": "Steve",
+    "faceUrl": "/images/icon/icon-192.png",
+    "text": "mock-post-3 へのコメントです。",
+    "createdAt": 1782932500000
+  }
+]

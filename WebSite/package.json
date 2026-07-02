@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --host",
+    "mock-dev": "vite dev --host --mode mock",
     "build": "vite build --emptyOutDir",
     "preview": "vite preview --host"
   },

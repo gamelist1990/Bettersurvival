@@ -1,0 +1,53 @@
+[
+  {
+    "id": "mock-post-1",
+    "uuid": "mock-steve-uuid",
+    "username": "Steve",
+    "displayName": "Steve",
+    "nickname": "Steve",
+    "faceUrl": "/images/icon/icon-192.png",
+    "source": "web",
+    "text": "モック投稿の表示テストです。",
+    "attachments": [],
+    "createdAt": 1782925200000,
+    "likes": 3,
+    "replies": 3,
+    "reposts": 1,
+    "likedByMe": false,
+    "repostedByMe": false
+  },
+  {
+    "id": "mock-post-2",
+    "uuid": "mock-alex-uuid",
+    "username": "Alex",
+    "displayName": "Alex",
+    "nickname": "Alex",
+    "faceUrl": "/images/icon/icon-192.png",
+    "source": "minecraft",
+    "text": "複数投稿の確認用データです。いいね済み状態も確認できます。",
+    "attachments": [],
+    "createdAt": 1782928800000,
+    "likes": 8,
+    "replies": 2,
+    "reposts": 2,
+    "likedByMe": true,
+    "repostedByMe": false
+  },
+  {
+    "id": "mock-post-3",
+    "uuid": "mock-steve-uuid",
+    "username": "Steve",
+    "displayName": "Steve",
+    "nickname": "Steve",
+    "faceUrl": "/images/icon/icon-192.png",
+    "source": "web",
+    "text": "リポスト済み表示の確認用投稿です。",
+    "attachments": [],
+    "createdAt": 1782932400000,
+    "likes": 1,
+    "replies": 1,
+    "reposts": 4,
+    "likedByMe": false,
+    "repostedByMe": true
+  }
+]

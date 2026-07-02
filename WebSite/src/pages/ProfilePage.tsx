@@ -168,8 +168,8 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
     <div className="twitter-profile-layout x-scope">
       <main className="twitter-profile-shell">
         <div className="twitter-profile-topbar">
-          <button className="x-icon-btn" type="button" aria-label="戻る" onClick={() => onNavigate('/feed')}><IconArrowLeft /></button>
           <div><strong>{publicName(viewedProfile)}</strong><span>{profilePosts.length} posts</span></div>
+          <button className="x-icon-btn" type="button" onClick={() => onNavigate('/feed')}>Feedへ</button>
         </div>
         <div className="twitter-profile-banner" style={bannerStyle} />
         <section className="twitter-profile-main">

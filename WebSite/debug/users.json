@@ -1,0 +1,22 @@
+[
+  {
+    "uuid": "mock-steve-uuid",
+    "username": "Steve",
+    "displayName": "Steve",
+    "faceUrl": "/images/icon/icon-192.png",
+    "email": "steve@example.com",
+    "bio": "モックユーザーです。",
+    "location": "Spawn",
+    "website": "",
+    "nickname": "Steve",
+    "country": "JP",
+    "region": "Tokyo",
+    "bannerUrl": "",
+    "xUrl": "",
+    "youtubeUrl": "",
+    "instagramUrl": "",
+    "passkeyEnabled": false,
+    "createdAt": 1782921600000,
+    "updatedAt": 1782921600000
+  }
+]
