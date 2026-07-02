@@ -21,6 +21,7 @@ public class CommandBlockManager {
     private final ConfigManager configManager;
     private final Loader plugin;
     private final Map<String, PermissionLevel> blocks = new HashMap<>();
+    private final Map<UUID, Map<String, PermissionLevel>> userBlocks = new HashMap<>();
     private final String configPath = "BlockCommand/disabled_commands.json";
     public CommandBlockManager(Loader plugin) {
         this.plugin = plugin;
@@ -183,6 +184,52 @@ public class CommandBlockManager {
         save();
     }
 
+    public synchronized boolean addUser(UUID playerId, String pattern, PermissionLevel level) {
+        if (playerId == null || pattern == null || pattern.isBlank()) return false;
+        Map<String, PermissionLevel> map = userBlocks.computeIfAbsent(playerId, ignored -> new HashMap<>());
+        if (map.containsKey(pattern)) return false;
+        map.put(pattern, level == null ? PermissionLevel.ANY : level);
+        save();
+        return true;
+    }
+
+    public synchronized boolean removeUser(UUID playerId, String pattern) {
+        if (playerId == null || pattern == null) return false;
+        Map<String, PermissionLevel> map = userBlocks.get(playerId);
+        if (map == null || !map.containsKey(pattern)) return false;
+        map.remove(pattern);
+        if (map.isEmpty()) userBlocks.remove(playerId);
+        save();
+        return true;
+    }
+
+    public synchronized void removeAllUser(UUID playerId) {
+        if (playerId == null) return;
+        userBlocks.remove(playerId);
+        save();
+    }
+
+    public synchronized List<String> listUser(UUID playerId) {
+        if (playerId == null) return Collections.emptyList();
+        Map<String, PermissionLevel> map = userBlocks.get(playerId);
+        if (map == null || map.isEmpty()) return Collections.emptyList();
+        return map.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + " (level=" + entry.getValue().getLevel() + ")")
+                .collect(Collectors.toList());
+    }
+
+    public synchronized Map<UUID, List<String>> listAllUserBlocks() {
+        Map<UUID, List<String>> result = new LinkedHashMap<>();
+        userBlocks.entrySet().stream()
+                .sorted(Comparator.comparing(entry -> entry.getKey().toString()))
+                .forEach(entry -> result.put(entry.getKey(), entry.getValue().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .map(block -> block.getKey() + " (level=" + block.getValue().getLevel() + ")")
+                        .collect(Collectors.toList())));
+        return result;
+    }
+
     public synchronized List<String> list(PermissionLevel level) {
         return blocks.entrySet().stream()
                 .filter(e -> e.getValue() == level)
@@ -210,6 +257,28 @@ public class CommandBlockManager {
 
     public synchronized boolean matches(CommandSender sender, String command) {
         PermissionLevel senderLevel = computeSenderLevel(sender);
+
+        if (sender instanceof org.bukkit.entity.Player player) {
+            Map<String, PermissionLevel> personal = userBlocks.get(player.getUniqueId());
+            if (personal != null) {
+                for (Map.Entry<String, PermissionLevel> entry : personal.entrySet()) {
+                    if (entry.getValue() == PermissionLevel.ANY || entry.getValue() == senderLevel) {
+                        String pattern = entry.getKey();
+                        if (matchesWildcard(pattern, command)) {
+                            plugin.getLogger().info("[matches] BLOCKED by user pattern: " + pattern + " (matches: " + command + ", Sender: " + sender.getName() + ")");
+                            return true;
+                        }
+                        if (command.contains(":")) {
+                            String[] parts = command.split(":", 2);
+                            if (matchesWildcard(pattern, parts[0]) || matchesWildcard(pattern, parts[1])) {
+                                plugin.getLogger().info("[matches] BLOCKED by user pattern (colon): " + pattern + " (matches: " + command + ", Sender: " + sender.getName() + ")");
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
         for (Map.Entry<String, PermissionLevel> entry : blocks.entrySet()) {
             if (entry.getValue() == PermissionLevel.ANY || entry.getValue() == senderLevel) {
@@ -260,16 +329,34 @@ public class CommandBlockManager {
         Optional<PEXConfig> cfg = configManager.loadConfig(configPath);
         if (cfg.isEmpty()) return;
         Object raw = cfg.get().get("blocks");
-        if (!(raw instanceof List)) return;
-        for (Object o : (List<?>) raw) {
+        if (raw instanceof List) {
+            for (Object o : (List<?>) raw) {
+                if (!(o instanceof Map)) continue;
+                Map<?, ?> m = (Map<?, ?>) o;
+                Object pat = m.get("pattern");
+                Object level = m.get("level");
+                if (pat instanceof String && level instanceof Number) {
+                    try {
+                        PermissionLevel pl = PermissionLevel.fromLevel(((Number) level).intValue());
+                        blocks.put((String) pat, pl);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+        Object rawUsers = cfg.get().get("userBlocks");
+        if (!(rawUsers instanceof List)) return;
+        for (Object o : (List<?>) rawUsers) {
             if (!(o instanceof Map)) continue;
             Map<?, ?> m = (Map<?, ?>) o;
+            Object uuid = m.get("uuid");
             Object pat = m.get("pattern");
             Object level = m.get("level");
-            if (pat instanceof String && level instanceof Number) {
+            if (uuid instanceof String && pat instanceof String && level instanceof Number) {
                 try {
+                    UUID id = UUID.fromString((String) uuid);
                     PermissionLevel pl = PermissionLevel.fromLevel(((Number) level).intValue());
-                    blocks.put((String) pat, pl);
+                    userBlocks.computeIfAbsent(id, ignored -> new HashMap<>()).put((String) pat, pl);
                 } catch (Exception ignored) {
                 }
             }
@@ -312,6 +399,17 @@ public class CommandBlockManager {
             arr.add(m);
         }
         cfg.put("blocks", arr);
+        List<Map<String, Object>> users = new ArrayList<>();
+        for (Map.Entry<UUID, Map<String, PermissionLevel>> userEntry : userBlocks.entrySet()) {
+            for (Map.Entry<String, PermissionLevel> blockEntry : userEntry.getValue().entrySet()) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("uuid", userEntry.getKey().toString());
+                m.put("pattern", blockEntry.getKey());
+                m.put("level", blockEntry.getValue().getLevel());
+                users.add(m);
+            }
+        }
+        cfg.put("userBlocks", users);
         configManager.saveConfig(configPath, cfg);
     }
 }

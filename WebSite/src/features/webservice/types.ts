@@ -39,9 +39,15 @@ export type WebPost = {
   createdAt: number;
   replyToId?: string;
   replyToUsername?: string;
+  externalId?: string;
+  externalUrl?: string;
+  externalChannelId?: string;
+  externalAuthorId?: string;
+  externalReplyToId?: string;
   likes?: number;
   replies?: number;
   reposts?: number;
+  views?: number;
   likedByMe?: boolean;
   repostedByMe?: boolean;
 };

@@ -2,6 +2,9 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -38,6 +41,7 @@ public class WebServiceModule implements Listener {
     private boolean feedEnabled;
     private boolean minecraftChatRelayEnabled;
     private boolean webPostToMinecraftEnabled;
+    private boolean discordIntegrationEnabled;
     private boolean imageUploadEnabled;
     private int feedRetentionDays;
 
@@ -74,6 +78,10 @@ public class WebServiceModule implements Listener {
 
     public boolean isWebPostToMinecraftEnabled() {
         return webPostToMinecraftEnabled;
+    }
+
+    public boolean isDiscordIntegrationEnabled() {
+        return discordIntegrationEnabled;
     }
 
     public boolean isImageUploadEnabled() {
@@ -123,6 +131,11 @@ public class WebServiceModule implements Listener {
 
     public void toggleWebPostToMinecraftEnabled() {
         webPostToMinecraftEnabled = !webPostToMinecraftEnabled;
+        saveSettings();
+    }
+
+    public void toggleDiscordIntegrationEnabled() {
+        discordIntegrationEnabled = !discordIntegrationEnabled;
         saveSettings();
     }
 
@@ -264,8 +277,38 @@ public class WebServiceModule implements Listener {
         WebPost post = buildPost(profile, "web", limit(text, MAX_POST_LENGTH), attachments, normalizedReplyToId, replyToUsername);
         postStore.add(post, feedRetentionDays);
         if (webPostToMinecraftEnabled && !post.getText().isBlank()) {
-            plugin.getServer().sendMessage(Component.text("[Web] " + profile.getUsername() + ": " + post.getText()));
+            plugin.getServer().sendMessage(webPostComponent(post, profile.getUsername()));
         }
+        return PostResult.success(post);
+    }
+
+    public PostResult createDiscordPost(String authorId, String authorName, String avatarUrl, String channelId, String messageId, String messageUrl, String text, List<WebPost.Attachment> attachments, String replyToMessageId) {
+        if (!feedEnabled || !discordIntegrationEnabled) {
+            return PostResult.error("Discord integration is disabled");
+        }
+        String normalizedReplyToId = limit(replyToMessageId, 120);
+        String replyToUsername = "";
+        if (!normalizedReplyToId.isBlank()) {
+            Optional<WebPost> parent = postStore.findByExternalId(normalizedReplyToId);
+            if (parent.isPresent()) {
+                WebPost parentPost = parent.get();
+                parentPost.setReplies(parentPost.getReplies() + 1);
+                postStore.save(parentPost);
+                replyToUsername = parentPost.getUsername();
+            }
+        }
+        WebProfile profile = new WebProfile();
+        profile.setUuid("discord:" + limit(authorId, 80));
+        profile.setUsername(limit(authorName, 40));
+        profile.setDisplayName(limit(authorName, 40));
+        profile.setFaceUrl(limit(avatarUrl, 600));
+        WebPost post = buildPost(profile, "discord", limit(text, MAX_POST_LENGTH), attachments, "", replyToUsername);
+        post.setExternalId(limit(messageId, 120));
+        post.setExternalUrl(limit(messageUrl, 600));
+        post.setExternalChannelId(limit(channelId, 120));
+        post.setExternalAuthorId(limit(authorId, 120));
+        post.setExternalReplyToId(normalizedReplyToId);
+        postStore.add(post, feedRetentionDays);
         return PostResult.success(post);
     }
 
@@ -377,6 +420,11 @@ public class WebServiceModule implements Listener {
         payload.put("createdAt", post.getCreatedAt());
         payload.put("replyToId", post.getReplyToId());
         payload.put("replyToUsername", post.getReplyToUsername());
+        payload.put("externalId", post.getExternalId());
+        payload.put("externalUrl", post.getExternalUrl());
+        payload.put("externalChannelId", post.getExternalChannelId());
+        payload.put("externalAuthorId", post.getExternalAuthorId());
+        payload.put("externalReplyToId", post.getExternalReplyToId());
         payload.put("likes", post.getLikes());
         payload.put("replies", post.getReplies());
         payload.put("reposts", post.getReposts());
@@ -403,9 +451,10 @@ public class WebServiceModule implements Listener {
         feedEnabled = booleanSetting(config, "feedEnabled", true);
         minecraftChatRelayEnabled = booleanSetting(config, "minecraftChatRelayEnabled", true);
         webPostToMinecraftEnabled = booleanSetting(config, "webPostToMinecraftEnabled", true);
+        discordIntegrationEnabled = booleanSetting(config, "discordIntegrationEnabled", false);
         imageUploadEnabled = booleanSetting(config, "imageUploadEnabled", true);
         feedRetentionDays = intSetting(config, "feedRetentionDays", 7, 1, 30);
-        if (!(value instanceof Boolean) || config.get("feedEnabled") == null || config.get("feedRetentionDays") == null) {
+        if (!(value instanceof Boolean) || config.get("feedEnabled") == null || config.get("feedRetentionDays") == null || config.get("discordIntegrationEnabled") == null) {
             saveSettings();
         }
     }
@@ -416,9 +465,27 @@ public class WebServiceModule implements Listener {
         config.put("feedEnabled", feedEnabled);
         config.put("minecraftChatRelayEnabled", minecraftChatRelayEnabled);
         config.put("webPostToMinecraftEnabled", webPostToMinecraftEnabled);
+        config.put("discordIntegrationEnabled", discordIntegrationEnabled);
         config.put("imageUploadEnabled", imageUploadEnabled);
         config.put("feedRetentionDays", feedRetentionDays);
         plugin.getConfigManager().saveConfig(SETTINGS_PATH, config);
+    }
+
+    private Component webPostComponent(WebPost post, String fallbackName) {
+        Component header = Component.text("[Web] ", NamedTextColor.GREEN)
+                .append(Component.text(fallbackName, NamedTextColor.WHITE))
+                .append(Component.text(": ", NamedTextColor.DARK_GRAY));
+        Component body = Component.text(post.getText(), NamedTextColor.GRAY);
+        if (!post.getReplyToId().isBlank()) {
+            body = Component.text("↪ @" + post.getReplyToUsername() + " ", NamedTextColor.AQUA).append(body);
+        }
+        Component actions = Component.empty();
+        if (!post.getExternalUrl().isBlank()) {
+            actions = actions.append(Component.text(" [Discordで開く]", NamedTextColor.BLUE)
+                    .decorate(TextDecoration.UNDERLINED)
+                    .clickEvent(ClickEvent.openUrl(post.getExternalUrl())));
+        }
+        return header.append(body).append(actions);
     }
 
     private boolean booleanSetting(PEXConfig config, String key, boolean fallback) {

@@ -20,6 +20,7 @@ public final class WebServiceSettingsMenu {
         boolean feedEnabled = service.isFeedEnabled();
         boolean minecraftRelayEnabled = service.isMinecraftChatRelayEnabled();
         boolean webPostRelayEnabled = service.isWebPostToMinecraftEnabled();
+        boolean discordIntegrationEnabled = service.isDiscordIntegrationEnabled();
         boolean imageUploadEnabled = service.isImageUploadEnabled();
         String url = webMap == null ? "N/A" : webMap.getPublicUrl();
         boolean running = webMap != null && webMap.isServerRunning();
@@ -80,18 +81,22 @@ public final class WebServiceSettingsMenu {
                     webPostRelayEnabled ? Material.EMERALD : Material.REDSTONE,
                     "§7Web 投稿を Minecraft チャットへ中継\n§7Webからサーバー内会話へ参加")
                 .addButtonAt(31,
+                    discordIntegrationEnabled ? "§aDiscord ↔ Web: ON" : "§cDiscord ↔ Web: OFF",
+                    discordIntegrationEnabled ? Material.ECHO_SHARD : Material.GRAY_DYE,
+                    "§7Discord BotMode 側の連携設定と両方ONで\n§7Discord投稿・返信・添付をWebServiceへ保存")
+                .addButtonAt(32,
                     imageUploadEnabled ? "§aImage Upload: ON" : "§cImage Upload: OFF",
                     imageUploadEnabled ? Material.PAINTING : Material.BARRIER,
                     "§7Web投稿画像の添付を許可\n§7ブラウザ側で720p程度に軽量化")
-                .addButtonAt(32,
+                .addButtonAt(33,
                     "§e履歴保存: " + service.getFeedRetentionDays() + "日",
                     Material.CLOCK,
                     "§7ローカルJSONの保存期間\n§7範囲: 1-30日 / 標準: 7日")
-                .addButtonAt(33,
+                .addButtonAt(34,
                     "§bProfile Custom",
                     Material.PLAYER_HEAD,
                     "§7IDとアイコンはMinecraft固定\n§7ニックネーム・壁紙・所在地・URL・自己紹介をWebで編集")
-                .addButtonAt(34,
+                .addButtonAt(35,
                     "§dRealtime Mode: Long Poll",
                     Material.REPEATER,
                     "§7WebSocket非依存のリアルタイム風通信\n§7非WebSocket環境でもHTTPロングポーリングで更新")
@@ -152,10 +157,14 @@ public final class WebServiceSettingsMenu {
                             openMainMenu(p, service);
                         }
                         case 31 -> {
+                            service.toggleDiscordIntegrationEnabled();
+                            openMainMenu(p, service);
+                        }
+                        case 32 -> {
                             service.toggleImageUploadEnabled();
                             openMainMenu(p, service);
                         }
-                        case 32 -> openRetentionDialog(p, service);
+                        case 33 -> openRetentionDialog(p, service);
                         default -> {
                         }
                     }

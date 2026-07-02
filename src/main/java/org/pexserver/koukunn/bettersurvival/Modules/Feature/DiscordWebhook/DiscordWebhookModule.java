@@ -105,6 +105,7 @@ public class DiscordWebhookModule implements Listener {
                 .body("Webhook Join/Leave: " + enabledText(current.isJoinEnabled()) + "/" + enabledText(current.isLeaveEnabled()))
                 .body("Bot Join/Leave: " + enabledText(current.isBotJoinEnabled()) + "/" + enabledText(current.isBotLeaveEnabled()))
                 .body("Botチャット中継: " + enabledText(current.isBotChatRelayEnabled()))
+                .body("Bot⇔WebService連携: " + enabledText(current.isBotWebServiceIntegrationEnabled()))
                 .body("Status/List: " + enabledText(current.isStatusEnabled()))
                 .body("Status送信形式: " + (current.isStatusEmbedEnabled() ? "日本語Embed" : "画像"))
                 .body("Status自動更新: " + enabledText(current.isStatusAutoUpdateEnabled()))
@@ -134,6 +135,7 @@ public class DiscordWebhookModule implements Listener {
                 .addBoolInput("botJoinEnabled", "Botモード Join通知", current.isBotJoinEnabled())
                 .addBoolInput("botLeaveEnabled", "Botモード Leave通知", current.isBotLeaveEnabled())
                 .addBoolInput("botChatRelayEnabled", "Discord と Minecraft のチャット中継", current.isBotChatRelayEnabled())
+                .addBoolInput("botWebServiceIntegrationEnabled", "Botモードで WebService と連携する", current.isBotWebServiceIntegrationEnabled())
                 .addTextInput("eventWebhookUrl", "Join/Leave Webhook URL", current.getEventWebhookUrl(), 2048, true)
                 .addBoolInput("joinEnabled", "Webhook Join通知", current.isJoinEnabled())
                 .addBoolInput("leaveEnabled", "Webhook Leave通知", current.isLeaveEnabled())
@@ -154,6 +156,7 @@ public class DiscordWebhookModule implements Listener {
                     updated.setBotJoinEnabled(result.getBool("botJoinEnabled"));
                     updated.setBotLeaveEnabled(result.getBool("botLeaveEnabled"));
                     updated.setBotChatRelayEnabled(result.getBool("botChatRelayEnabled"));
+                    updated.setBotWebServiceIntegrationEnabled(result.getBool("botWebServiceIntegrationEnabled"));
                     updated.setEventWebhookUrl(result.getText("eventWebhookUrl"));
                     updated.setJoinEnabled(result.getBool("joinEnabled"));
                     updated.setLeaveEnabled(result.getBool("leaveEnabled"));

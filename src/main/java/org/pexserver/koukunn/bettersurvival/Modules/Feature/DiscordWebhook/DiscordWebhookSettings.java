@@ -8,6 +8,7 @@ public class DiscordWebhookSettings {
     private boolean botJoinEnabled;
     private boolean botLeaveEnabled;
     private boolean botChatRelayEnabled;
+    private boolean botWebServiceIntegrationEnabled;
     private String statusWebhookUrl;
     private String statusMessageId;
     private boolean joinEnabled;
@@ -54,6 +55,14 @@ public class DiscordWebhookSettings {
 
     public void setBotChatRelayEnabled(boolean botChatRelayEnabled) {
         this.botChatRelayEnabled = botChatRelayEnabled;
+    }
+
+    public boolean isBotWebServiceIntegrationEnabled() {
+        return botWebServiceIntegrationEnabled;
+    }
+
+    public void setBotWebServiceIntegrationEnabled(boolean botWebServiceIntegrationEnabled) {
+        this.botWebServiceIntegrationEnabled = botWebServiceIntegrationEnabled;
     }
 
     public boolean isBotJoinEnabled() {

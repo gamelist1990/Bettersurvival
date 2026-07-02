@@ -19,7 +19,11 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.M
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebPost;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -224,6 +228,13 @@ public class DiscordWebhookBotModeService {
     }
 
     private void relayDiscordMessageToMinecraft(DiscordWebhookDiscordListener.DiscordIncomingMessage message) {
+        DiscordWebhookSettings settings = settingsSupplier.get();
+        mirrorDiscordMessageToWebService(message);
+
+        if (settings == null || !settings.isBotChatRelayEnabled()) {
+            return;
+        }
+
         Component header = Component.text("[Discord] ", NamedTextColor.AQUA)
                 .append(Component.text(message.authorName(), NamedTextColor.WHITE))
                 .append(Component.text(": ", NamedTextColor.DARK_GRAY));
@@ -237,6 +248,33 @@ public class DiscordWebhookBotModeService {
             }
             Bukkit.getConsoleSender().sendMessage(fullMessage);
         });
+    }
+
+    private void mirrorDiscordMessageToWebService(DiscordWebhookDiscordListener.DiscordIncomingMessage message) {
+        DiscordWebhookSettings settings = settingsSupplier.get();
+        WebServiceModule webService = plugin.getWebServiceModule();
+        if (settings == null || !settings.isBotWebServiceIntegrationEnabled() || webService == null || !webService.isDiscordIntegrationEnabled()) {
+            return;
+        }
+        List<WebPost.Attachment> webAttachments = new ArrayList<>();
+        for (net.dv8tion.jda.api.entities.Message.Attachment attachment : message.attachments()) {
+            WebPost.Attachment webAttachment = new WebPost.Attachment();
+            webAttachment.setType(attachment.isImage() ? "image" : "file");
+            webAttachment.setUrl(attachment.getUrl());
+            webAttachment.setWidth(attachment.getWidth());
+            webAttachment.setHeight(attachment.getHeight());
+            webAttachments.add(webAttachment);
+        }
+        webService.createDiscordPost(
+                message.authorId(),
+                message.authorName(),
+                message.avatarUrl(),
+                message.channelId(),
+                message.messageId(),
+                message.messageUrl(),
+                message.content(),
+                webAttachments,
+                message.replyToMessageId());
     }
 
     private Component buildMessageComponent(String text) {

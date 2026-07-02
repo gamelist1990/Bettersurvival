@@ -16,6 +16,11 @@ public class WebPost {
     private long createdAt = System.currentTimeMillis();
     private String replyToId = "";
     private String replyToUsername = "";
+    private String externalId = "";
+    private String externalUrl = "";
+    private String externalChannelId = "";
+    private String externalAuthorId = "";
+    private String externalReplyToId = "";
     private int likes;
     private int replies;
     private int reposts;
@@ -47,6 +52,16 @@ public class WebPost {
     public void setReplyToId(String replyToId) { this.replyToId = replyToId == null ? "" : replyToId; }
     public String getReplyToUsername() { return replyToUsername; }
     public void setReplyToUsername(String replyToUsername) { this.replyToUsername = replyToUsername == null ? "" : replyToUsername; }
+    public String getExternalId() { return externalId; }
+    public void setExternalId(String externalId) { this.externalId = externalId == null ? "" : externalId; }
+    public String getExternalUrl() { return externalUrl; }
+    public void setExternalUrl(String externalUrl) { this.externalUrl = externalUrl == null ? "" : externalUrl; }
+    public String getExternalChannelId() { return externalChannelId; }
+    public void setExternalChannelId(String externalChannelId) { this.externalChannelId = externalChannelId == null ? "" : externalChannelId; }
+    public String getExternalAuthorId() { return externalAuthorId; }
+    public void setExternalAuthorId(String externalAuthorId) { this.externalAuthorId = externalAuthorId == null ? "" : externalAuthorId; }
+    public String getExternalReplyToId() { return externalReplyToId; }
+    public void setExternalReplyToId(String externalReplyToId) { this.externalReplyToId = externalReplyToId == null ? "" : externalReplyToId; }
     public int getLikes() { return Math.max(0, likes); }
     public void setLikes(int likes) { this.likes = Math.max(0, likes); }
     public int getReplies() { return Math.max(0, replies); }

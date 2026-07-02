@@ -38,8 +38,8 @@ class DiscordBotSettingsMenu {
         DiscordBotSettings current = module.getSettings();
         DialogUI.builder()
                 .title("Discord Bot 設定")
-                .body("Bot Token を設定します（Discord Developer Portal で取得）")
-                .addTextInput("token", "Bot Token", current.getToken(), 200, false)
+                .body("Bot Token を設定します（Discord Developer Portal で取得）。長いトークンは複数行入力欄に貼り付けできます。")
+                .addTextInput("token", "Bot Token", current.getToken(), 2048, true)
                 .confirmation("保存", "キャンセル")
                 .onResponse((result, p) -> {
                     if (!result.isConfirmed()) {

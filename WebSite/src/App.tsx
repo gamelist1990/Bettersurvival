@@ -29,7 +29,7 @@ export default function App() {
   const page = (() => {
     switch (activePage) {
       case 'profile':
-        return <ProfilePage busy={service.busy} message={service.message} profile={service.profile} posts={service.feedPosts} onLogin={service.login} onRegister={service.register} onLogout={service.logout} onSave={service.updateProfile} onNavigate={navigate} />;
+        return <ProfilePage busy={service.busy} message={service.message} profile={service.profile} posts={service.feedPosts} onLogin={service.login} onRegister={service.register} onLogout={service.logout} onSave={service.updateProfile} onLike={service.likePost} onRepost={service.repostPost} onNavigate={navigate} />;
       case 'feed':
         return <FeedPage busy={service.busy} profile={service.profile} posts={service.feedPosts} onPost={service.postFeed} onLike={service.likePost} onRepost={service.repostPost} onNavigate={navigate} />;
       case 'features':

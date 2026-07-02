@@ -20,13 +20,14 @@ export function FeedTimeline({ posts, onNavigate, onCopyPostUrl }: FeedTimelineP
             <img className="post-avatar" src={post.faceUrl || '/images/clear.png'} alt="" />
           </button>
           <div className="post-body">
-            <div className="post-head"><button type="button" onClick={() => onNavigate?.(`/profile/@${post.username}`)}><strong>{displayName(post)}</strong><span>@{post.username}</span></button><span>{post.source === 'web' ? 'Web' : 'Minecraft'}</span></div>
+            <div className="post-head"><button type="button" onClick={() => onNavigate?.(`/profile/@${post.username}`)}><strong>{displayName(post)}</strong><span>@{post.username}</span></button><span>{post.source === 'web' ? 'Web' : post.source === 'discord' ? 'Discord' : 'Minecraft'}</span></div>
             <p>{post.text}</p>
             {post.attachments?.length ? <div className="post-images">{post.attachments.map((attachment, index) => <img key={`${post.id}-${index}`} src={attachment.url} alt="" />)}</div> : null}
             <div className="post-actions" aria-label="投稿アクション">
               <button type="button">返信</button>
               <button type="button">リポスト</button>
               <button type="button">いいね</button>
+              {post.externalUrl ? <a className="post-action-link" href={post.externalUrl} target="_blank" rel="noreferrer">Discordで開く</a> : null}
               <button type="button" onClick={() => onCopyPostUrl?.(post)}>URLコピー</button>
             </div>
           </div>

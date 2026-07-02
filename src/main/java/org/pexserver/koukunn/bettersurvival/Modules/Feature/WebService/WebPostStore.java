@@ -67,6 +67,13 @@ public class WebPostStore {
         return posts.stream().filter(post -> !post.isDeleted()).filter(post -> id.equals(post.getId())).findFirst();
     }
 
+    public synchronized Optional<WebPost> findByExternalId(String externalId) {
+        if (externalId == null || externalId.isBlank()) {
+            return Optional.empty();
+        }
+        return posts.stream().filter(post -> !post.isDeleted()).filter(post -> externalId.equals(post.getExternalId())).findFirst();
+    }
+
     public synchronized boolean softDelete(String id, String ownerUuid) {
         Optional<WebPost> optionalPost = findById(id);
         if (optionalPost.isEmpty()) {

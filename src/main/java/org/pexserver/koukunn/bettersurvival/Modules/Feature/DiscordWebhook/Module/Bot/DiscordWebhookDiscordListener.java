@@ -26,7 +26,7 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
     @Override
     public void onMessageReceived(@Nonnull MessageReceivedEvent event) {
         DiscordWebhookSettings settings = settingsSupplier.get();
-        if (settings == null || !settings.isEnabled() || !settings.isBotModeEnabled() || !settings.isBotChatRelayEnabled()) {
+        if (settings == null || !settings.isEnabled() || !settings.isBotModeEnabled() || (!settings.isBotChatRelayEnabled() && !settings.isBotWebServiceIntegrationEnabled())) {
             return;
         }
         if (settings.getBotChannelId().isBlank() || !settings.getBotChannelId().equals(event.getChannel().getId())) {
@@ -42,13 +42,24 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
         // 更新: メッセージ内容と添付ファイルを両方処理するように変更
         Member member = event.getMember();
         String authorName = member != null ? member.getEffectiveName() : event.getAuthor().getGlobalName() != null ? event.getAuthor().getGlobalName() : event.getAuthor().getName();
+        String avatarUrl = event.getAuthor().getEffectiveAvatarUrl();
         String content = event.getMessage().getContentRaw().trim();
         List<Message.Attachment> attachments = event.getMessage().getAttachments();
         if (content.isBlank() && attachments.isEmpty()) {
             return;
         }
+        String replyToMessageId = event.getMessage().getReferencedMessage() == null ? "" : event.getMessage().getReferencedMessage().getId();
         if (attachments.isEmpty()) {
-            messageConsumer.accept(new DiscordIncomingMessage(authorName, content));
+            messageConsumer.accept(new DiscordIncomingMessage(
+                    authorName,
+                    event.getAuthor().getId(),
+                    avatarUrl,
+                    event.getChannel().getId(),
+                    event.getMessageId(),
+                    event.getMessage().getJumpUrl(),
+                    replyToMessageId,
+                    content,
+                    attachments));
             return;
         }
         StringBuilder attachmentText = new StringBuilder();
@@ -62,9 +73,18 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
                     .append(attachment.getUrl())
                     .append(") ");
         }
-        messageConsumer.accept(new DiscordIncomingMessage(authorName, attachmentText.toString().trim()));
+        messageConsumer.accept(new DiscordIncomingMessage(
+                authorName,
+                event.getAuthor().getId(),
+                avatarUrl,
+                event.getChannel().getId(),
+                event.getMessageId(),
+                event.getMessage().getJumpUrl(),
+                replyToMessageId,
+                attachmentText.toString().trim(),
+                attachments));
     }
 
-    public record DiscordIncomingMessage(String authorName, String content) {
+    public record DiscordIncomingMessage(String authorName, String authorId, String avatarUrl, String channelId, String messageId, String messageUrl, String replyToMessageId, String content, List<Message.Attachment> attachments) {
     }
 }

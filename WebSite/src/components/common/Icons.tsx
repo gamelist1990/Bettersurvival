@@ -67,6 +67,17 @@ export function IconShare({ size = 19, className }: IconProps) {
   );
 }
 
+export function IconViews({ size = 19, className }: IconProps) {
+  return (
+    <svg {...strokeProps(size)} className={className}>
+      <path d="M4 19V12" />
+      <path d="M10 19V7" />
+      <path d="M16 19V10" />
+      <path d="M22 19V4" />
+    </svg>
+  );
+}
+
 export function IconImagePlus({ size = 19, className }: IconProps) {
   return (
     <svg {...strokeProps(size)} className={className}>
