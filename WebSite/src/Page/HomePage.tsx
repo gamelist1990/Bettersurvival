@@ -403,7 +403,7 @@ export default function HomePage() {
           </div>
           <div className="hero-actions">
             <a className="primary-button" href="#account">アカウントを作成</a>
-            <a className="secondary-button" href="#feed">タイムラインを見る</a>
+            <a className="secondary-button" href="#feed">Feedを見る</a>
             <a className="secondary-button" href="/webmap/">WebMap を開く</a>
           </div>
         </section>
@@ -533,7 +533,7 @@ export default function HomePage() {
           </div>
           <div className="feature-grid">
             <article className="feature-card"><p className="card-eyebrow">Profile</p><h3>プロフィールを利用</h3><p>Minecraftと連携したプロフィールを安全に利用できます。</p></article>
-            <article className="feature-card"><p className="card-eyebrow">Timeline</p><h3>Minecraft ↔ Web 投稿</h3><p>Minecraft のチャットは Web のタイムラインへ、Web の投稿は Minecraft へ流れます。</p></article>
+            <article className="feature-card"><p className="card-eyebrow">Feed</p><h3>Minecraft ↔ Web 投稿</h3><p>Minecraft のチャットは Web のFeedへ、Web の投稿は Minecraft へ流れます。</p></article>
             <article className="feature-card"><p className="card-eyebrow">Media</p><h3>画像は軽量化</h3><p>Web 画像は投稿前にブラウザで 720p 程度へリサイズされます。</p></article>
           </div>
         </section>

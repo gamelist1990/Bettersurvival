@@ -152,14 +152,10 @@ export function FeedPage({ busy, profile, posts, onPost, onLike, onRepost, onNav
                 {route.username ? <span>{visiblePosts.length}件の投稿</span> : null}
               </div>
             </div>
-            <div className="feed-tabs" role="tablist" aria-label="タイムライン表示">
-              <button className="is-active" type="button">投稿</button>
-              <button type="button" onClick={() => onNavigate('/feed')}>タイムライン</button>
-            </div>
           </header>
           {!route.username && !route.postId ? <ComposeCard busy={busy} disabled={false} profile={profile} onPost={onPost} /> : null}
           <div className="timeline">
-            {visiblePosts.length ? visiblePosts.map((post) => <FeedPostCard key={post.id} post={post} profile={profile} busy={busy} onPost={onPost} onLike={onLike} onRepost={onRepost} onNavigate={onNavigate} />) : <div className="empty-feed">{term ? `「${search}」に一致する投稿は見つかりませんでした。` : 'まだ投稿はありません。最初の投稿をしてタイムラインを開始しましょう。'}</div>}
+            {visiblePosts.length ? visiblePosts.map((post) => <FeedPostCard key={post.id} post={post} profile={profile} busy={busy} onPost={onPost} onLike={onLike} onRepost={onRepost} onNavigate={onNavigate} />) : <div className="empty-feed">{term ? `「${search}」に一致する投稿は見つかりませんでした。` : 'まだ投稿はありません。最初の投稿を開始しましょう！！'}</div>}
           </div>
         </main>
         <aside className="feed-right-rail" aria-label="Minecraft Twitter side panel">

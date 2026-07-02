@@ -23,12 +23,12 @@ export function HomePage({ profile, posts, onNavigate }: HomePageProps) {
         </div>
         <div className="hero-actions">
           <button className="primary-button" type="button" onClick={() => onNavigate('/profile')}>プロフィールを作成</button>
-          <button className="secondary-button" type="button" onClick={() => onNavigate('/feed')}>タイムラインを見る</button>
+          <button className="secondary-button" type="button" onClick={() => onNavigate('/feed')}>投稿を見る</button>
           <button className="secondary-button" type="button" onClick={() => onNavigate('/webmap/')}>WebMap を開く</button>
         </div>
       </section>
       <aside className="panel spotlight-panel">
-        <SectionHeader eyebrow="Community" title="Minecraft Twitter" text="サーバーの話題やプレイヤーの投稿をひとつのタイムラインで確認できます。" />
+        <SectionHeader eyebrow="Community" title="Minecraft Twitter" text="サーバーの話題やプレイヤーの投稿を確認できます。" />
         <div className="spotlight-list">
           <div className="spotlight-item"><span>Profile</span><strong>{profile ? displayName(profile) : '未ログイン'}</strong></div>
           <div className="spotlight-item"><span>Latest</span><strong>{latestPost ? `${displayName(latestPost)}: ${latestPost.text || '画像投稿'}` : '投稿待ち'}</strong></div>

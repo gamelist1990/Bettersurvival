@@ -70,11 +70,11 @@ public final class WebServiceSettingsMenu {
                 .addButtonAt(28,
                     feedEnabled ? "§aSocial Feed: 有効" : "§cSocial Feed: 無効",
                     feedEnabled ? Material.WRITABLE_BOOK : Material.BOOK,
-                    "§7Web版 Minecraft Twitter のメイン機能\n§7投稿・プロフィール・タイムラインを制御")
+                    "§7Web版 Minecraft Twitter のメイン機能\n§7投稿・プロフィール")
                 .addButtonAt(29,
                     minecraftRelayEnabled ? "§aMinecraft → Web: ON" : "§cMinecraft → Web: OFF",
                     minecraftRelayEnabled ? Material.OAK_SIGN : Material.PAPER,
-                    "§7Minecraft チャットを Web タイムラインへ保存\n§7JSON履歴にも反映")
+                    "§7Minecraft チャットを Web へ保存\n§7JSON履歴にも反映")
                 .addButtonAt(30,
                     webPostRelayEnabled ? "§aWeb → Minecraft: ON" : "§cWeb → Minecraft: OFF",
                     webPostRelayEnabled ? Material.EMERALD : Material.REDSTONE,

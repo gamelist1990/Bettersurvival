@@ -155,7 +155,7 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
         <div className="profile-not-found-card">
           <h1>このプロフィールは表示できません</h1>
           <p>投稿がまだない、またはURLが正しくない可能性があります。</p>
-          <button className="primary-button" type="button" onClick={() => onNavigate('/feed')}>タイムラインへ戻る</button>
+          <button className="primary-button" type="button" onClick={() => onNavigate('/feed')}>投稿へ戻る</button>
         </div>
       </section>
     );
