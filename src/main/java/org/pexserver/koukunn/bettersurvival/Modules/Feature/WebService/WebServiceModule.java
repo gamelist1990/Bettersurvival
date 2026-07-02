@@ -2,9 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -13,6 +11,7 @@ import org.bukkit.event.Listener;
 import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
 
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
@@ -35,6 +34,7 @@ public class WebServiceModule implements Listener {
     private final Loader plugin;
     private final WebProfileStore profileStore;
     private final WebPostStore postStore;
+    private final WebSessionStore sessionStore;
     private final Map<String, PendingHotp> pendingCodes = new ConcurrentHashMap<>();
     private final Map<String, WebSession> sessions = new ConcurrentHashMap<>();
     private boolean webMapFeatureEnabled;
@@ -43,12 +43,22 @@ public class WebServiceModule implements Listener {
     private boolean webPostToMinecraftEnabled;
     private boolean discordIntegrationEnabled;
     private boolean imageUploadEnabled;
+    private boolean haproxyProtocolEnabled;
     private int feedRetentionDays;
+
+    /** 表示回数の同一IPクールダウン ("ip|postId" -> 期限ミリ秒) */
+    private static final long VIEW_COOLDOWN_MS = 30L * 60L * 1000L;
+    private static final long VIEW_FLUSH_INTERVAL_MS = 30_000L;
+    private final Map<String, Long> viewCooldowns = new ConcurrentHashMap<>();
+    private volatile boolean viewsDirty;
+    private volatile long lastViewFlush;
 
     public WebServiceModule(Loader plugin) {
         this.plugin = plugin;
         this.profileStore = new WebProfileStore(plugin.getConfigManager());
         this.postStore = new WebPostStore(plugin.getConfigManager());
+        this.sessionStore = new WebSessionStore(plugin.getConfigManager());
+        this.sessions.putAll(sessionStore.loadActive(System.currentTimeMillis()));
         loadSettings();
     }
 
@@ -144,6 +154,17 @@ public class WebServiceModule implements Listener {
         saveSettings();
     }
 
+    public boolean isHaproxyProtocolEnabled() {
+        return haproxyProtocolEnabled;
+    }
+
+    /** HAProxy PROXY protocol v2 の受け入れを切り替え、HTTP サーバーを再起動する。 */
+    public void toggleHaproxyProtocolEnabled() {
+        haproxyProtocolEnabled = !haproxyProtocolEnabled;
+        saveSettings();
+        restartSharedHttpServer();
+    }
+
     public void updateFeedRetentionDays(int days) {
         feedRetentionDays = Math.max(1, Math.min(30, days));
         postStore.prune(feedRetentionDays);
@@ -169,6 +190,7 @@ public class WebServiceModule implements Listener {
         if (session == null || session.isExpired(System.currentTimeMillis())) {
             if (session != null) {
                 sessions.remove(token);
+                sessionStore.remove(token);
             }
             return Optional.empty();
         }
@@ -253,7 +275,7 @@ public class WebServiceModule implements Listener {
         return ProfileResult.success(profile);
     }
 
-    public PostResult createWebPost(String token, String text, List<WebPost.Attachment> attachments, String replyToId) {
+    public PostResult createWebPost(String token, String text, List<WebPost.Attachment> attachments) {
         if (!feedEnabled) {
             return PostResult.error("Web feed is disabled");
         }
@@ -262,52 +284,33 @@ public class WebServiceModule implements Listener {
             return PostResult.error("ログインが必要です");
         }
         WebProfile profile = optionalProfile.get();
-        String normalizedReplyToId = limit(replyToId, 80);
-        String replyToUsername = "";
-        if (!normalizedReplyToId.isBlank()) {
-            Optional<WebPost> parent = postStore.findById(normalizedReplyToId);
-            if (parent.isEmpty()) {
-                return PostResult.error("返信先の投稿が見つかりません");
-            }
-            WebPost parentPost = parent.get();
-            parentPost.setReplies(parentPost.getReplies() + 1);
-            postStore.save(parentPost);
-            replyToUsername = parentPost.getUsername();
-        }
-        WebPost post = buildPost(profile, "web", limit(text, MAX_POST_LENGTH), attachments, normalizedReplyToId, replyToUsername);
+        WebPost post = buildPost(profile, "web", limit(text, MAX_POST_LENGTH), attachments);
         postStore.add(post, feedRetentionDays);
-        if (webPostToMinecraftEnabled && !post.getText().isBlank()) {
+        if (webPostToMinecraftEnabled && (!post.getText().isBlank() || !post.getAttachments().isEmpty())) {
             plugin.getServer().sendMessage(webPostComponent(post, profile.getUsername()));
+        }
+        // Web 投稿を Discord チャンネルへ中継（画像はファイルとして添付される）
+        DiscordWebhookModule discordWebhook = plugin.getDiscordWebhookModule();
+        if (discordIntegrationEnabled && discordWebhook != null) {
+            discordWebhook.sendWebServicePost(post);
         }
         return PostResult.success(post);
     }
 
-    public PostResult createDiscordPost(String authorId, String authorName, String avatarUrl, String channelId, String messageId, String messageUrl, String text, List<WebPost.Attachment> attachments, String replyToMessageId) {
+    public PostResult createDiscordPost(String authorId, String authorName, String avatarUrl, String channelId, String messageId, String messageUrl, String text, List<WebPost.Attachment> attachments) {
         if (!feedEnabled || !discordIntegrationEnabled) {
             return PostResult.error("Discord integration is disabled");
-        }
-        String normalizedReplyToId = limit(replyToMessageId, 120);
-        String replyToUsername = "";
-        if (!normalizedReplyToId.isBlank()) {
-            Optional<WebPost> parent = postStore.findByExternalId(normalizedReplyToId);
-            if (parent.isPresent()) {
-                WebPost parentPost = parent.get();
-                parentPost.setReplies(parentPost.getReplies() + 1);
-                postStore.save(parentPost);
-                replyToUsername = parentPost.getUsername();
-            }
         }
         WebProfile profile = new WebProfile();
         profile.setUuid("discord:" + limit(authorId, 80));
         profile.setUsername(limit(authorName, 40));
         profile.setDisplayName(limit(authorName, 40));
         profile.setFaceUrl(limit(avatarUrl, 600));
-        WebPost post = buildPost(profile, "discord", limit(text, MAX_POST_LENGTH), attachments, "", replyToUsername);
+        WebPost post = buildPost(profile, "discord", limit(text, MAX_POST_LENGTH), attachments);
         post.setExternalId(limit(messageId, 120));
         post.setExternalUrl(limit(messageUrl, 600));
         post.setExternalChannelId(limit(channelId, 120));
         post.setExternalAuthorId(limit(authorId, 120));
-        post.setExternalReplyToId(normalizedReplyToId);
         postStore.add(post, feedRetentionDays);
         return PostResult.success(post);
     }
@@ -351,11 +354,49 @@ public class WebServiceModule implements Listener {
         return findProfileBySession(token).map(WebProfile::getUuid);
     }
 
+    public Optional<WebPost> findPostById(String postId) {
+        return postStore.findById(postId);
+    }
+
     public List<WebPost> listPosts(long since, int limit) {
         if (!feedEnabled) {
             return List.of();
         }
         return postStore.listSince(since, limit, feedRetentionDays);
+    }
+
+    /**
+     * フィードに表示された投稿の表示回数を記録する。
+     * 同一 IP アドレスからの同じ投稿の閲覧は 30 分のクールダウンを設ける。
+     */
+    public void recordViews(List<WebPost> posts, String clientIp) {
+        if (clientIp == null || clientIp.isBlank() || posts == null || posts.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (viewCooldowns.size() > 50_000) {
+            viewCooldowns.entrySet().removeIf(entry -> entry.getValue() <= now);
+        }
+        boolean changed = false;
+        for (WebPost post : posts) {
+            String key = clientIp + "|" + post.getId();
+            Long expiry = viewCooldowns.get(key);
+            if (expiry != null && expiry > now) {
+                continue;
+            }
+            viewCooldowns.put(key, now + VIEW_COOLDOWN_MS);
+            post.incrementViews();
+            changed = true;
+        }
+        if (changed) {
+            viewsDirty = true;
+            // ディスク書き込みはまとめて行う（フィードは高頻度でポーリングされるため）
+            if (now - lastViewFlush >= VIEW_FLUSH_INTERVAL_MS) {
+                lastViewFlush = now;
+                viewsDirty = false;
+                postStore.save(posts.get(0));
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -376,7 +417,7 @@ public class WebServiceModule implements Listener {
             fallback.setFaceUrl(McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil.isBedrock(player)));
             return fallback;
         });
-        postStore.add(buildPost(profile, "minecraft", limit(message, MAX_POST_LENGTH), List.of(), "", ""), feedRetentionDays);
+        postStore.add(buildPost(profile, "minecraft", limit(message, MAX_POST_LENGTH), List.of()), feedRetentionDays);
     }
 
     public Map<String, Object> profilePayload(WebProfile profile) {
@@ -418,16 +459,13 @@ public class WebServiceModule implements Listener {
         payload.put("text", post.getText());
         payload.put("attachments", post.getAttachments());
         payload.put("createdAt", post.getCreatedAt());
-        payload.put("replyToId", post.getReplyToId());
-        payload.put("replyToUsername", post.getReplyToUsername());
         payload.put("externalId", post.getExternalId());
         payload.put("externalUrl", post.getExternalUrl());
         payload.put("externalChannelId", post.getExternalChannelId());
         payload.put("externalAuthorId", post.getExternalAuthorId());
-        payload.put("externalReplyToId", post.getExternalReplyToId());
         payload.put("likes", post.getLikes());
-        payload.put("replies", post.getReplies());
         payload.put("reposts", post.getReposts());
+        payload.put("views", post.getViews());
         payload.put("likedByMe", post.isLikedBy(viewerUuid));
         payload.put("repostedByMe", post.isRepostedBy(viewerUuid));
         return payload;
@@ -436,12 +474,20 @@ public class WebServiceModule implements Listener {
     public void logout(String token) {
         if (token != null) {
             sessions.remove(token);
+            sessionStore.remove(token);
         }
     }
 
     public void shutdown() {
         pendingCodes.clear();
-        sessions.clear();
+        // 未書き込みの表示回数を確定させる
+        if (viewsDirty) {
+            List<WebPost> latest = postStore.listLatest(1, feedRetentionDays);
+            if (!latest.isEmpty()) {
+                postStore.save(latest.get(0));
+            }
+            viewsDirty = false;
+        }
     }
 
     private void loadSettings() {
@@ -453,6 +499,7 @@ public class WebServiceModule implements Listener {
         webPostToMinecraftEnabled = booleanSetting(config, "webPostToMinecraftEnabled", true);
         discordIntegrationEnabled = booleanSetting(config, "discordIntegrationEnabled", false);
         imageUploadEnabled = booleanSetting(config, "imageUploadEnabled", true);
+        haproxyProtocolEnabled = booleanSetting(config, "haproxyProtocolEnabled", false);
         feedRetentionDays = intSetting(config, "feedRetentionDays", 7, 1, 30);
         if (!(value instanceof Boolean) || config.get("feedEnabled") == null || config.get("feedRetentionDays") == null || config.get("discordIntegrationEnabled") == null) {
             saveSettings();
@@ -467,25 +514,53 @@ public class WebServiceModule implements Listener {
         config.put("webPostToMinecraftEnabled", webPostToMinecraftEnabled);
         config.put("discordIntegrationEnabled", discordIntegrationEnabled);
         config.put("imageUploadEnabled", imageUploadEnabled);
+        config.put("haproxyProtocolEnabled", haproxyProtocolEnabled);
         config.put("feedRetentionDays", feedRetentionDays);
         plugin.getConfigManager().saveConfig(SETTINGS_PATH, config);
     }
 
+    /**
+     * Web 投稿を Minecraft チャット向けの Component に変換する。
+     * URL はサイト名だけのクリック可能テキストに、
+     * 画像は「[画像: 名前]」のクリックで Web 経由で閲覧できるリンクになる。
+     */
     private Component webPostComponent(WebPost post, String fallbackName) {
         Component header = Component.text("[Web] ", NamedTextColor.GREEN)
                 .append(Component.text(fallbackName, NamedTextColor.WHITE))
                 .append(Component.text(": ", NamedTextColor.DARK_GRAY));
-        Component body = Component.text(post.getText(), NamedTextColor.GRAY);
-        if (!post.getReplyToId().isBlank()) {
-            body = Component.text("↪ @" + post.getReplyToUsername() + " ", NamedTextColor.AQUA).append(body);
+        Component body = FeedTextUtil.toMinecraftComponent(post.getText(), NamedTextColor.GRAY);
+        Component result = header.append(body);
+        List<WebPost.Attachment> attachments = post.getAttachments();
+        for (int index = 0; index < attachments.size(); index++) {
+            WebPost.Attachment attachment = attachments.get(index);
+            String label = attachment.getName().isBlank() ? "画像" + (index + 1) : attachment.getName();
+            result = result.append(Component.text(" "))
+                    .append(FeedTextUtil.attachmentComponent("画像: " + label, attachmentViewUrl(post, index)));
         }
-        Component actions = Component.empty();
         if (!post.getExternalUrl().isBlank()) {
-            actions = actions.append(Component.text(" [Discordで開く]", NamedTextColor.BLUE)
-                    .decorate(TextDecoration.UNDERLINED)
-                    .clickEvent(ClickEvent.openUrl(post.getExternalUrl())));
+            result = result.append(Component.text(" "))
+                    .append(FeedTextUtil.linkComponent("[Discordで開く]", post.getExternalUrl()));
         }
-        return header.append(body).append(actions);
+        return result;
+    }
+
+    /** 添付画像を Web 経由で閲覧する URL を返す。 */
+    public String attachmentViewUrl(WebPost post, int index) {
+        if (index >= 0 && index < post.getAttachments().size()) {
+            String url = post.getAttachments().get(index).getUrl();
+            if (url.startsWith("http://") || url.startsWith("https://")) {
+                return url;
+            }
+        }
+        return publicBaseUrl() + "api/v1/feed/image/" + post.getId() + "/" + index;
+    }
+
+    /** WebService の公開ベース URL（末尾スラッシュ付き）。 */
+    public String publicBaseUrl() {
+        if (plugin.getWebMapModule() != null) {
+            return plugin.getWebMapModule().getPublicUrl();
+        }
+        return "http://127.0.0.1:8123/";
     }
 
     private boolean booleanSetting(PEXConfig config, String key, boolean fallback) {
@@ -501,7 +576,7 @@ public class WebServiceModule implements Listener {
         return fallback;
     }
 
-    private WebPost buildPost(WebProfile profile, String source, String text, List<WebPost.Attachment> attachments, String replyToId, String replyToUsername) {
+    private WebPost buildPost(WebProfile profile, String source, String text, List<WebPost.Attachment> attachments) {
         WebPost post = new WebPost();
         post.setId(UUID.randomUUID().toString());
         post.setUuid(profile.getUuid());
@@ -512,8 +587,6 @@ public class WebServiceModule implements Listener {
         post.setSource(source);
         post.setText(text);
         post.setAttachments(attachments == null ? List.of() : attachments);
-        post.setReplyToId(replyToId);
-        post.setReplyToUsername(replyToUsername);
         post.setCreatedAt(System.currentTimeMillis());
         return post;
     }
@@ -540,7 +613,9 @@ public class WebServiceModule implements Listener {
         RANDOM.nextBytes(csrfBytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
         String csrfToken = Base64.getUrlEncoder().withoutPadding().encodeToString(csrfBytes);
-        sessions.put(token, new WebSession(token, uuid, csrfToken, System.currentTimeMillis() + SESSION_TTL_MS));
+        WebSession session = new WebSession(token, uuid, csrfToken, System.currentTimeMillis() + SESSION_TTL_MS);
+        sessions.put(token, session);
+        sessionStore.put(session);
         return new SessionPair(token, csrfToken);
     }
 
@@ -553,6 +628,7 @@ public class WebServiceModule implements Listener {
         if (session == null || session.isExpired(System.currentTimeMillis())) {
             if (session != null) {
                 sessions.remove(token);
+                sessionStore.remove(token);
             }
             return false;
         }
@@ -568,6 +644,7 @@ public class WebServiceModule implements Listener {
         if (session == null || session.isExpired(System.currentTimeMillis())) {
             if (session != null) {
                 sessions.remove(token);
+                sessionStore.remove(token);
             }
             return "";
         }
@@ -609,7 +686,17 @@ public class WebServiceModule implements Listener {
 
     private void cleanupExpiredSessions() {
         long now = System.currentTimeMillis();
-        sessions.entrySet().removeIf(entry -> entry.getValue().isExpired(now));
+        List<String> expired = sessions.entrySet().stream()
+                .filter(entry -> entry.getValue().isExpired(now))
+                .map(Map.Entry::getKey)
+                .toList();
+        if (expired.isEmpty()) {
+            return;
+        }
+        for (String token : expired) {
+            sessions.remove(token);
+        }
+        sessionStore.removeAll(expired);
     }
 
     private record PendingHotp(String code, long expiresAt) {

@@ -24,6 +24,7 @@ public class WebPost {
     private int likes;
     private int replies;
     private int reposts;
+    private long views;
     private List<String> likedBy = new ArrayList<>();
     private List<String> repostedBy = new ArrayList<>();
     private boolean deleted;
@@ -68,6 +69,9 @@ public class WebPost {
     public void setReplies(int replies) { this.replies = Math.max(0, replies); }
     public int getReposts() { return Math.max(0, reposts); }
     public void setReposts(int reposts) { this.reposts = Math.max(0, reposts); }
+    public long getViews() { return Math.max(0, views); }
+    public void setViews(long views) { this.views = Math.max(0, views); }
+    public void incrementViews() { this.views = getViews() + 1; }
     public List<String> getLikedBy() { return likedBy == null ? new ArrayList<>() : likedBy; }
     public void setLikedBy(List<String> likedBy) { this.likedBy = likedBy == null ? new ArrayList<>() : likedBy; }
     public List<String> getRepostedBy() { return repostedBy == null ? new ArrayList<>() : repostedBy; }
@@ -109,6 +113,7 @@ public class WebPost {
     public static class Attachment {
         private String type = "image";
         private String url = "";
+        private String name = "";
         private int width;
         private int height;
 
@@ -116,6 +121,8 @@ public class WebPost {
         public void setType(String type) { this.type = type == null ? "image" : type; }
         public String getUrl() { return url; }
         public void setUrl(String url) { this.url = url == null ? "" : url; }
+        public String getName() { return name == null ? "" : name; }
+        public void setName(String name) { this.name = name == null ? "" : name; }
         public int getWidth() { return width; }
         public void setWidth(int width) { this.width = width; }
         public int getHeight() { return height; }

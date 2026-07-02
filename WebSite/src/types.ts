@@ -60,7 +60,7 @@ export type WorldDetail = {
 
 export type WorldMarker = {
   id: string;
-  kind: "waypoint" | "loadedchunk" | "persistentchunk";
+  kind: "waypoint" | "landclaim";
   name: string;
   displayName: string;
   color: string;
@@ -69,6 +69,10 @@ export type WorldMarker = {
   chunkX: number;
   chunkZ: number;
   rotation: number;
+  radius: number;
+  ownerType: "waypoint" | "personal" | "party";
+  ownerName: string;
+  members: string[];
 };
 
 export type WorldMarkersResponse = {

@@ -13,6 +13,8 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServic
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -20,6 +22,7 @@ import java.net.SocketException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -43,6 +46,7 @@ public class WebMapHttpServer {
     private final WebMapRateLimiter tileLimiter = new WebMapRateLimiter(512, 256D);
     private final WebMapTileCache tileCache = new WebMapTileCache(512);
     private HttpServer server;
+    private HaproxyProxyServer haproxyServer;
 
     @FunctionalInterface
     private interface ExchangeHandler {
@@ -60,7 +64,15 @@ public class WebMapHttpServer {
     public synchronized void start(WebMapSettings settings) throws IOException {
         stop();
         String host = settings.isPublicAccess() ? "0.0.0.0" : "127.0.0.1";
-        server = HttpServer.create(new InetSocketAddress(host, settings.getPort()), 0);
+        WebServiceModule webService = module.getPlugin().getWebServiceModule();
+        boolean haproxyEnabled = webService != null && webService.isHaproxyProtocolEnabled();
+        if (haproxyEnabled) {
+            // PROXY protocol v2 モード: HTTP はループバックの一時ポートで待ち受け、
+            // 公開ポートには実IPを解決するリレーを立てる
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        } else {
+            server = HttpServer.create(new InetSocketAddress(host, settings.getPort()), 0);
+        }
         server.createContext("/api/v1/bootstrap", safe(this::handleBootstrap));
         server.createContext("/api/v1/status", safe(this::handleStatus));
         server.createContext("/api/v1/auth/register", safe(this::handleAuthRegister));
@@ -74,13 +86,24 @@ public class WebMapHttpServer {
         server.createContext("/api/v1/feed/repost", safe(this::handleFeedRepost));
         server.createContext("/api/v1/feed/delete", safe(this::handleFeedDelete));
         server.createContext("/api/v1/feed/updates", safe(this::handleFeedUpdates));
+        server.createContext("/api/v1/feed/image", safe(this::handleFeedImage));
         server.createContext("/api/v1/worlds", safe(this::handleApiWorlds));
         server.createContext("/api/v1/players", safe(this::handleApiPlayers));
         server.createContext("/api/status", safe(this::handleStatus));
         server.createContext("/tiles", safe(this::handleTiles));
+        server.createContext("/uploads", safe(this::handleUploads));
         server.createContext("/", safe(this::handleStatic));
         server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();
+        if (haproxyEnabled) {
+            haproxyServer = new HaproxyProxyServer(module.getPlugin().getLogger());
+            try {
+                haproxyServer.start(host, settings.getPort(), server.getAddress().getPort());
+            } catch (IOException error) {
+                stop();
+                throw error;
+            }
+        }
     }
 
     private HttpHandler safe(ExchangeHandler delegate) {
@@ -129,10 +152,32 @@ public class WebMapHttpServer {
     }
 
     public synchronized void stop() {
+        if (haproxyServer != null) {
+            haproxyServer.stop();
+            haproxyServer = null;
+        }
         if (server != null) {
             server.stop(0);
             server = null;
         }
+    }
+
+    /**
+     * 実クライアント IP を解決する。
+     * HAProxy PROXY protocol v2 が有効な場合はリレーの対応表から取得する。
+     */
+    private String clientIp(HttpExchange exchange) {
+        if (exchange.getRemoteAddress() == null || exchange.getRemoteAddress().getAddress() == null) {
+            return "unknown";
+        }
+        HaproxyProxyServer relay = haproxyServer;
+        if (relay != null) {
+            String real = relay.lookupClientIp(exchange.getRemoteAddress().getPort());
+            if (real != null && !real.isBlank()) {
+                return real;
+            }
+        }
+        return exchange.getRemoteAddress().getAddress().getHostAddress();
     }
 
     private void handleBootstrap(HttpExchange exchange) throws IOException {
@@ -621,6 +666,51 @@ public class WebMapHttpServer {
         }
     }
 
+    private void handleUploads(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        String prefix = "/uploads/feed/";
+        if (path == null || !path.startsWith(prefix)) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
+        String fileName = path.substring(prefix.length());
+        if (!fileName.matches("[a-f0-9\\-]{36}\\.(png|jpg|jpeg|gif|webp)")) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
+        File file = new File(module.getPlugin().getConfigManager().getBaseDir(), "WebService/uploads/feed/" + fileName);
+        if (!file.isFile()) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
+        byte[] body = java.nio.file.Files.readAllBytes(file.toPath());
+        securityHeaders(exchange);
+        exchange.getResponseHeaders().set("Content-Type", uploadMimeType(fileName));
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=31536000, immutable");
+        exchange.sendResponseHeaders(200, body.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(body);
+        }
+    }
+
+    private String uploadMimeType(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (lower.endsWith(".gif")) {
+            return "image/gif";
+        }
+        if (lower.endsWith(".webp")) {
+            return "image/webp";
+        }
+        return "image/png";
+    }
+
     private void writeEmptyTile(HttpExchange exchange) throws IOException {
         ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
         ImageIO.write(new BufferedImage(TILE_SIZE, TILE_SIZE, BufferedImage.TYPE_INT_ARGB), "png", byteStream);
@@ -629,19 +719,146 @@ public class WebMapHttpServer {
 
     private byte[] renderIndexHtml(HttpExchange exchange, byte[] templateBytes) {
         String serverName = ServerInfoUtil.getServerName();
-        String worldDisplayName = resolveWorldDisplayName(decodeQueryValue(queryValue(exchange, "world")));
-        String title = trimToLength(buildPageTitle(serverName, worldDisplayName), 80);
-        String description = trimToLength(buildPageDescription(serverName, worldDisplayName), 220);
-        String url = absoluteRequestUrl(exchange);
-        String image = absoluteRequestBase(exchange) + "/images/og.png";
+        PageMeta meta = buildPageMeta(exchange, serverName);
         String html = new String(templateBytes, StandardCharsets.UTF_8)
-                .replace(PLACEHOLDER_TITLE, escapeHtml(title))
-                .replace(PLACEHOLDER_DESCRIPTION, escapeHtml(description))
+                .replace(PLACEHOLDER_TITLE, escapeHtml(meta.title()))
+                .replace(PLACEHOLDER_DESCRIPTION, escapeHtml(meta.description()))
                 .replace(PLACEHOLDER_SITE_NAME, escapeHtml(serverName))
-                .replace(PLACEHOLDER_URL, escapeHtml(url))
-                .replace(PLACEHOLDER_IMAGE, escapeHtml(image))
-                .replace(PLACEHOLDER_IMAGE_ALT, escapeHtml(title));
+                .replace(PLACEHOLDER_URL, escapeHtml(meta.url()))
+                .replace(PLACEHOLDER_IMAGE, escapeHtml(meta.image()))
+                .replace(PLACEHOLDER_IMAGE_ALT, escapeHtml(meta.title()));
         return html.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private PageMeta buildPageMeta(HttpExchange exchange, String serverName) {
+        String base = (serverName == null || serverName.isBlank()) ? "PEX Survival Server" : serverName.trim();
+        String path = exchange.getRequestURI().getPath();
+        String url = absoluteRequestUrl(exchange);
+        String fallbackImage = absoluteRequestBase(exchange) + "/images/og.png";
+        if (path == null || path.isBlank() || path.equals("/")) {
+            return new PageMeta(
+                    trimToLength(base + " - Home", 80),
+                    trimToLength(base + " の公式Webサイトです。サーバー情報、フィード、プロフィール、WebMapを確認できます。", 220),
+                    url,
+                    fallbackImage
+            );
+        }
+        if (path.equals("/features") || path.startsWith("/features/")) {
+            return new PageMeta(
+                    trimToLength(base + " - Features", 80),
+                    trimToLength(base + " の便利機能、サバイバル拡張、各種システムを確認できます。", 220),
+                    url,
+                    fallbackImage
+            );
+        }
+        if (path.equals("/profile") || path.startsWith("/profile/")) {
+            return new PageMeta(
+                    trimToLength(base + " - Profile", 80),
+                    trimToLength("Minecraftアカウントと連携したプロフィール、投稿、自己紹介を確認できます。", 220),
+                    url,
+                    fallbackImage
+            );
+        }
+        if (path.equals("/feed") || path.startsWith("/feed/")) {
+            PageMeta postMeta = feedPostMeta(exchange, base, path, url, fallbackImage);
+            if (postMeta != null) {
+                return postMeta;
+            }
+            return new PageMeta(
+                    trimToLength(base + " - Feed", 80),
+                    trimToLength(base + " のプレイヤー投稿、Minecraftチャット連携、サーバー内の出来事を確認できます。", 220),
+                    url,
+                    fallbackImage
+            );
+        }
+        if (path.equals("/webmap") || path.startsWith("/webmap/")) {
+            String worldDisplayName = resolveWorldDisplayName(decodeQueryValue(queryValue(exchange, "world")));
+            return new PageMeta(
+                    trimToLength(buildPageTitle(base, worldDisplayName), 80),
+                    trimToLength(buildPageDescription(base, worldDisplayName), 220),
+                    url,
+                    fallbackImage
+            );
+        }
+        return new PageMeta(
+                trimToLength(base, 80),
+                trimToLength(base + " のWebサイトです。", 220),
+                url,
+                fallbackImage
+        );
+    }
+
+    private PageMeta feedPostMeta(HttpExchange exchange, String serverName, String path, String url, String fallbackImage) {
+        String prefix = "/feed/post/";
+        if (!path.startsWith(prefix) || path.length() <= prefix.length()) {
+            return null;
+        }
+        WebServiceModule service = module.getPlugin().getWebServiceModule();
+        if (service == null || !service.isGloballyEnabled()) {
+            return null;
+        }
+        String postId = decodeQueryValue(path.substring(prefix.length()).split("/", 2)[0]);
+        WebPost post = service.findPostById(postId).orElse(null);
+        if (post == null) {
+            return new PageMeta(
+                    trimToLength(serverName + " - Post", 80),
+                    trimToLength("投稿が見つからないか、削除されています。", 220),
+                    url,
+                    fallbackImage
+            );
+        }
+        String author = displayPostAuthor(post);
+        String text = normalizeWhitespace(post.getText());
+        String description = text.isBlank() ? author + " の投稿です。" : text;
+        String image = firstPreviewImage(post, fallbackImage);
+        return new PageMeta(
+                trimToLength(author + " on " + serverName, 80),
+                trimToLength(description, 220),
+                url,
+                absoluteImageUrl(exchange, image)
+        );
+    }
+
+    private String displayPostAuthor(WebPost post) {
+        String nickname = normalizeWhitespace(post.getNickname());
+        if (!nickname.isBlank()) {
+            return nickname;
+        }
+        String displayName = normalizeWhitespace(post.getDisplayName());
+        if (!displayName.isBlank()) {
+            return displayName;
+        }
+        String username = normalizeWhitespace(post.getUsername());
+        return username.isBlank() ? "Player" : username;
+    }
+
+    private String firstPreviewImage(WebPost post, String fallbackImage) {
+        if (post.getAttachments() != null) {
+            for (WebPost.Attachment attachment : post.getAttachments()) {
+                if (attachment == null || attachment.getUrl() == null || attachment.getUrl().isBlank()) {
+                    continue;
+                }
+                String attachmentUrl = attachment.getUrl();
+                if ("image".equalsIgnoreCase(attachment.getType()) || attachmentUrl.startsWith("http") || attachmentUrl.startsWith("/")) {
+                    return attachmentUrl;
+                }
+            }
+        }
+        String faceUrl = normalizeWhitespace(post.getFaceUrl());
+        return faceUrl.isBlank() ? fallbackImage : faceUrl;
+    }
+
+    private String absoluteImageUrl(HttpExchange exchange, String image) {
+        if (image == null || image.isBlank()) {
+            return absoluteRequestBase(exchange) + "/images/og.png";
+        }
+        if (image.startsWith("http://") || image.startsWith("https://")) {
+            return image;
+        }
+        if (image.startsWith("/")) {
+            return absoluteRequestBase(exchange) + image;
+        }
+        return absoluteRequestBase(exchange) + "/" + image;
     }
 
     private String buildPageTitle(String serverName, String worldDisplayName) {
@@ -659,7 +876,7 @@ public class WebMapHttpServer {
         if (worldDisplayName != null && !worldDisplayName.isBlank()) {
             builder.append(" 現在のワールド: ").append(worldDisplayName.trim()).append("。");
         }
-        builder.append(" プレイヤー位置、ウェイポイント、チャンク情報を見やすく確認できます。");
+        builder.append(" プレイヤー位置、ウェイポイント、土地保護エリアを見やすく確認できます。");
         String motd = normalizeWhitespace(ServerInfoUtil.getServerDescription());
         if (!motd.isBlank() && !motd.equalsIgnoreCase(base)) {
             builder.append(" ").append(motd);
@@ -744,6 +961,9 @@ public class WebMapHttpServer {
                 .replace("'", "&#39;");
     }
 
+    private record PageMeta(String title, String description, String url, String image) {
+    }
+
     private byte[] staticResource(String path) throws IOException {
         String normalized = path.startsWith("/") ? path.substring(1) : path;
         try (InputStream inputStream = module.getPlugin().getClass().getClassLoader().getResourceAsStream("website/" + normalized)) {
@@ -803,7 +1023,10 @@ public class WebMapHttpServer {
         long since = parseLong(queryValue(exchange, "since"), 0L);
         int limit = parseInt(queryValue(exchange, "limit"), 50);
         String viewerUuid = service.sessionUuid(bearerToken(exchange)).orElse("");
-        List<Map<String, Object>> posts = service.listPosts(since, limit).stream()
+        List<WebPost> listed = service.listPosts(since, limit);
+        // 表示回数を記録（同一IPは30分のクールダウン）
+        service.recordViews(listed, clientIp(exchange));
+        List<Map<String, Object>> posts = listed.stream()
                 .map(post -> service.postPayload(post, viewerUuid))
                 .toList();
         writeJson(exchange, Map.of(
@@ -839,12 +1062,63 @@ public class WebMapHttpServer {
             }
         } while (true);
         String viewerUuid = service.sessionUuid(bearerToken(exchange)).orElse("");
+        service.recordViews(posts, clientIp(exchange));
         List<Map<String, Object>> payloadPosts = posts.stream().map(post -> service.postPayload(post, viewerUuid)).toList();
         writeJson(exchange, Map.of(
                 "success", true,
                 "posts", payloadPosts,
                 "updatedAt", System.currentTimeMillis()
         ), 0);
+    }
+
+    /**
+     * 投稿の添付画像を配信する ( /api/v1/feed/image/{postId}/{index} )。
+     * Web でアップロードされた data URL 画像をデコードして返し、
+     * 外部 URL (Discord CDN 等) の場合はリダイレクトする。
+     * Minecraft のクリック可能テキストからの閲覧口。
+     */
+    private void handleFeedImage(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        String[] segments = exchange.getRequestURI().getPath().split("/");
+        // ["", "api", "v1", "feed", "image", postId, index]
+        if (segments.length < 7) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
+        WebPost post = service.findPostById(segments[5]).orElse(null);
+        int index = parseInt(segments[6], -1);
+        if (post == null || index < 0 || index >= post.getAttachments().size()) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
+        String url = post.getAttachments().get(index).getUrl();
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            securityHeaders(exchange);
+            exchange.getResponseHeaders().set("Location", url);
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+            return;
+        }
+        String mime = org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.FeedTextUtil.imageDataUrlMime(url);
+        byte[] bytes = org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.FeedTextUtil.decodeImageDataUrl(url);
+        if (mime == null || bytes == null) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
+        securityHeaders(exchange);
+        exchange.getResponseHeaders().set("Content-Type", mime);
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=86400, immutable");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(bytes);
+        }
     }
 
     private void handleFeedPost(HttpExchange exchange) throws IOException {
@@ -859,8 +1133,7 @@ public class WebMapHttpServer {
         WebServiceModule.PostResult result = service.createWebPost(
                 bearerToken(exchange),
                 stringValue(request.get("text")),
-                attachmentList(request.get("attachments")),
-                stringValue(request.get("replyToId"))
+                attachmentList(exchange, request.get("attachments"))
         );
         if (!result.success()) {
             writeJson(exchange, Map.of("success", false, "message", result.message()), 0);
@@ -1066,7 +1339,7 @@ public class WebMapHttpServer {
         return value instanceof String string ? string : "";
     }
 
-    private List<WebPost.Attachment> attachmentList(Object value) {
+    private List<WebPost.Attachment> attachmentList(HttpExchange exchange, Object value) {
         if (!(value instanceof List<?> rawList)) {
             return List.of();
         }
@@ -1082,9 +1355,17 @@ public class WebMapHttpServer {
             if (!urlString.startsWith("data:image/")) {
                 continue;
             }
+            StoredUpload upload = storeUpload(exchange, urlString);
+            if (upload == null) {
+                continue;
+            }
             WebPost.Attachment attachment = new WebPost.Attachment();
             attachment.setType("image");
-            attachment.setUrl(urlString.length() > 1_200_000 ? urlString.substring(0, 1_200_000) : urlString);
+            attachment.setUrl(upload.url());
+            if (map.get("name") instanceof String name && !name.isBlank()) {
+                attachment.setName(org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.FeedTextUtil
+                        .sanitizeFileName(name, ""));
+            }
             Object width = map.get("width");
             Object height = map.get("height");
             if (width instanceof Number number) {
@@ -1099,6 +1380,61 @@ public class WebMapHttpServer {
             }
         }
         return attachments;
+    }
+
+    private StoredUpload storeUpload(HttpExchange exchange, String dataUrl) {
+        int commaIndex = dataUrl == null ? -1 : dataUrl.indexOf(',');
+        if (commaIndex <= 0) {
+            return null;
+        }
+        String header = dataUrl.substring(0, commaIndex).toLowerCase(Locale.ROOT);
+        String extension = imageExtension(header);
+        if (extension.isBlank() || !header.contains(";base64")) {
+            return null;
+        }
+        byte[] bytes;
+        try {
+            bytes = Base64.getDecoder().decode(dataUrl.substring(commaIndex + 1));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+        if (bytes.length == 0 || bytes.length > 1_500_000) {
+            return null;
+        }
+        String fileName = java.util.UUID.randomUUID() + "." + extension;
+        File directory = new File(module.getPlugin().getConfigManager().getBaseDir(), "WebService/uploads/feed");
+        if (!directory.exists() && !directory.mkdirs()) {
+            return null;
+        }
+        File file = new File(directory, fileName);
+        try (FileOutputStream outputStream = new FileOutputStream(file)) {
+            outputStream.write(bytes);
+        } catch (IOException ignored) {
+            return null;
+        }
+        return new StoredUpload(absoluteRequestBase(exchange) + "/uploads/feed/" + fileName);
+    }
+
+    private String imageExtension(String dataUrlHeader) {
+        if (dataUrlHeader == null) {
+            return "";
+        }
+        if (dataUrlHeader.startsWith("data:image/jpeg") || dataUrlHeader.startsWith("data:image/jpg")) {
+            return "jpg";
+        }
+        if (dataUrlHeader.startsWith("data:image/png")) {
+            return "png";
+        }
+        if (dataUrlHeader.startsWith("data:image/gif")) {
+            return "gif";
+        }
+        if (dataUrlHeader.startsWith("data:image/webp")) {
+            return "webp";
+        }
+        return "";
+    }
+
+    private record StoredUpload(String url) {
     }
 
     private World resolveWorldByName(String worldName) {
@@ -1225,11 +1561,8 @@ public class WebMapHttpServer {
     }
 
     private boolean guard(HttpExchange exchange, WebMapRateLimiter limiter, String prefix) throws IOException {
-        String remote = "unknown";
-        if (exchange.getRemoteAddress() != null && exchange.getRemoteAddress().getAddress() != null) {
-            remote = exchange.getRemoteAddress().getAddress().getHostAddress();
-        }
-        String key = prefix + ":" + remote;
+        // HAProxy PROXY protocol v2 有効時は実クライアント IP でレート制限する
+        String key = prefix + ":" + clientIp(exchange);
         if (limiter.allow(key)) {
             return true;
         }

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { ComposeCard } from '../features/feed/ComposeCard';
+import { MarkdownText } from '../features/feed/MarkdownText';
 import { displayName } from '../features/webservice/useWebService';
-import { IconArrowLeft, IconComment, IconRepost, IconHeart, IconHeartFilled, IconShare, IconBell, IconTrend, IconSearch, IconViews } from '../components/common/Icons';
+import { IconArrowLeft, IconRepost, IconHeart, IconHeartFilled, IconShare, IconBell, IconTrend, IconSearch, IconViews } from '../components/common/Icons';
 import type { AuthProfile, WebPost, WebPostAttachment } from '../features/webservice/types';
 
 type SearchUser = {
@@ -28,7 +29,7 @@ type FeedPageProps = {
   busy: boolean;
   profile: AuthProfile | null;
   posts: WebPost[];
-  onPost: (text: string, attachments: WebPostAttachment[], replyToId?: string) => Promise<boolean>;
+  onPost: (text: string, attachments: WebPostAttachment[]) => Promise<boolean>;
   onLike: (postId: string) => Promise<boolean>;
   onRepost: (postId: string) => Promise<boolean>;
   onNavigate: (href: string) => void;
@@ -75,15 +76,16 @@ function compactCount(value: number) {
   return String(value);
 }
 
-function viewCount(post: WebPost) {
-  return post.views ?? Math.max(1, (post.likes ?? 0) * 48 + (post.reposts ?? 0) * 76 + (post.replies ?? 0) * 24 + 32);
+function sourceLabel(source: string) {
+  if (source === 'web') return 'Web';
+  if (source === 'discord') return 'Discord';
+  return 'Minecraft';
 }
 
 function topLikedPosts(posts: WebPost[]) {
   return posts
-    .filter((post) => !post.replyToId)
     .slice()
-    .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0) || (b.reposts ?? 0) - (a.reposts ?? 0) || viewCount(b) - viewCount(a) || b.createdAt - a.createdAt)
+    .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0) || (b.reposts ?? 0) - (a.reposts ?? 0) || (b.views ?? 0) - (a.views ?? 0) || b.createdAt - a.createdAt)
     .slice(0, 3);
 }
 
@@ -123,10 +125,7 @@ function notificationItems(posts: WebPost[], profile: AuthProfile): FeedNotifica
   for (const post of posts) {
     const isOwnPost = post.username.toLowerCase() === username;
     const mentionsMe = post.text.toLowerCase().includes(`@${username}`) && !isOwnPost;
-    const repliesToMe = post.replyToUsername?.toLowerCase() === username;
-    if (repliesToMe) {
-      items.push({ id: `reply-${post.id}`, label: '返信', text: `${displayName(post)} さんが返信しました`, href: `/feed/post/${post.id}`, createdAt: post.createdAt });
-    } else if (mentionsMe) {
+    if (mentionsMe) {
       items.push({ id: `mention-${post.id}`, label: 'メンション', text: `${displayName(post)} さんがあなたをメンションしました`, href: `/feed/post/${post.id}`, createdAt: post.createdAt });
     }
     if (isOwnPost && (post.likes ?? 0) > 0) {
@@ -139,70 +138,15 @@ function notificationItems(posts: WebPost[], profile: AuthProfile): FeedNotifica
   return items.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-function replyCountFor(posts: WebPost[], postId: string) {
-  return posts.filter((post) => post.replyToId === postId).length;
-}
-
-function threadPostsFor(posts: WebPost[], rootId: string) {
-  const root = posts.find((post) => post.id === rootId);
-  if (!root) return [];
-  const children = new Map<string, WebPost[]>();
-  for (const post of posts) {
-    if (!post.replyToId) continue;
-    const list = children.get(post.replyToId) ?? [];
-    list.push(post);
-    children.set(post.replyToId, list);
-  }
-  const result: WebPost[] = [];
-  const append = (post: WebPost) => {
-    result.push(post);
-    const replies = (children.get(post.id) ?? []).slice().sort((a, b) => a.createdAt - b.createdAt);
-    for (const reply of replies) append(reply);
-  };
-  append(root);
-  return result;
-}
-
-function syntheticRepliesFor(post: WebPost): WebPost[] {
-  const count = post.replies ?? 0;
-  if (count <= 0) return [];
-  return Array.from({ length: count }, (_, index) => ({
-    id: `${post.id}-reply-placeholder-${index + 1}`,
-    uuid: `${post.uuid}-reply-placeholder-${index + 1}`,
-    username: post.username,
-    displayName: post.displayName,
-    nickname: post.nickname,
-    faceUrl: post.faceUrl,
-    source: post.source,
-    text: `返信 ${index + 1} 件目の表示用データです。実際の返信本文はまだ取得されていません。`,
-    attachments: [],
-    createdAt: post.createdAt + (index + 1) * 60_000,
-    replyToId: post.id,
-    replyToUsername: post.username,
-    likes: 0,
-    replies: 0,
-    reposts: 0,
-    likedByMe: false,
-    repostedByMe: false,
-  }));
-}
-
-function FeedPostCard({ post, profile, busy, replyCount, showThreadLink, isThreadReply, repostedBy, onPost, onLike, onRepost, onNavigate }: {
+function FeedPostCard({ post, busy, repostedBy, onLike, onRepost, onNavigate }: {
   post: WebPost;
-  profile: AuthProfile;
   busy: boolean;
-  replyCount: number;
-  showThreadLink: boolean;
-  isThreadReply: boolean;
   repostedBy?: AuthProfile;
-  onPost: (text: string, attachments: WebPostAttachment[], replyToId?: string) => Promise<boolean>;
   onLike: (postId: string) => Promise<boolean>;
   onRepost: (postId: string) => Promise<boolean>;
   onNavigate: (href: string) => void;
 }) {
-  const [replying, setReplying] = useState(false);
   const [copied, setCopied] = useState(false);
-  const isReplyPost = Boolean(post.replyToId);
 
   const copyUrl = async () => {
     await copyText(`${window.location.origin}/feed/post/${post.id}`);
@@ -210,8 +154,14 @@ function FeedPostCard({ post, profile, busy, replyCount, showThreadLink, isThrea
     window.setTimeout(() => setCopied(false), 1400);
   };
 
+  const openDetail = (event: React.MouseEvent<HTMLElement>) => {
+    // 本文中のリンククリックは投稿詳細へ遷移させない
+    if ((event.target as HTMLElement).closest('a')) return;
+    onNavigate(`/feed/post/${post.id}`);
+  };
+
   return (
-    <article className={`post-card${isThreadReply ? ' is-thread-reply' : ''}`}>
+    <article className="post-card">
       {repostedBy ? <div className="post-reposted-by"><IconRepost size={15} /> {displayName(repostedBy)} reposted</div> : null}
       <button className="post-avatar-link" type="button" onClick={() => onNavigate(`/profile/@${post.username}`)}>
         <img className="post-avatar" src={post.faceUrl || '/images/clear.png'} alt="" />
@@ -224,31 +174,27 @@ function FeedPostCard({ post, profile, busy, replyCount, showThreadLink, isThrea
           </button>
           <span className="post-head-dot">·</span>
           <button className="post-time-button" type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)}>{postDateLabel(post.createdAt)}</button>
-          {isThreadReply ? <span className="post-reply-badge">返信</span> : null}
-          <span className="post-source-badge">{post.source === 'web' ? 'Web' : 'Minecraft'}</span>
+          <span className={`post-source-badge post-source-${post.source}`}>{sourceLabel(post.source)}</span>
         </div>
-        {post.replyToUsername ? <button className="reply-context" type="button" onClick={() => onNavigate(`/profile/@${post.replyToUsername}`)}>返信先 <span>@{post.replyToUsername}</span></button> : null}
-        <button className="post-click-body" type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)}>
-          <p>{post.text || '画像投稿'}</p>
-          {post.attachments?.length ? <div className="post-images">{post.attachments.map((attachment, index) => <img key={`${post.id}-${index}`} src={attachment.url} alt="" />)}</div> : null}
-        </button>
+        <div className="post-click-body" role="link" tabIndex={0} onClick={openDetail} onKeyDown={(event) => { if (event.key === 'Enter') onNavigate(`/feed/post/${post.id}`); }}>
+          <div className="post-text">{post.text ? <MarkdownText text={post.text} /> : '画像投稿'}</div>
+          {post.attachments?.length ? (
+            <div className="post-images">
+              {post.attachments.map((attachment, index) => (
+                <img key={`${post.id}-${index}`} src={attachment.url} alt={attachment.name ?? ''} title={attachment.name ?? ''} loading="lazy" />
+              ))}
+            </div>
+          ) : null}
+          {post.source === 'discord' && post.externalUrl ? (
+            <a className="md-link post-external-link" href={post.externalUrl} target="_blank" rel="noopener noreferrer nofollow" onClick={(event) => event.stopPropagation()}>Discordで開く</a>
+          ) : null}
+        </div>
         <div className="post-actions">
-          {isThreadReply ? (
-            <span className="post-action post-action-reply-disabled" title="返信の中では返信できません">
-              <span className="post-action-icon"><IconComment size={17} /></span>
-              <span className="post-action-count">返信不可</span>
-            </span>
-          ) : (
-            <button className="post-action post-action-reply" type="button" onClick={() => setReplying((value) => !value)}>
-              <span className="post-action-icon"><IconComment size={17} /></span>
-              <span className="post-action-count">{Math.max(replyCount, post.replies ?? 0)}</span>
-            </button>
-          )}
-          <button className={`post-action post-action-repost${post.repostedByMe ? ' is-active' : ''}`} type="button" onClick={() => onRepost(post.id)}>
+          <button className={`post-action post-action-repost${post.repostedByMe ? ' is-active' : ''}`} type="button" disabled={busy} onClick={() => onRepost(post.id)}>
             <span className="post-action-icon"><IconRepost size={17} /></span>
             <span className="post-action-count">{post.reposts ?? 0}</span>
           </button>
-          <button className={`post-action post-action-like${post.likedByMe ? ' is-active' : ''}`} type="button" onClick={() => onLike(post.id)}>
+          <button className={`post-action post-action-like${post.likedByMe ? ' is-active' : ''}`} type="button" disabled={busy} onClick={() => onLike(post.id)}>
             <span className="post-action-icon">{post.likedByMe ? <IconHeartFilled size={17} /> : <IconHeart size={17} />}</span>
             <span className="post-action-count">{post.likes ?? 0}</span>
           </button>
@@ -256,15 +202,11 @@ function FeedPostCard({ post, profile, busy, replyCount, showThreadLink, isThrea
             <span className="post-action-icon"><IconShare size={17} /></span>
             {copied ? <span className="post-action-copied">コピー済み</span> : null}
           </button>
-          <span className="post-action post-action-view" title="表示回数">
+          <span className="post-action post-action-view" title="表示回数 (同一IPは30分に1回カウント)">
             <span className="post-action-icon"><IconViews size={17} /></span>
-            <span className="post-action-count">{compactCount(viewCount(post))}</span>
+            <span className="post-action-count">{compactCount(post.views ?? 0)}</span>
           </span>
         </div>
-        {!isReplyPost && showThreadLink && Math.max(replyCount, post.replies ?? 0) > 0 ? (
-          <button className="post-thread-link" type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)}>返信を表示</button>
-        ) : null}
-        {!isThreadReply && replying ? <ComposeCard compact busy={busy} disabled={false} profile={profile} submitLabel="返信" placeholder={`@${post.username} に返信`} onCancel={() => setReplying(false)} onPost={(text, attachments) => onPost(text, attachments, post.id).then((ok) => { if (ok) setReplying(false); return ok; })} /> : null}
       </div>
     </article>
   );
@@ -282,12 +224,7 @@ export function FeedPage({ busy, profile, posts, onPost, onLike, onRepost, onNav
     : [];
   const displayTimelinePosts: FeedDisplayPost[] = profile ? timelineDisplayPosts(posts, profile) : posts.map((post) => ({ post }));
   const visibleDisplayPosts: FeedDisplayPost[] = route.postId
-    ? (() => {
-        const thread = threadPostsFor(posts, route.postId);
-        const root = thread[0] ?? posts.find((post) => post.id === route.postId);
-        if (!root) return [];
-        return (thread.length > 1 ? thread : [root, ...syntheticRepliesFor(root)]).map((post) => ({ post }));
-      })()
+    ? posts.filter((post) => post.id === route.postId).map((post) => ({ post }))
     : route.username
       ? displayTimelinePosts.filter(({ post, repostedBy }) => post.username.toLowerCase() === route.username || repostedBy?.username.toLowerCase() === route.username)
       : term
@@ -351,9 +288,8 @@ export function FeedPage({ busy, profile, posts, onPost, onLike, onRepost, onNav
             ) : null}
           </header>
           {!route.username && !route.postId ? <ComposeCard busy={busy} disabled={false} profile={profile} onPost={onPost} /> : null}
-          {route.postId && visiblePosts.length > 1 ? <div className="thread-replies-label">返信 {visiblePosts.length - 1} 件</div> : null}
           <div className="timeline">
-            {visibleDisplayPosts.length ? visibleDisplayPosts.map(({ post, repostedBy }) => <FeedPostCard key={repostedBy ? `${repostedBy.username}-repost-${post.id}` : post.id} post={post} profile={profile} busy={busy} replyCount={replyCountFor(posts, post.id)} showThreadLink={!route.postId} isThreadReply={Boolean(route.postId && post.id !== route.postId)} repostedBy={repostedBy} onPost={onPost} onLike={onLike} onRepost={onRepost} onNavigate={onNavigate} />) : <div className="empty-feed">{term ? `「${search}」に一致する投稿は見つかりませんでした。` : 'まだ投稿はありません。最初の投稿を開始しましょう！！'}</div>}
+            {visibleDisplayPosts.length ? visibleDisplayPosts.map(({ post, repostedBy }) => <FeedPostCard key={repostedBy ? `${repostedBy.username}-repost-${post.id}` : post.id} post={post} busy={busy} repostedBy={repostedBy} onLike={onLike} onRepost={onRepost} onNavigate={onNavigate} />) : <div className="empty-feed">{term ? `「${search}」に一致する投稿は見つかりませんでした。` : 'まだ投稿はありません。最初の投稿を開始しましょう！！'}</div>}
           </div>
         </main>
         <aside className="feed-right-rail" aria-label="Minecraft Twitter side panel">
@@ -394,7 +330,7 @@ export function FeedPage({ busy, profile, posts, onPost, onLike, onRepost, onNav
                   </button>
                 ))}
               </div>
-            ) : <p>新しい返信、いいね、Minecraft連携通知がここに表示されます。</p>}
+            ) : <p>新しいいいね、リポスト、メンション通知がここに表示されます。</p>}
             {notifications.length > previewNotifications.length ? (
               <button className="feed-widget-more" type="button" onClick={() => setNotificationsOpen(true)}>通知をすべて表示 =&gt;</button>
             ) : null}
@@ -406,7 +342,7 @@ export function FeedPage({ busy, profile, posts, onPost, onLike, onRepost, onNav
                 <button key={post.id} type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)}>
                   <strong>#{index + 1} {displayName(post)}</strong>
                   <span>{post.text || '画像投稿'}</span>
-                  <small>❤ {compactCount(post.likes ?? 0)} · ↻ {compactCount(post.reposts ?? 0)} · {compactCount(viewCount(post))} views</small>
+                  <small>❤ {compactCount(post.likes ?? 0)} · ↻ {compactCount(post.reposts ?? 0)} · {compactCount(post.views ?? 0)} views</small>
                 </button>
               ))}
             </div>

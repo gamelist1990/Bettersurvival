@@ -8,9 +8,7 @@ import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.Webhook;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
@@ -19,6 +17,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.M
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.FeedTextUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebPost;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 
@@ -29,15 +28,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.time.Instant;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class DiscordWebhookBotModeService {
     private static final int JOIN_COLOR = 0x57F287;
     private static final int LEAVE_COLOR = 0xED4245;
-    private static final String URL_REGEX = "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+";
-    private static final Pattern LINK_OR_URL_PATTERN = Pattern.compile(
-            "\\[([^\\]\\r\\n]+)]\\((" + URL_REGEX + ")\\)|(" + URL_REGEX + ")");
 
     private final Loader plugin;
     private final DiscordWebhookClient client;
@@ -105,6 +99,48 @@ public class DiscordWebhookBotModeService {
                 message.trim());
     }
 
+    /**
+     * Web 投稿を Discord へ中継する。
+     * 本文は素の URL を [サイト名](URL) に変換し、
+     * Web でアップロードされた画像 (data URL) はファイルとして添付する。
+     */
+    public void sendWebServicePost(WebPost post) {
+        if (!isActive() || post == null || (post.getText().isBlank() && post.getAttachments().isEmpty())) {
+            return;
+        }
+        DiscordWebhookSettings settings = settingsSupplier.get();
+        if (settings == null || !settings.isBotWebServiceIntegrationEnabled()) {
+            return;
+        }
+        StringBuilder content = new StringBuilder(FeedTextUtil.toDiscordContent(post.getText()));
+        List<DiscordWebhookClient.FileUpload> files = new ArrayList<>();
+        int imageIndex = 1;
+        for (WebPost.Attachment attachment : post.getAttachments()) {
+            if (attachment == null || attachment.getUrl().isBlank()) {
+                continue;
+            }
+            DiscordWebhookClient.FileUpload upload = files.size() < 4 ? loadAttachmentFile(attachment, imageIndex) : null;
+            if (upload != null) {
+                files.add(upload);
+                imageIndex++;
+                continue;
+            }
+            // ファイル化できない添付はリンクとして載せる
+            if (attachment.getUrl().startsWith("http://") || attachment.getUrl().startsWith("https://")) {
+                if (!content.isEmpty()) {
+                    content.append('\n');
+                }
+                content.append(attachment.getUrl());
+            }
+        }
+        sendWebhookMessage(
+                settings.getBotChannelId(),
+                displayWebAuthor(post),
+                post.getFaceUrl(),
+                content.toString(),
+                files);
+    }
+
     private void sendPlayerSystemEmbed(Player player, String message, int onlineCount, int color) {
         DiscordWebhookSettings settings = settingsSupplier.get();
         if (settings == null) {
@@ -120,6 +156,11 @@ public class DiscordWebhookBotModeService {
     }
 
     private void sendWebhookMessage(String channelId, String username, String avatarUrl, String content) {
+        sendWebhookMessage(channelId, username, avatarUrl, content, List.of());
+    }
+
+    private void sendWebhookMessage(String channelId, String username, String avatarUrl, String content,
+                                    List<DiscordWebhookClient.FileUpload> files) {
         getOrCreateWebhookUrl(channelId).thenAccept(webhookUrl -> {
             if (webhookUrl.isBlank()) {
                 return;
@@ -131,7 +172,7 @@ public class DiscordWebhookBotModeService {
             JsonObject allowedMentions = new JsonObject();
             allowedMentions.add("parse", new JsonArray());
             payload.add("allowed_mentions", allowedMentions);
-            client.send(webhookUrl, payload);
+            client.send(webhookUrl, payload, files);
         });
     }
 
@@ -239,7 +280,14 @@ public class DiscordWebhookBotModeService {
                 .append(Component.text(message.authorName(), NamedTextColor.WHITE))
                 .append(Component.text(": ", NamedTextColor.DARK_GRAY));
 
-        Component body = buildMessageComponent(message.content());
+        // 本文: URL はサイト名のみのクリック可能テキストに / Markdown 装飾も反映
+        Component body = FeedTextUtil.toMinecraftComponent(message.content(), NamedTextColor.GRAY);
+        // 添付: 画像はタイトルだけ表示し、クリックで Web (Discord CDN) から閲覧できる
+        for (net.dv8tion.jda.api.entities.Message.Attachment attachment : message.attachments()) {
+            String label = (attachment.isImage() ? "画像: " : "ファイル: ") + attachment.getFileName();
+            body = body.append(Component.text(" "))
+                    .append(FeedTextUtil.attachmentComponent(label, attachment.getUrl()));
+        }
         Component fullMessage = header.append(body);
 
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -261,6 +309,7 @@ public class DiscordWebhookBotModeService {
             WebPost.Attachment webAttachment = new WebPost.Attachment();
             webAttachment.setType(attachment.isImage() ? "image" : "file");
             webAttachment.setUrl(attachment.getUrl());
+            webAttachment.setName(attachment.getFileName());
             webAttachment.setWidth(attachment.getWidth());
             webAttachment.setHeight(attachment.getHeight());
             webAttachments.add(webAttachment);
@@ -273,36 +322,7 @@ public class DiscordWebhookBotModeService {
                 message.messageId(),
                 message.messageUrl(),
                 message.content(),
-                webAttachments,
-                message.replyToMessageId());
-    }
-
-    private Component buildMessageComponent(String text) {
-        Component result = Component.empty();
-        Matcher matcher = LINK_OR_URL_PATTERN.matcher(text);
-        int last = 0;
-        while (matcher.find()) {
-            if (matcher.start() > last) {
-                result = result.append(Component.text(text.substring(last, matcher.start()), NamedTextColor.GRAY));
-            }
-
-            String label = matcher.group(1);
-            String markdownUrl = matcher.group(2);
-            String plainUrl = matcher.group(3);
-            String displayText = label != null ? label : plainUrl;
-            String openUrl = markdownUrl != null ? markdownUrl : plainUrl;
-
-            result = result.append(
-                    Component.text(displayText)
-                            .color(NamedTextColor.BLUE)
-                            .decorate(TextDecoration.UNDERLINED)
-                            .clickEvent(ClickEvent.openUrl(openUrl)));
-            last = matcher.end();
-        }
-        if (last < text.length()) {
-            result = result.append(Component.text(text.substring(last), NamedTextColor.GRAY));
-        }
-        return result;
+                webAttachments);
     }
 
     private String normalizedPlayerName(Player player) {
@@ -311,6 +331,60 @@ public class DiscordWebhookBotModeService {
             return rawName;
         }
         return FloodgateUtil.stripPrefix(rawName).replace("_", " ");
+    }
+
+    /**
+     * Web 投稿の添付をファイルアップロードに変換する。
+     * data URL または自サーバーの /uploads/feed/ に保存された画像に対応。
+     * 変換できない場合は null。
+     */
+    private DiscordWebhookClient.FileUpload loadAttachmentFile(WebPost.Attachment attachment, int imageIndex) {
+        String url = attachment.getUrl();
+        byte[] bytes = FeedTextUtil.decodeImageDataUrl(url);
+        String mime = FeedTextUtil.imageDataUrlMime(url);
+        if (bytes == null || mime == null) {
+            // 自サーバーに保存されたアップロード画像を読み込む
+            int marker = url.indexOf("/uploads/feed/");
+            if (marker < 0) {
+                return null;
+            }
+            String fileName = url.substring(marker + "/uploads/feed/".length());
+            if (fileName.isBlank() || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
+                return null;
+            }
+            java.io.File file = new java.io.File(
+                    plugin.getConfigManager().getBaseDir(), "WebService/uploads/feed/" + fileName);
+            if (!file.isFile() || file.length() > 8_000_000L) {
+                return null;
+            }
+            try {
+                bytes = java.nio.file.Files.readAllBytes(file.toPath());
+            } catch (java.io.IOException error) {
+                return null;
+            }
+            String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+            mime = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "image/jpeg"
+                    : lower.endsWith(".gif") ? "image/gif"
+                    : lower.endsWith(".webp") ? "image/webp"
+                    : "image/png";
+        }
+        String extension = FeedTextUtil.extensionForMime(mime);
+        String fallback = "image" + imageIndex + "." + extension;
+        String fileName = FeedTextUtil.sanitizeFileName(attachment.getName(), fallback);
+        if (!fileName.toLowerCase(java.util.Locale.ROOT).endsWith("." + extension)) {
+            fileName = fileName + "." + extension;
+        }
+        return new DiscordWebhookClient.FileUpload(fileName, mime, bytes);
+    }
+
+    private String displayWebAuthor(WebPost post) {
+        if (post.getNickname() != null && !post.getNickname().isBlank()) {
+            return post.getNickname();
+        }
+        if (post.getDisplayName() != null && !post.getDisplayName().isBlank()) {
+            return post.getDisplayName();
+        }
+        return post.getUsername() == null || post.getUsername().isBlank() ? "Web" : post.getUsername();
     }
 
     private void registerDiscordListener() {

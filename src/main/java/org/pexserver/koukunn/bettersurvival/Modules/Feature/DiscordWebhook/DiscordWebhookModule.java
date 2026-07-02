@@ -14,6 +14,7 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Bot.DiscordWebhookBotModeService;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Webhook.DiscordWebhookEventService;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Module.Webhook.DiscordWebhookStatusService;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebPost;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 public class DiscordWebhookModule implements Listener {
@@ -94,6 +95,14 @@ public class DiscordWebhookModule implements Listener {
 
     public boolean sendStatusNow(Player sender) {
         return statusService.sendStatusNow(sender);
+    }
+
+    public void sendWebServicePost(WebPost post) {
+        DiscordWebhookSettings current = getSettings();
+        if (!isBotModeActive(current) || !current.isBotWebServiceIntegrationEnabled()) {
+            return;
+        }
+        botModeService.sendWebServicePost(post);
     }
 
     public void openMenu(Player player) {

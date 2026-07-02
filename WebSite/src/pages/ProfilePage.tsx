@@ -3,7 +3,8 @@ import { SectionHeader } from '../components/common/SectionHeader';
 import { AuthPanel } from '../features/auth/AuthPanel';
 import { ProfileEditor } from '../features/profile/ProfileEditor';
 import { profileToDraft } from '../features/webservice/api';
-import { IconArrowLeft, IconPin, IconLink, IconCalendar, IconTrend, IconRepost, IconComment, IconHeart, IconHeartFilled, IconShare, IconViews } from '../components/common/Icons';
+import { MarkdownText } from '../features/feed/MarkdownText';
+import { IconArrowLeft, IconPin, IconLink, IconCalendar, IconTrend, IconRepost, IconHeart, IconHeartFilled, IconShare, IconViews } from '../components/common/Icons';
 import type { AuthProfile, ProfileDraft, WebPost } from '../features/webservice/types';
 
 type ProfilePageProps = {
@@ -38,7 +39,7 @@ type PublicProfile = {
   createdAt?: number;
 };
 
-type ProfileTab = 'posts' | 'media' | 'replies';
+type ProfileTab = 'posts' | 'media';
 
 type ProfileDisplayPost = {
   post: WebPost;
@@ -69,12 +70,11 @@ function postDateLabel(createdAt: number) {
 }
 
 function viewCount(post: WebPost) {
-  return post.views ?? Math.max(1, (post.likes ?? 0) * 48 + (post.reposts ?? 0) * 76 + (post.replies ?? 0) * 24 + 32);
+  return post.views ?? 0;
 }
 
 function topLikedPosts(posts: WebPost[]) {
   return posts
-    .filter((post) => !post.replyToId)
     .slice()
     .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0) || (b.reposts ?? 0) - (a.reposts ?? 0) || viewCount(b) - viewCount(a) || b.createdAt - a.createdAt)
     .slice(0, 3);
@@ -165,17 +165,16 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
   const viewedProfile = isOwnProfile && profile ? profileFromAuth(profile) : requestedUsername ? profileIndex.get(requestedUsername) ?? null : profile ? profileFromAuth(profile) : null;
   const ownRepostProfile = isOwnProfile && profile ? profileFromAuth(profile) : null;
   const profilePosts = viewedProfile ? posts.filter((post) => post.username.toLowerCase() === viewedProfile.username.toLowerCase()) : [];
-  const profileDisplayPosts: ProfileDisplayPost[] = viewedProfile ? [
-    ...profilePosts.map((post) => ({ post })),
+  const profileDisplayPostsRaw: ProfileDisplayPost[] = viewedProfile ? [
+    ...profilePosts.map((post): ProfileDisplayPost => ({ post })),
     ...(ownRepostProfile ? posts
       .filter((post) => post.repostedByMe && post.username.toLowerCase() !== ownRepostProfile.username.toLowerCase())
-      .map((post) => ({ post, repostedBy: ownRepostProfile })) : []),
-  ].sort((a, b) => (b.repostedBy ? b.post.createdAt + 1 : b.post.createdAt) - (a.repostedBy ? a.post.createdAt + 1 : a.post.createdAt)) : [];
-  const regularProfilePosts = profileDisplayPosts.filter(({ post }) => !post.replyToId);
+      .map((post): ProfileDisplayPost => ({ post, repostedBy: ownRepostProfile })) : []),
+  ] : [];
+  const profileDisplayPosts = profileDisplayPostsRaw.sort((a, b) => (b.repostedBy ? b.post.createdAt + 1 : b.post.createdAt) - (a.repostedBy ? a.post.createdAt + 1 : a.post.createdAt));
   const mediaProfilePosts = profileDisplayPosts.filter(({ post }) => post.attachments?.some((attachment) => attachment.type === 'image' || attachment.url));
-  const replyProfilePosts = profileDisplayPosts.filter(({ post, repostedBy }) => !repostedBy && post.replyToId);
-  const visibleProfilePosts = activeTab === 'media' ? mediaProfilePosts : activeTab === 'replies' ? replyProfilePosts : regularProfilePosts;
-  const emptyMessage = activeTab === 'media' ? 'まだ画像投稿はありません。' : activeTab === 'replies' ? 'まだ返信はありません。' : 'まだ投稿はありません。';
+  const visibleProfilePosts = activeTab === 'media' ? mediaProfilePosts : profileDisplayPosts;
+  const emptyMessage = activeTab === 'media' ? 'まだ画像投稿はありません。' : 'まだ投稿はありません。';
   const trendingPosts = useMemo(() => topLikedPosts(posts), [posts]);
 
   useEffect(() => setActiveTab('posts'), [viewedProfile?.username]);
@@ -250,7 +249,6 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
         <nav className="twitter-profile-tabs" aria-label="プロフィール投稿フィルター">
           <button className={activeTab === 'posts' ? 'is-active' : ''} type="button" aria-pressed={activeTab === 'posts'} onClick={() => setActiveTab('posts')}>投稿</button>
           <button className={activeTab === 'media' ? 'is-active' : ''} type="button" aria-pressed={activeTab === 'media'} onClick={() => setActiveTab('media')}>画像</button>
-          <button className={activeTab === 'replies' ? 'is-active' : ''} type="button" aria-pressed={activeTab === 'replies'} onClick={() => setActiveTab('replies')}>返信</button>
         </nav>
         <div className="twitter-profile-posts">
           {visibleProfilePosts.length ? visibleProfilePosts.map(({ post, repostedBy }) => (
@@ -267,19 +265,13 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
                   </button>
                   <span className="post-head-dot">·</span>
                   <button className="post-time-button" type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)}>{postDateLabel(post.createdAt)}</button>
-                  {post.replyToId ? <span className="post-reply-badge">返信</span> : null}
-                  <span className="post-source-badge">{post.source === 'web' ? 'Web' : 'Minecraft'}</span>
+                  <span className={`post-source-badge post-source-${post.source}`}>{post.source === 'web' ? 'Web' : post.source === 'discord' ? 'Discord' : 'Minecraft'}</span>
                 </div>
-                {post.replyToUsername ? <button className="reply-context" type="button" onClick={() => onNavigate(`/profile/@${post.replyToUsername}`)}>返信先 <span>@{post.replyToUsername}</span></button> : null}
-                <button className="post-click-body" type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)}>
-                  <p>{post.text || '画像投稿'}</p>
-                  {post.attachments?.length ? <div className="post-images profile-post-images">{post.attachments.map((attachment, index) => <img key={`${post.id}-${index}`} src={attachment.url} alt="" />)}</div> : null}
-                </button>
+                <div className="post-click-body" role="link" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest('a')) onNavigate(`/feed/post/${post.id}`); }}>
+                  <div className="post-text">{post.text ? <MarkdownText text={post.text} /> : '画像投稿'}</div>
+                  {post.attachments?.length ? <div className="post-images profile-post-images">{post.attachments.map((attachment, index) => <img key={`${post.id}-${index}`} src={attachment.url} alt={attachment.name ?? ''} title={attachment.name ?? ''} loading="lazy" />)}</div> : null}
+                </div>
                 <div className="post-actions profile-post-stats">
-                  <button className="post-action post-action-reply" type="button" onClick={() => onNavigate(`/feed/post/${post.id}`)} title="返信へ移動">
-                    <span className="post-action-icon"><IconComment size={17} /></span>
-                    <span className="post-action-count">{compactCount(post.replies ?? 0)}</span>
-                  </button>
                   <button className={`post-action post-action-repost${post.repostedByMe ? ' is-active' : ''}`} type="button" onClick={() => onRepost(post.id)}>
                     <span className="post-action-icon"><IconRepost size={17} /></span>
                     <span className="post-action-count">{compactCount(post.reposts ?? 0)}</span>

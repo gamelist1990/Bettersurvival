@@ -10,6 +10,10 @@ public record WebMapMarkerRecord(
         int z,
         int chunkX,
         int chunkZ,
-        int rotation
+        int rotation,
+        int radius,
+        String ownerType,
+        String ownerName,
+        java.util.List<String> members
 ) {
 }

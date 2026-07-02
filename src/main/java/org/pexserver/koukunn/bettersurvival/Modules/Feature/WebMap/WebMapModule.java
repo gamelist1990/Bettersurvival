@@ -32,6 +32,10 @@ import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimRegion;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.Party;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyRank;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandle;
@@ -1181,104 +1185,74 @@ public class WebMapModule implements Listener {
                     frame.getLocation().getBlockZ(),
                     chunkX,
                     chunkZ,
-                    waypointRotation(frame)
+                    waypointRotation(frame),
+                    0,
+                    "waypoint",
+                    "",
+                    List.of()
             ));
         }
 
         List<WebMapMarkerRecord> markers = new ArrayList<>(waypointByChunk.values());
-        java.util.Set<String> loadedChunkKeysForMarkers = new java.util.HashSet<>();
-        for (Chunk chunk : world.getLoadedChunks()) {
-            int chunkX = chunk.getX();
-            int chunkZ = chunk.getZ();
-            String chunkKey = chunkX + ":" + chunkZ;
-            if (!loadedChunkKeysForMarkers.add(chunkKey)) {
-                continue;
-            }
-            markers.add(new WebMapMarkerRecord(
-                    world.getKey() + ":loaded-chunk:" + chunkX + ":" + chunkZ,
-                    "loadedchunk",
-                    "Loaded Chunk",
-                    "Loaded Chunk",
-                    "#8fd8ff",
-                    (chunkX << 4) + 8,
-                    (chunkZ << 4) + 8,
-                    chunkX,
-                    chunkZ,
-                    0
-            ));
-        }
-
-        java.util.Set<String> persistentChunkKeys = new java.util.HashSet<>();
-        for (Chunk chunk : world.getLoadedChunks()) {
-            int chunkX = chunk.getX();
-            int chunkZ = chunk.getZ();
-            String chunkKey = chunkX + ":" + chunkZ;
-            if (!world.getPlayersSeeingChunk(chunk).isEmpty()) {
-                continue;
-            }
-            if (!persistentChunkKeys.add(chunkKey)) {
-                continue;
-            }
-            markers.add(new WebMapMarkerRecord(
-                    world.getKey() + ":persistent-loaded:" + chunkX + ":" + chunkZ,
-                    "persistentchunk",
-                    "Persistent Chunk",
-                    "Persistent Chunk",
-                    "#66d1ff",
-                    (chunkX << 4) + 8,
-                    (chunkZ << 4) + 8,
-                    chunkX,
-                    chunkZ,
-                    0
-            ));
-        }
-
-        for (Chunk chunk : world.getForceLoadedChunks()) {
-            int chunkX = chunk.getX();
-            int chunkZ = chunk.getZ();
-            String chunkKey = chunkX + ":" + chunkZ;
-            if (!persistentChunkKeys.add(chunkKey)) {
-                continue;
-            }
-            markers.add(new WebMapMarkerRecord(
-                    world.getKey() + ":chunkloader:" + chunkX + ":" + chunkZ,
-                    "persistentchunk",
-                    "Persistent Chunk",
-                    "Persistent Chunk",
-                    "#66d1ff",
-                    (chunkX << 4) + 8,
-                    (chunkZ << 4) + 8,
-                    chunkX,
-                    chunkZ,
-                    0
-            ));
-        }
-
-        for (Map.Entry<org.bukkit.plugin.Plugin, Collection<Chunk>> entry : world.getPluginChunkTickets().entrySet()) {
-            String pluginName = entry.getKey().getName();
-            for (Chunk chunk : entry.getValue()) {
-                int chunkX = chunk.getX();
-                int chunkZ = chunk.getZ();
-                String chunkKey = chunkX + ":" + chunkZ;
-                if (!persistentChunkKeys.add(chunkKey)) {
-                    continue;
-                }
-                markers.add(new WebMapMarkerRecord(
-                        world.getKey() + ":plugin-loader:" + chunkX + ":" + chunkZ,
-                        "persistentchunk",
-                        "Plugin Ticket (" + pluginName + ")",
-                        "Plugin Ticket (" + pluginName + ")",
-                        "#66d1ff",
-                        (chunkX << 4) + 8,
-                        (chunkZ << 4) + 8,
-                        chunkX,
-                        chunkZ,
-                        0
-                ));
-            }
-        }
+        appendLandClaimMarkers(world, markers);
         markers.sort(Comparator.comparing(WebMapMarkerRecord::kind).thenComparing(WebMapMarkerRecord::displayName));
         return new MarkerSnapshot(markers, waypointByChunk);
+    }
+
+    private void appendLandClaimMarkers(World world, List<WebMapMarkerRecord> markers) {
+        LandProtectionModule landProtection = plugin.getLandProtectionModule();
+        if (landProtection == null || plugin.getToggleModule() == null || !plugin.getToggleModule().getGlobal(LandProtectionModule.FEATURE_KEY)) {
+            return;
+        }
+        for (ClaimRegion claim : landProtection.getClaimsInWorld(world.getName())) {
+            if (!claim.isActive()) {
+                continue;
+            }
+            Party party = claim.getPartyId() == null ? null : landProtection.getPartyModule().getParty(claim.getPartyId());
+            boolean partyClaim = party != null;
+            String displayName = partyClaim ? party.getName() : (claim.getOwnerName().isBlank() ? "個人保護" : claim.getOwnerName());
+            markers.add(new WebMapMarkerRecord(
+                    world.getKey() + ":landclaim:" + claim.key(),
+                    "landclaim",
+                    displayName,
+                    displayName,
+                    partyClaim ? rgbToHex(party.getColor().getRgb()) : "#f6c453",
+                    claim.getX(),
+                    claim.getZ(),
+                    claim.getX() >> 4,
+                    claim.getZ() >> 4,
+                    0,
+                    claim.getRadius(),
+                    partyClaim ? "party" : "personal",
+                    claim.getOwnerName().isBlank() ? "未登録" : claim.getOwnerName(),
+                    partyClaim ? partyMembers(party) : personalMembers(claim)
+            ));
+        }
+    }
+
+    private List<String> partyMembers(Party party) {
+        List<String> members = new ArrayList<>();
+        for (UUID uuid : party.getAllMembers()) {
+            PartyRank rank = party.rankOf(uuid);
+            String prefix = rank == PartyRank.LEADER ? "Leader" : rank == PartyRank.CO_LEADER ? "Sub" : "Member";
+            members.add(prefix + ": " + party.nameOf(uuid));
+        }
+        return members;
+    }
+
+    private List<String> personalMembers(ClaimRegion claim) {
+        List<String> members = new ArrayList<>();
+        members.add("Owner: " + (claim.getOwnerName().isBlank() ? "未登録" : claim.getOwnerName()));
+        for (String name : claim.getWhitelist().values()) {
+            if (name != null && !name.isBlank()) {
+                members.add("Whitelist: " + name);
+            }
+        }
+        return members;
+    }
+
+    private String rgbToHex(int rgb) {
+        return WebMapColorPool.canonicalize(String.format(java.util.Locale.ROOT, "#%06x", rgb & 0xFFFFFF));
     }
 
     private record MarkerSnapshot(List<WebMapMarkerRecord> markers, Map<String, WebMapMarkerRecord> waypointByChunk) {

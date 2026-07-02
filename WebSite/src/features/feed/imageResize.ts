@@ -13,7 +13,7 @@ export function resizeImage(file: File) {
         canvas.width = width;
         canvas.height = height;
         canvas.getContext('2d')?.drawImage(image, 0, 0, width, height);
-        resolve({ type: 'image', url: canvas.toDataURL('image/jpeg', 0.82), width, height });
+        resolve({ type: 'image', url: canvas.toDataURL('image/jpeg', 0.82), name: file.name, width, height });
       };
       image.onerror = reject;
       image.src = String(reader.result);

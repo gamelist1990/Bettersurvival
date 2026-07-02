@@ -28,6 +28,7 @@ type ChunkLoaderBundle = {
   fadeTimer: number | null;
   visibleOpacity: number;
   visibleFillOpacity: number;
+  tooltipHtml: string;
 };
 
 type ChangedTile = {
@@ -94,10 +95,10 @@ function toPoint(latlng: L.LatLng) {
   return { x: Math.floor(latlng.lng), z: Math.floor(-latlng.lat) };
 }
 
-function toChunkBounds(chunkX: number, chunkZ: number) {
+function toClaimBounds(x: number, z: number, radius: number) {
   return L.latLngBounds(
-    toLatLng(chunkX * 16, (chunkZ + 1) * 16),
-    toLatLng((chunkX + 1) * 16, chunkZ * 16)
+    toLatLng(x - radius, z + radius),
+    toLatLng(x + radius, z - radius)
   );
 }
 
@@ -117,6 +118,23 @@ function formatWaypointLabel(value: string) {
     .split("\n")
     .map((line) => escapeHtml(line))
     .join("<br>");
+}
+
+function formatLandClaimTooltip(marker: WorldMarker) {
+  const title = escapeHtml(marker.displayName || marker.name || "土地保護");
+  const ownerLabel = marker.ownerType === "party" ? "パーティー" : "オーナー";
+  const members = marker.members.length
+    ? marker.members.map((member) => `<li>${escapeHtml(member)}</li>`).join("")
+    : "<li>表示できるメンバーはいません</li>";
+  return `
+    <div class="landclaim-tooltip-body">
+      <strong>${title}</strong>
+      <span>${ownerLabel}: ${escapeHtml(marker.ownerName || marker.displayName || marker.name || "未登録")}</span>
+      <span>中心 X ${marker.x} / Z ${marker.z}</span>
+      <span>半径 ${marker.radius} ブロック</span>
+      <ul>${members}</ul>
+    </div>
+  `;
 }
 
 function copyableCoords(coords: MapCoords | null) {
@@ -178,10 +196,7 @@ function normalizeMarkersResponse(payload: unknown): WorldMarkersResponse {
           return null;
         }
         const row = entry as Record<string, unknown>;
-        const kind =
-          row.kind === "loadedchunk" || row.kind === "persistentchunk" || row.kind === "waypoint"
-            ? row.kind
-            : "waypoint";
+        const kind = row.kind === "landclaim" || row.kind === "waypoint" ? row.kind : "waypoint";
         const id = typeof row.id === "string" ? row.id : "";
         if (!id) {
           return null;
@@ -197,6 +212,10 @@ function normalizeMarkersResponse(payload: unknown): WorldMarkersResponse {
           chunkX: Number.isFinite(row.chunkX) ? Number(row.chunkX) : 0,
           chunkZ: Number.isFinite(row.chunkZ) ? Number(row.chunkZ) : 0,
           rotation: Number.isFinite(row.rotation) ? Number(row.rotation) : 0,
+          radius: Number.isFinite(row.radius) ? Number(row.radius) : 0,
+          ownerType: row.ownerType === "party" || row.ownerType === "personal" ? row.ownerType : "waypoint",
+          ownerName: typeof row.ownerName === "string" ? row.ownerName : "",
+          members: Array.isArray(row.members) ? row.members.filter((value): value is string => typeof value === "string") : [],
         };
       })
       .filter((entry): entry is WorldMarker => entry !== null),
@@ -425,7 +444,6 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
     createTile(coords: L.Coords, done: L.DoneCallback) {
       const tile = document.createElement("img");
       L.DomEvent.on(tile, "load", () => {
-        URL.revokeObjectURL(tile.src);
         // @ts-ignore Leaflet private hook
         this._tileOnLoad(done, tile);
       });
@@ -438,20 +456,9 @@ function SquaremapTileLayer(template: string, maxNativeZoom: number) {
       ));
       tile.alt = "";
       tile.setAttribute("role", "presentation");
-      const url = this.getTileUrl(coords);
-      fetch(url, { cache: "no-store" })
-        .then(async (response) => {
-          if (!response.ok) {
-            // @ts-ignore Leaflet private hook
-            this._tileOnError(done, tile, null);
-            return;
-          }
-          tile.src = URL.createObjectURL(await response.blob());
-        })
-        .catch(() => {
-          // @ts-ignore Leaflet private hook
-          this._tileOnError(done, tile, null);
-        });
+      tile.decoding = "async";
+      tile.loading = "eager";
+      tile.src = this.getTileUrl(coords);
       return tile;
     },
   });
@@ -504,8 +511,7 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
   const [followUuid, setFollowUuid] = useState(parseQuery().follow);
   const [coords, setCoords] = useState<MapCoords | null>(null);
   const [contextMenu, setContextMenu] = useState<MapContextMenuState | null>(null);
-  const [chunkLoadVisible, setChunkLoadVisible] = useState(false);
-  const [persistentChunkVisible, setPersistentChunkVisible] = useState(false);
+  const [landClaimsVisible, setLandClaimsVisible] = useState(true);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -936,25 +942,33 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
       const seenWaypoints = new Set<string>();
       const seenChunkLoaders = new Set<string>();
       for (const marker of markers) {
-        if (marker.kind === "loadedchunk" || marker.kind === "persistentchunk") {
+        if (marker.kind === "landclaim") {
           seenChunkLoaders.add(marker.id);
-          const isVisible = marker.kind === "loadedchunk" ? chunkLoadVisible : persistentChunkVisible;
-          const visibleOpacity = marker.kind === "loadedchunk" ? 0.72 : 0.86;
-          const visibleFillOpacity = marker.kind === "loadedchunk" ? 0.26 : 0.34;
+          const isVisible = landClaimsVisible;
+          const visibleOpacity = 0.88;
+          const visibleFillOpacity = marker.ownerType === "party" ? 0.24 : 0.2;
+          const tooltipHtml = formatLandClaimTooltip(marker);
           let bundle = chunkLoaderBundles.get(marker.id);
           if (!bundle) {
-            const rectangle = L.rectangle(toChunkBounds(marker.chunkX, marker.chunkZ), {
+            const rectangle = L.rectangle(toClaimBounds(marker.x, marker.z, marker.radius), {
               pane: "chunkloader",
               renderer: chunkLoaderRendererRef.current ?? undefined,
-              className: "chunkloader-area",
+              className: "landclaim-area",
               color: marker.color,
-              weight: 1,
+              weight: 2,
               fill: true,
               fillColor: marker.color,
               fillOpacity: isVisible ? visibleFillOpacity : 0,
               opacity: isVisible ? visibleOpacity : 0,
-              interactive: false,
+              interactive: true,
             }).addTo(chunkLayer);
+            rectangle.bindTooltip(tooltipHtml, {
+              direction: "top",
+              opacity: 0.98,
+              pane: "nameplate",
+              className: "landclaim-tooltip",
+              sticky: true,
+            });
             bundle = {
               rectangle,
               color: marker.color,
@@ -962,6 +976,7 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
               fadeTimer: null,
               visibleOpacity,
               visibleFillOpacity,
+              tooltipHtml,
             };
             chunkLoaderBundles.set(marker.id, bundle);
           } else {
@@ -970,7 +985,7 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
               bundle.fadeTimer = null;
             }
             bundle.fading = false;
-            bundle.rectangle.setBounds(toChunkBounds(marker.chunkX, marker.chunkZ));
+            bundle.rectangle.setBounds(toClaimBounds(marker.x, marker.z, marker.radius));
             if (bundle.color !== marker.color) {
               bundle.rectangle.setStyle({
                 color: marker.color,
@@ -980,6 +995,10 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
             }
             bundle.visibleOpacity = visibleOpacity;
             bundle.visibleFillOpacity = visibleFillOpacity;
+            if (bundle.tooltipHtml !== tooltipHtml) {
+              bundle.rectangle.setTooltipContent(tooltipHtml);
+              bundle.tooltipHtml = tooltipHtml;
+            }
           }
           if (!isVisible) {
             bundle.rectangle.setStyle({ opacity: 0, fillOpacity: 0 });
@@ -1041,7 +1060,7 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
         if (seenChunkLoaders.has(id)) {
           continue;
         }
-        if (!chunkLoadVisible && !persistentChunkVisible) {
+        if (!landClaimsVisible) {
           chunkLayer.removeLayer(bundle.rectangle);
           bundle.rectangle.remove();
           chunkLoaderBundles.delete(id);
@@ -1096,7 +1115,7 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
       }
       chunkLoaderBundles.clear();
     };
-  }, [worldDetail, chunkLoadVisible, persistentChunkVisible]);
+  }, [worldDetail, landClaimsVisible]);
 
   useEffect(() => {
     if (!mapRef.current || !markerLayerRef.current || !worldDetail) {
@@ -1239,8 +1258,7 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
         <div className="map-panel-controls" aria-label="表示切替">
           <button className={worldPanelVisible ? "is-active" : ""} type="button" onClick={() => setWorldPanelVisible((value) => !value)}>ワールド</button>
           <button className={playersPanelVisible ? "is-active" : ""} type="button" onClick={() => setPlayersPanelVisible((value) => !value)}>プレイヤー</button>
-          <button className={chunkLoadVisible ? "is-active" : ""} type="button" onClick={() => setChunkLoadVisible((value) => !value)}>読込範囲</button>
-          <button className={persistentChunkVisible ? "is-active" : ""} type="button" onClick={() => setPersistentChunkVisible((value) => !value)}>固定範囲</button>
+          <button className={landClaimsVisible ? "is-active" : ""} type="button" onClick={() => setLandClaimsVisible((value) => !value)}>土地保護</button>
         </div>
         {worldPanelVisible ? (
           <fieldset id="worlds">
@@ -1319,20 +1337,11 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
           <button
             type="button"
             onClick={() => {
-              setChunkLoadVisible((value) => !value);
+              setLandClaimsVisible((value) => !value);
               setContextMenu(null);
             }}
           >
-            Loaded Chunks: {chunkLoadVisible ? "ON" : "OFF"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPersistentChunkVisible((value) => !value);
-              setContextMenu(null);
-            }}
-          >
-            Persistent Chunks: {persistentChunkVisible ? "ON" : "OFF"}
+            土地保護: {landClaimsVisible ? "ON" : "OFF"}
           </button>
         </div>
       ) : null}

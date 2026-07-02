@@ -172,3 +172,21 @@
 
 .attachment-preview-grid figure { position: relative; margin: 0; }
 .attachment-preview-grid figure button { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 999px; background: rgba(15,20,25,.68); color: #fff; cursor: pointer; }
+
+/* ===== Markdown 表示 (MarkdownText) ===== */
+.post-text { white-space: pre-wrap; word-break: break-word; }
+.md-body .md-link,
+.post-external-link { color: var(--x-accent, #1d9bf0); text-decoration: none; }
+.md-body .md-link:hover,
+.post-external-link:hover { text-decoration: underline; }
+.md-code { padding: 1px 6px; border-radius: 6px; background: rgba(110, 118, 125, .22); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+.md-codeblock { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: rgba(110, 118, 125, .16); overflow-x: auto; }
+.md-codeblock code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; white-space: pre; }
+.md-quote { margin: 4px 0; padding: 2px 0 2px 10px; border-left: 3px solid rgba(110, 118, 125, .55); color: var(--x-muted, #71767b); }
+.md-heading { display: block; margin: 4px 0 2px; }
+.md-h1 { font-size: 1.25em; }
+.md-h2 { font-size: 1.15em; }
+.md-h3 { font-size: 1.05em; }
+.post-external-link { display: inline-block; margin-top: 6px; font-size: .9em; }
+.post-click-body { cursor: pointer; }
+.post-source-discord { background: rgba(88, 101, 242, .18); color: #7983f5; }

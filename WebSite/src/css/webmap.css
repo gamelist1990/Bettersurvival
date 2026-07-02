@@ -276,9 +276,57 @@ div.leaflet-nameplate-pane div {
     transition: none !important;
     animation: none !important;
 }
-.leaflet-pane.chunkloader svg path.chunkloader-area,
-.chunkloader-area {
+.leaflet-pane.chunkloader svg path.landclaim-area,
+.landclaim-area {
     transition: stroke-opacity 0.42s ease, fill-opacity 0.42s ease;
+    cursor: help;
+}
+
+.leaflet-tooltip.landclaim-tooltip {
+    border: 1px solid rgba(23, 23, 23, 0.12);
+    border-radius: 16px;
+    background: rgba(255, 248, 239, 0.96);
+    color: #171717;
+    box-shadow: 0 16px 34px rgba(31, 24, 18, 0.18);
+    padding: 0;
+}
+
+.leaflet-tooltip.landclaim-tooltip:before {
+    border-top-color: rgba(255, 248, 239, 0.96);
+}
+
+.landclaim-tooltip-body {
+    display: grid;
+    gap: 5px;
+    min-width: 190px;
+    max-width: 260px;
+    padding: 10px 12px;
+    font-weight: 800;
+}
+
+.landclaim-tooltip-body strong {
+    color: #8b4a19;
+    font-size: 13px;
+    font-weight: 950;
+}
+
+.landclaim-tooltip-body span {
+    color: #4f463d;
+    font-size: 11px;
+}
+
+.landclaim-tooltip-body ul {
+    display: grid;
+    gap: 3px;
+    margin: 4px 0 0;
+    padding: 7px 0 0;
+    border-top: 1px solid rgba(23, 23, 23, 0.08);
+}
+
+.landclaim-tooltip-body li {
+    display: block;
+    color: #171717;
+    font-size: 11px;
 }
 .leaflet-marker-pane img,
 .player-face-icon,

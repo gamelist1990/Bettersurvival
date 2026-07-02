@@ -32,6 +32,9 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.EnchantmentSplit.Enc
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.SharedStorageModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.CopperGolemModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.GeyserWorkbench.GeyserWorkbenchModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.ui.PartyMenu;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.command.CommandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.discord.DiscordCommand;
@@ -45,6 +48,8 @@ import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.hotp.HotpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.webservice.WebServiceCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.party.PartyCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.land.LandCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
@@ -77,6 +82,9 @@ public final class Loader extends JavaPlugin {
     private WebServiceModule webServiceModule;
     private WebMapModule webMapModule;
     private ChunkLoaderModule chunkLoaderModule;
+    private PartyModule partyModule;
+    private PartyMenu partyMenu;
+    private LandProtectionModule landProtectionModule;
 
     @Override
     public void onEnable() {
@@ -155,6 +163,13 @@ public final class Loader extends JavaPlugin {
         }
         chunkLoaderModule = new ChunkLoaderModule(this, toggleModule, itemCombineModule);
         getServer().getPluginManager().registerEvents(chunkLoaderModule, this);
+        // Party モジュール登録 (ギルド風パーティー機能)
+        partyModule = new PartyModule(this, toggleModule);
+        getServer().getPluginManager().registerEvents(partyModule, this);
+        partyMenu = new PartyMenu(this, partyModule);
+        // LandProtection モジュール登録 (Rust 風の土地保護コア)
+        landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule);
+        getServer().getPluginManager().registerEvents(landProtectionModule, this);
         webServiceModule = new WebServiceModule(this);
         getServer().getPluginManager().registerEvents(webServiceModule, this);
         webMapModule = new WebMapModule(this);
@@ -212,6 +227,10 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("webservice", "WebService", "ホームページ、ログイン、プロフィール機能を有効/無効にします", Material.BOOK, false));
         toggleModule.registerFeature(
             new ToggleFeature("chunkloader", "ChunkLoader", "コンパス+名札(chunkloader)で作るチャンクローダーを有効/無効にします", Material.CALIBRATED_SCULK_SENSOR, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("party", "Party", "パーティー(ギルド)機能を有効/無効にします (/party, /p)", Material.WHITE_BANNER, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("landprotect", "LandProtect", "ロデストーン+ダイヤで作る土地保護コアを有効/無効にします", Material.LODESTONE, false));
         if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -275,6 +294,12 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("webservice")) {
             toggleModule.setGlobal("webservice", true);
         }
+        if (!toggleModule.hasGlobal("party")) {
+            toggleModule.setGlobal("party", true);
+        }
+        if (!toggleModule.hasGlobal("landprotect")) {
+            toggleModule.setGlobal("landprotect", true);
+        }
 
         getLogger().info("Better Survival Plugin が有効になりました");
     }
@@ -307,6 +332,11 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new WhitelistCommand(this));
         // WebService command: OP専用の WebService / WebMap 統合管理
         commandManager.register(new WebServiceCommand(this));
+        // Party command: パーティー(ギルド)管理 (/party と /p の両方で開ける)
+        commandManager.register(new PartyCommand(this, "party"));
+        commandManager.register(new PartyCommand(this, "p"));
+        // Land command: 土地保護のデバッグ表示・情報
+        commandManager.register(new LandCommand(this));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
@@ -365,6 +395,18 @@ public final class Loader extends JavaPlugin {
         return chestShopModule;
     }
 
+    public PartyModule getPartyModule() {
+        return partyModule;
+    }
+
+    public PartyMenu getPartyMenu() {
+        return partyMenu;
+    }
+
+    public LandProtectionModule getLandProtectionModule() {
+        return landProtectionModule;
+    }
+
     public WebMapModule getWebMapModule() {
         return webMapModule;
     }
@@ -401,6 +443,9 @@ public final class Loader extends JavaPlugin {
         }
         if (chunkLoaderModule != null) {
             chunkLoaderModule.shutdown();
+        }
+        if (landProtectionModule != null) {
+            landProtectionModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

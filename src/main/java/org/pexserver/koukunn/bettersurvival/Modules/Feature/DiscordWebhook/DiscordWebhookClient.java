@@ -26,6 +26,37 @@ public class DiscordWebhookClient {
                 .build();
     }
 
+    /** multipart 添付ファイル1件分。 */
+    public record FileUpload(String fileName, String contentType, byte[] bytes) {
+    }
+
+    /** ファイル添付付きでメッセージを送信する（画像のDiscord反映用）。 */
+    public boolean send(String url, JsonObject payload, java.util.List<FileUpload> files) {
+        if (!isValidUrl(url)) return false;
+        if (files == null || files.isEmpty()) {
+            return send(url, payload);
+        }
+
+        String boundary = "----BetterSurvival" + UUID.randomUUID();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(30))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(buildMultipartBody(boundary, payload, files)))
+                .build();
+
+        client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                .thenAccept(response -> {
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        plugin.getLogger().warning("DiscordWebhook送信失敗: HTTP " + response.statusCode());
+                    }
+                })
+                .exceptionally(error -> {
+                    plugin.getLogger().log(Level.WARNING, "DiscordWebhook送信失敗: " + error.getMessage());
+                    return null;
+                });
+        return true;
+    }
+
     public boolean send(String url, JsonObject payload) {
         if (!isValidUrl(url)) return false;
 
@@ -188,6 +219,37 @@ public class DiscordWebhookClient {
             return value + "/messages/" + messageId;
         }
         return value.substring(0, queryIndex) + "/messages/" + messageId + value.substring(queryIndex);
+    }
+
+    private byte[] buildMultipartBody(String boundary, JsonObject payload, java.util.List<FileUpload> files) {
+        ByteArrayBuilder body = new ByteArrayBuilder();
+        JsonObject multipartPayload = payload.deepCopy();
+        JsonArray attachments = new JsonArray();
+        for (int index = 0; index < files.size(); index++) {
+            JsonObject attachment = new JsonObject();
+            attachment.addProperty("id", index);
+            attachment.addProperty("filename", files.get(index).fileName());
+            attachments.add(attachment);
+        }
+        multipartPayload.add("attachments", attachments);
+
+        body.append(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        body.append("Content-Disposition: form-data; name=\"payload_json\"\r\n".getBytes(StandardCharsets.UTF_8));
+        body.append("Content-Type: application/json\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        body.append(multipartPayload.toString().getBytes(StandardCharsets.UTF_8));
+        body.append("\r\n".getBytes(StandardCharsets.UTF_8));
+        for (int index = 0; index < files.size(); index++) {
+            FileUpload file = files.get(index);
+            body.append(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            body.append(("Content-Disposition: form-data; name=\"files[" + index + "]\"; filename=\"" + file.fileName() + "\"\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            body.append(("Content-Type: " + (file.contentType() == null ? "application/octet-stream" : file.contentType()) + "\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            body.append(file.bytes());
+            body.append("\r\n".getBytes(StandardCharsets.UTF_8));
+        }
+        body.append(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return body.toByteArray();
     }
 
     private byte[] buildMultipartBody(String boundary, JsonObject payload, String fileName, byte[] fileBytes) {

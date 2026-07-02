@@ -22,6 +22,7 @@ export type AuthProfile = {
 export type WebPostAttachment = {
   type: string;
   url: string;
+  name?: string;
   width: number;
   height: number;
 };

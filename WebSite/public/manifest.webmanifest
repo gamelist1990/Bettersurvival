@@ -1,10 +1,11 @@
 {
   "name": "BetterSurvival WebMap",
   "short_name": "WebMap",
-  "id": "/",
-  "start_url": "/",
+  "id": "/webmap/full",
+  "start_url": "/webmap/full",
   "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#0b1117",
   "theme_color": "#0b1117",
   "description": "Minecraft world map viewer for BetterSurvival.",

@@ -39,7 +39,7 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
             return;
         }
 
-        // 更新: メッセージ内容と添付ファイルを両方処理するように変更
+        // 本文と添付は分けて渡す（表示側で「画像: 名前」形式のリンクに整形される）
         Member member = event.getMember();
         String authorName = member != null ? member.getEffectiveName() : event.getAuthor().getGlobalName() != null ? event.getAuthor().getGlobalName() : event.getAuthor().getName();
         String avatarUrl = event.getAuthor().getEffectiveAvatarUrl();
@@ -48,31 +48,6 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
         if (content.isBlank() && attachments.isEmpty()) {
             return;
         }
-        String replyToMessageId = event.getMessage().getReferencedMessage() == null ? "" : event.getMessage().getReferencedMessage().getId();
-        if (attachments.isEmpty()) {
-            messageConsumer.accept(new DiscordIncomingMessage(
-                    authorName,
-                    event.getAuthor().getId(),
-                    avatarUrl,
-                    event.getChannel().getId(),
-                    event.getMessageId(),
-                    event.getMessage().getJumpUrl(),
-                    replyToMessageId,
-                    content,
-                    attachments));
-            return;
-        }
-        StringBuilder attachmentText = new StringBuilder();
-        if (!content.isBlank()) {
-            attachmentText.append(content).append(' ');
-        }
-        for (Message.Attachment attachment : attachments) {
-            attachmentText.append('[')
-                    .append(attachment.getFileName())
-                    .append("](")
-                    .append(attachment.getUrl())
-                    .append(") ");
-        }
         messageConsumer.accept(new DiscordIncomingMessage(
                 authorName,
                 event.getAuthor().getId(),
@@ -80,11 +55,10 @@ public class DiscordWebhookDiscordListener extends ListenerAdapter {
                 event.getChannel().getId(),
                 event.getMessageId(),
                 event.getMessage().getJumpUrl(),
-                replyToMessageId,
-                attachmentText.toString().trim(),
+                content,
                 attachments));
     }
 
-    public record DiscordIncomingMessage(String authorName, String authorId, String avatarUrl, String channelId, String messageId, String messageUrl, String replyToMessageId, String content, List<Message.Attachment> attachments) {
+    public record DiscordIncomingMessage(String authorName, String authorId, String avatarUrl, String channelId, String messageId, String messageUrl, String content, List<Message.Attachment> attachments) {
     }
 }
