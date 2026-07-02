@@ -132,6 +132,36 @@
   background: var(--xb-bg);
 }
 
+.twitter-profile-topbar--profile {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 66px;
+  padding: 10px 16px;
+}
+
+.twitter-profile-topbar--profile > div {
+  min-width: 0;
+}
+
+.twitter-profile-topbar--profile .x-icon-btn {
+  width: auto;
+  min-width: 132px;
+  min-height: 40px;
+  padding: 0 22px;
+  border: 1px solid var(--xb-border-strong, var(--xb-border));
+  border-radius: 999px;
+  background: var(--xb-bg-hover);
+  color: var(--xb-text);
+  font-size: .92rem;
+  font-weight: 800;
+  box-shadow: 0 1px 2px rgba(15, 20, 25, .06);
+}
+
+.twitter-profile-topbar--profile .x-icon-btn:hover {
+  background: var(--xb-accent-soft);
+  color: var(--xb-accent);
+  border-color: color-mix(in srgb, var(--xb-accent) 32%, var(--xb-border));
+}
+
 .twitter-profile-topbar strong, .twitter-profile-topbar span { display: block; }
 .twitter-profile-topbar strong { font-size: 1.06rem; }
 .twitter-profile-topbar span { color: var(--xb-text-secondary); font-size: .8rem; margin-top: 1px; }
@@ -322,6 +352,7 @@
     position: static; /* sticky解除 */
     display: flex;
     align-items: center;
+    justify-content: space-between;
     width: 100%;
     gap: 12px;
     padding: 0;
@@ -337,18 +368,29 @@
 
   /* 名前中央寄せ風 */
   .twitter-profile-topbar > div {
-    flex: 1;
-    margin: 10px -50px 10px;
-    text-align: center;
+    flex: 1 1 auto;
+    margin: 0;
+    text-align: left;
+    min-width: 0;
   }
 
   /* Feedボタン右 */
   .twitter-profile-topbar .x-icon-btn {
-    margin-left: 10px;
-    flex: 1;
-    width: auto;
+    margin-left: auto;
+    flex: 0 0 auto;
     min-height: 34px;
     padding: 0 16px;
+  }
+
+  .twitter-profile-topbar--profile {
+    min-height: 54px;
+    padding: 0 2px;
+  }
+
+  .twitter-profile-topbar--profile .x-icon-btn {
+    min-width: 112px;
+    min-height: 36px;
+    padding: 0 18px;
   }
 
   /* ===== 下の構造を詰める ===== */

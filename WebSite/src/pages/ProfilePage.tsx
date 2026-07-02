@@ -167,7 +167,7 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
   return (
     <div className="twitter-profile-layout x-scope">
       <main className="twitter-profile-shell">
-        <div className="twitter-profile-topbar">
+        <div className="twitter-profile-topbar twitter-profile-topbar--profile">
           <div><strong>{publicName(viewedProfile)}</strong><span>{profilePosts.length} posts</span></div>
           <button className="x-icon-btn" type="button" onClick={() => onNavigate('/feed')}>Feedへ</button>
         </div>
