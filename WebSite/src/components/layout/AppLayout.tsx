@@ -18,6 +18,15 @@ export function AppLayout({ activePage, children, profile, wide, onNavigate, onL
       <div className="page-noise" />
       <Sidebar activePage={activePage} profile={profile} onNavigate={onNavigate} onLogout={onLogout} />
       <main className={`app-main${wide ? ' app-main-wide' : ''}`}>{children}</main>
+      {activePage !== 'webmap' ? (
+        <footer className="site-footer">
+          <span>© BetterSurvival</span>
+          <nav aria-label="法的情報">
+            <a href="/privacy" onClick={(event) => { event.preventDefault(); onNavigate('/privacy'); }}>利用規約・プライバシーポリシー</a>
+            <a href="/privacy/request" onClick={(event) => { event.preventDefault(); onNavigate('/privacy/request'); }}>開示・削除申請</a>
+          </nav>
+        </footer>
+      ) : null}
     </div>
   );
 }

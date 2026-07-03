@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
+import { ConsentModal, hasConsented } from './components/ConsentModal';
 import { pageKeyFromPath } from './app/navigation';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { FeedPage } from './pages/FeedPage';
 import { HomePage } from './pages/HomePage';
+import { PrivacyPage } from './pages/PrivacyPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { RequestPage } from './pages/RequestPage';
 import WebMapPage from './Page/WebMapPage';
 import { useWebService } from './features/webservice/useWebService';
 
 export default function App() {
   const [path, setPath] = useState(window.location.pathname);
+  const [consented, setConsented] = useState(hasConsented);
   const service = useWebService();
   const activePage = pageKeyFromPath(path);
   const fullMap = path === '/webmap/full' || path.startsWith('/webmap/full/');
@@ -36,6 +40,10 @@ export default function App() {
         return <FeaturesPage />;
       case 'webmap':
         return <WebMapPage full={fullMap} />;
+      case 'privacy':
+        return <PrivacyPage onNavigate={navigate} />;
+      case 'request':
+        return <RequestPage profile={service.profile} onNavigate={navigate} />;
       default:
         return <HomePage profile={service.profile} posts={service.feedPosts} onNavigate={navigate} />;
     }
@@ -45,10 +53,14 @@ export default function App() {
     return <WebMapPage full />;
   }
 
+  // 規約ページ自体は同意前でも閲覧できるようにする（同意の前提となる情報のため）
+  const legalPage = activePage === 'privacy' || activePage === 'request';
+  const showConsent = !consented && !legalPage;
+
   return (
     <AppLayout activePage={activePage} profile={service.profile} wide={activePage === 'webmap'} onNavigate={navigate} onLogout={service.logout}>
       {page}
+      {showConsent ? <ConsentModal onAgree={() => setConsented(true)} onNavigate={navigate} /> : null}
     </AppLayout>
   );
 }
-

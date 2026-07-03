@@ -35,6 +35,7 @@ public class WebServiceModule implements Listener {
     private final WebProfileStore profileStore;
     private final WebPostStore postStore;
     private final WebSessionStore sessionStore;
+    private final PrivacyRequestStore privacyRequestStore;
     private final Map<String, PendingHotp> pendingCodes = new ConcurrentHashMap<>();
     private final Map<String, WebSession> sessions = new ConcurrentHashMap<>();
     private boolean webMapFeatureEnabled;
@@ -58,6 +59,7 @@ public class WebServiceModule implements Listener {
         this.profileStore = new WebProfileStore(plugin.getConfigManager());
         this.postStore = new WebPostStore(plugin.getConfigManager());
         this.sessionStore = new WebSessionStore(plugin.getConfigManager());
+        this.privacyRequestStore = new PrivacyRequestStore(plugin.getConfigManager());
         this.sessions.putAll(sessionStore.loadActive(System.currentTimeMillis()));
         loadSettings();
     }
@@ -356,6 +358,111 @@ public class WebServiceModule implements Listener {
 
     public Optional<WebPost> findPostById(String postId) {
         return postStore.findById(postId);
+    }
+
+    // ================= 個人情報保護法対応 (本人請求) =================
+
+    private static final java.util.Set<String> PRIVACY_REQUEST_TYPES =
+            java.util.Set.of("disclosure", "correction", "deletion", "suspension");
+
+    /**
+     * 開示・訂正・削除・利用停止の請求を受け付ける。
+     * ログインセッションを本人確認として使用する。
+     */
+    public PrivacyRequestResult createPrivacyRequest(String token, String type, String detail) {
+        Optional<WebProfile> optionalProfile = findProfileBySession(token);
+        if (optionalProfile.isEmpty()) {
+            return PrivacyRequestResult.error("ログインが必要です (Minecraftアカウント連携による本人確認のため)");
+        }
+        WebProfile profile = optionalProfile.get();
+        String normalizedType = type == null ? "" : type.trim();
+        if (!PRIVACY_REQUEST_TYPES.contains(normalizedType)) {
+            return PrivacyRequestResult.error("申請種別が正しくありません");
+        }
+        String normalizedDetail = limit(detail, 1000);
+        if (normalizedDetail.length() < 5) {
+            return PrivacyRequestResult.error("申請内容を5文字以上で入力してください");
+        }
+        if (privacyRequestStore.countOpenByUuid(profile.getUuid()) >= 5) {
+            return PrivacyRequestResult.error("未対応の申請が上限(5件)に達しています。対応をお待ちください");
+        }
+        PrivacyRequest request = new PrivacyRequest();
+        request.setId(UUID.randomUUID().toString());
+        request.setUuid(profile.getUuid());
+        request.setUsername(profile.getUsername());
+        request.setType(normalizedType);
+        request.setDetail(normalizedDetail);
+        request.setCreatedAt(System.currentTimeMillis());
+        privacyRequestStore.add(request);
+        notifyOpsOfPrivacyRequest(request);
+        return PrivacyRequestResult.success(request);
+    }
+
+    /** 自分の申請一覧（本人のみ）。 */
+    public List<PrivacyRequest> listOwnPrivacyRequests(String token) {
+        Optional<WebProfile> optionalProfile = findProfileBySession(token);
+        if (optionalProfile.isEmpty()) {
+            return List.of();
+        }
+        return privacyRequestStore.listByUuid(optionalProfile.get().getUuid());
+    }
+
+    /** 全申請一覧（ゲーム内GUIの対応画面用）。 */
+    public List<PrivacyRequest> listAllPrivacyRequests() {
+        return privacyRequestStore.listAll();
+    }
+
+    public long countOpenPrivacyRequests() {
+        return privacyRequestStore.countOpen();
+    }
+
+    /** 申請を対応済みにする（ゲーム内GUIから）。 */
+    public boolean resolvePrivacyRequest(String requestId) {
+        Optional<PrivacyRequest> optional = privacyRequestStore.findById(requestId);
+        if (optional.isEmpty() || !optional.get().isOpen()) {
+            return false;
+        }
+        PrivacyRequest request = optional.get();
+        request.setStatus(PrivacyRequest.STATUS_RESOLVED);
+        request.setResolvedAt(System.currentTimeMillis());
+        privacyRequestStore.save();
+        return true;
+    }
+
+    public Map<String, Object> privacyRequestPayload(PrivacyRequest request) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", request.getId());
+        payload.put("type", request.getType());
+        payload.put("typeLabel", request.typeDisplayName());
+        payload.put("detail", request.getDetail());
+        payload.put("status", request.getStatus());
+        payload.put("createdAt", request.getCreatedAt());
+        payload.put("resolvedAt", request.getResolvedAt());
+        return payload;
+    }
+
+    private void notifyOpsOfPrivacyRequest(PrivacyRequest request) {
+        String message = "§c[WebService] §f個人情報の" + request.typeDisplayName() + "申請が届きました: §e"
+                + request.getUsername() + " §7(/webservice → 申請対応)";
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            for (Player online : plugin.getServer().getOnlinePlayers()) {
+                if (online.isOp()) {
+                    online.sendMessage(message);
+                }
+            }
+            plugin.getLogger().info("[WebService] 個人情報の" + request.typeDisplayName() + "申請: "
+                    + request.getUsername() + " (" + request.getId() + ")");
+        });
+    }
+
+    public record PrivacyRequestResult(boolean success, String message, PrivacyRequest request) {
+        public static PrivacyRequestResult success(PrivacyRequest request) {
+            return new PrivacyRequestResult(true, "OK", request);
+        }
+
+        public static PrivacyRequestResult error(String message) {
+            return new PrivacyRequestResult(false, message, null);
+        }
     }
 
     public List<WebPost> listPosts(long since, int limit) {

@@ -87,6 +87,8 @@ public class WebMapHttpServer {
         server.createContext("/api/v1/feed/delete", safe(this::handleFeedDelete));
         server.createContext("/api/v1/feed/updates", safe(this::handleFeedUpdates));
         server.createContext("/api/v1/feed/image", safe(this::handleFeedImage));
+        server.createContext("/api/v1/privacy/request", safe(this::handlePrivacyRequest));
+        server.createContext("/api/v1/privacy/requests", safe(this::handlePrivacyRequests));
         server.createContext("/api/v1/worlds", safe(this::handleApiWorlds));
         server.createContext("/api/v1/players", safe(this::handleApiPlayers));
         server.createContext("/api/status", safe(this::handleStatus));
@@ -1119,6 +1121,47 @@ public class WebMapHttpServer {
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(bytes);
         }
+    }
+
+    /** 個人情報の開示・訂正・削除・利用停止の申請を受け付ける。 */
+    private void handlePrivacyRequest(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        WebServiceModule.PrivacyRequestResult result = service.createPrivacyRequest(
+                bearerToken(exchange),
+                stringValue(request.get("type")),
+                stringValue(request.get("detail"))
+        );
+        if (!result.success()) {
+            writeJson(exchange, Map.of("success", false, "message", result.message()), 0);
+            return;
+        }
+        writeJson(exchange, Map.of(
+                "success", true,
+                "request", service.privacyRequestPayload(result.request())
+        ), 0);
+    }
+
+    /** 自分の申請履歴を返す（本人のみ）。 */
+    private void handlePrivacyRequests(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        List<Map<String, Object>> requests = service.listOwnPrivacyRequests(bearerToken(exchange)).stream()
+                .map(service::privacyRequestPayload)
+                .toList();
+        writeJson(exchange, Map.of("success", true, "requests", requests), 0);
     }
 
     private void handleFeedPost(HttpExchange exchange) throws IOException {

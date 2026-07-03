@@ -56,6 +56,12 @@ public final class WebServiceSettingsMenu {
                         "§d§lネットワーク",
                         Material.REPEATER,
                         "§7ポート / 公開範囲 / HAProxy PROXY protocol v2")
+                .addButtonAt(22,
+                        service.countOpenPrivacyRequests() > 0
+                                ? "§c§l申請対応 §f(未対応 " + service.countOpenPrivacyRequests() + "件)"
+                                : "§f申請対応",
+                        service.countOpenPrivacyRequests() > 0 ? Material.RED_BANNER : Material.PAPER,
+                        "§7個人情報の開示・訂正・削除・利用停止の\n§7本人請求に対応します (個人情報保護法対応)")
                 .addButtonAt(26, "§7閉じる", Material.BARRIER, "")
                 .then((result, p) -> {
                     if (!result.success || result.slot == null) {
@@ -74,6 +80,7 @@ public final class WebServiceSettingsMenu {
                         case 12 -> openFeedMenu(p, service);
                         case 14 -> openWebMapMenu(p, service);
                         case 16 -> openNetworkMenu(p, service);
+                        case 22 -> openPrivacyRequestsMenu(p, service);
                         case 26 -> ChestUI.closeMenu(p);
                         default -> {
                         }
@@ -296,6 +303,81 @@ public final class WebServiceSettingsMenu {
                     }
                 })
                 .show(player);
+    }
+
+    // ================= 申請対応 (個人情報保護法) =================
+
+    private static void openPrivacyRequestsMenu(Player player, WebServiceModule service) {
+        java.util.List<PrivacyRequest> requests = service.listAllPrivacyRequests();
+        int size = Math.max(27, Math.min(54, 9 * ((Math.min(requests.size(), 45) + 8) / 9) + 9));
+
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§8申請対応 (未対応 " + service.countOpenPrivacyRequests() + "件)")
+                .size(size);
+        java.util.Map<Integer, String> slotMap = new java.util.LinkedHashMap<>();
+        int slot = 0;
+        for (PrivacyRequest request : requests) {
+            if (slot >= size - 9) {
+                break;
+            }
+            String date = new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm").format(new java.util.Date(request.getCreatedAt()));
+            StringBuilder lore = new StringBuilder();
+            lore.append("§7申請者: §e").append(request.getUsername());
+            lore.append("\n§7日時: §f").append(date);
+            lore.append("\n§7内容:");
+            for (String line : wrapText(request.getDetail(), 24)) {
+                lore.append("\n§f  ").append(line);
+            }
+            if (request.isOpen()) {
+                lore.append("\n\n§aクリックで対応済みにする");
+                slotMap.put(slot, request.getId());
+            } else {
+                lore.append("\n\n§8対応済み: ").append(new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm").format(new java.util.Date(request.getResolvedAt())));
+            }
+            builder.addButtonAt(slot,
+                    (request.isOpen() ? "§c§l[未対応] §f" : "§7[対応済] ") + request.typeDisplayName() + "申請",
+                    request.isOpen() ? Material.RED_BANNER : Material.GRAY_BANNER,
+                    lore.toString());
+            slot++;
+        }
+        if (requests.isEmpty()) {
+            builder.addButtonAt(4, "§7申請はありません", Material.GRAY_DYE,
+                    "§7Web (/privacy/request) から届いた\n§7本人請求がここに表示されます");
+        }
+        final int backSlot = size - 1;
+        builder.addButtonAt(backSlot, "§7戻る", Material.ARROW, "");
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) {
+                return;
+            }
+            if (result.slot == backSlot) {
+                openMainMenu(p, service);
+                return;
+            }
+            String requestId = slotMap.get(result.slot);
+            if (requestId == null) {
+                return;
+            }
+            if (service.resolvePrivacyRequest(requestId)) {
+                p.sendMessage("§a申請を対応済みにしました");
+            }
+            openPrivacyRequestsMenu(p, service);
+        }).show(player);
+    }
+
+    /** 日本語も考慮したざっくり文字数での折り返し。 */
+    private static java.util.List<String> wrapText(String text, int width) {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        String remaining = text == null ? "" : text.replace("\r", "").replace("\n", " ");
+        while (!remaining.isEmpty() && lines.size() < 6) {
+            int cut = Math.min(width, remaining.length());
+            lines.add(remaining.substring(0, cut));
+            remaining = remaining.substring(cut);
+        }
+        if (!remaining.isEmpty()) {
+            lines.add("…");
+        }
+        return lines;
     }
 
     // ================= ダイアログ =================

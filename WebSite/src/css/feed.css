@@ -5,9 +5,16 @@
 .feed-auth-card .panel-label { color: var(--xb-accent); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-size: .78rem; }
 .feed-auth-card .primary-button { background: var(--xb-text); color: #fff; border-radius: 999px; }
 
-.feed-page { max-width: 1080px; margin: 0 auto; }
-.feed-layout { display: grid; grid-template-columns: minmax(0, 600px) minmax(280px, 350px); gap: 0 32px; align-items: start; }
-.feed-timeline-column { border-left: 1px solid var(--xb-border); border-right: 1px solid var(--xb-border); background: var(--xb-bg); }
+.feed-page { max-width: 1150px; margin: 0 auto; }
+.feed-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 0 24px; align-items: start; }
+/* ベーススタイルに合わせたカード型のタイムライン (overflow: clip で sticky を維持) */
+.feed-timeline-column {
+  border: 1px solid var(--xb-border);
+  border-radius: 22px;
+  overflow: clip;
+  background: var(--xb-bg);
+  box-shadow: var(--shadow-soft);
+}
 
 .feed-sticky-head { position: sticky; top: 96px; z-index: 3; background: var(--xb-bg); border-bottom: 1px solid var(--xb-border); }
 .feed-sticky-head-row { display: flex; align-items: center; gap: 14px; padding: 10px 16px; }
@@ -96,8 +103,25 @@
 
 .feed-right-rail { position: sticky; top: 104px; display: grid; gap: 16px; }
 .feed-search-panel { position: relative; display: grid; gap: 8px; }
-.feed-search-box { display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 44px; border-radius: 999px; background: var(--xb-bg-hover-strong); color: var(--xb-text-secondary); }
-.feed-search-box:focus-within { background: var(--xb-bg); box-shadow: 0 0 0 1px var(--xb-accent); color: var(--xb-accent); }
+.feed-search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 44px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--xb-bg-hover-strong);
+  color: var(--xb-text-secondary);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+}
+/* フォーカス時も雰囲気を変えすぎず、柔らかいリングでなじませる */
+.feed-search-box:focus-within {
+  background: var(--xb-bg);
+  border-color: color-mix(in srgb, var(--xb-accent) 55%, transparent);
+  box-shadow: 0 0 0 4px var(--xb-accent-soft);
+  color: var(--xb-accent);
+}
 .feed-search-box input { flex: 1; border: 0; background: transparent; outline: none; color: var(--xb-text); font-size: .94rem; }
 .feed-search-box input::placeholder { color: var(--xb-text-secondary); }
 .feed-search-suggestions { overflow: hidden; border: 1px solid var(--xb-border); border-radius: 16px; background: var(--xb-bg); box-shadow: 0 14px 28px rgba(15, 20, 25, .12); }
@@ -145,7 +169,8 @@
 .feed-modal-list span { color: var(--xb-text); line-height: 1.45; }
 .feed-modal-list small { color: var(--xb-text-secondary); }
 
-@media (max-width: 980px) { .feed-layout { grid-template-columns: 1fr; } .feed-right-rail { display: none; } .feed-sticky-head { top: 92px; } .feed-timeline-column { border-right: 0; } }
+@media (max-width: 980px) { .feed-layout { grid-template-columns: 1fr; } .feed-right-rail { display: none; } .feed-sticky-head { top: 92px; } }
+@media (max-width: 860px) { .feed-timeline-column { border-radius: 0 0 16px 16px; border-left: 0; border-right: 0; box-shadow: none; } }
 
 @media (max-width: 860px) {
 	.feed-sticky-head { top: 0; }
@@ -176,7 +201,7 @@
 /* ===== Markdown 表示 (MarkdownText) ===== */
 .post-text { white-space: pre-wrap; word-break: break-word; }
 .md-body .md-link,
-.post-external-link { color: var(--x-accent, #1d9bf0); text-decoration: none; }
+.post-external-link { color: var(--xb-accent); text-decoration: none; }
 .md-body .md-link:hover,
 .post-external-link:hover { text-decoration: underline; }
 .md-code { padding: 1px 6px; border-radius: 6px; background: rgba(110, 118, 125, .22); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }

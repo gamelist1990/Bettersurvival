@@ -104,18 +104,21 @@
 @media (max-width: 920px) { .profile-login-grid { grid-template-columns: 1fr; } .profile-login-intro { min-height: auto; } }
 
 .twitter-profile-layout {
-  width: min(1080px, 100%);
+  width: min(1150px, 100%);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 600px) minmax(300px, 1fr);
-  gap: 0 32px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 0 24px;
   align-items: start;
 }
 
+/* ベーススタイルに合わせたカード型のプロフィール (overflow: clip で sticky を維持) */
 .twitter-profile-shell {
-  border-left: 1px solid var(--xb-border);
-  border-right: 1px solid var(--xb-border);
+  border: 1px solid var(--xb-border);
+  border-radius: 22px;
+  overflow: clip;
   background: var(--xb-bg);
+  box-shadow: var(--shadow-soft);
 }
 
 .twitter-profile-topbar {
@@ -181,14 +184,16 @@
 }
 
 .twitter-profile-banner {
-  height: 200px;
-  background: linear-gradient(135deg, var(--xb-accent-soft), var(--xb-repost-soft));
+  height: 190px;
+  background:
+    radial-gradient(circle at 22% 24%, rgba(255, 255, 255, 0.4), transparent 30%),
+    linear-gradient(135deg, rgba(199, 91, 57, 0.32), rgba(35, 83, 71, 0.3));
   background-size: cover;
   background-position: center;
   margin-top: 0;
 }
 
-.twitter-profile-main { padding: 0 16px 16px; }
+.twitter-profile-main { padding: 0 22px 18px; }
 .twitter-profile-avatar-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .twitter-profile-avatar {
   width: 133px;
@@ -223,7 +228,7 @@
 .twitter-profile-stats strong { color: var(--xb-text); margin-right: 4px; }
 .twitter-profile-stats span { margin-right: 16px; }
 
-.twitter-profile-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--xb-border); border-bottom: 1px solid var(--xb-border); margin-top: 8px; }
+.twitter-profile-tabs { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--xb-border); border-bottom: 1px solid var(--xb-border); margin-top: 8px; }
 .twitter-profile-tabs button { position: relative; min-height: 50px; border: 0; background: transparent; color: var(--xb-text-secondary); font-weight: 700; transition: background-color 120ms ease, color 120ms ease; }
 .twitter-profile-tabs button:hover { background: var(--xb-bg-hover); color: var(--xb-text); }
 .twitter-profile-tabs button.is-active { color: var(--xb-text); }
@@ -314,8 +319,12 @@
 
 @media (max-width: 980px) {
   .twitter-profile-layout { grid-template-columns: 1fr; }
+  .twitter-profile-layout .feed-right-rail { display: none; }
   .twitter-profile-topbar { top: 92px; }
-  .twitter-profile-shell { border-right: 0; }
+}
+
+@media (max-width: 860px) {
+  .twitter-profile-shell { border-radius: 0 0 16px 16px; border-left: 0; border-right: 0; box-shadow: none; }
 }
 
 @media (max-width: 560px) {

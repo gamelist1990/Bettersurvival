@@ -295,6 +295,26 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
         </div>
       </main>
       <aside className="feed-right-rail" aria-label="Minecraft Twitter side panel">
+        <section className="feed-user-summary" onClick={() => onNavigate(`/feed/@${viewedProfile.username}`)}>
+          <img src={viewedProfile.faceUrl || '/images/clear.png'} alt="" />
+          <div>
+            <strong>{publicName(viewedProfile)}</strong>
+            <span>@{viewedProfile.username} · {profileDisplayPosts.length} posts</span>
+          </div>
+        </section>
+        <section className="feed-widget">
+          <h2><IconLink size={18} /> クイックリンク</h2>
+          <div className="feed-trend-list">
+            <button type="button" onClick={() => onNavigate(`/feed/@${viewedProfile.username}`)}>
+              <strong>このユーザーの投稿</strong>
+              <span>フィードで @{viewedProfile.username} の投稿だけを表示</span>
+            </button>
+            <button type="button" onClick={() => onNavigate('/feed')}>
+              <strong>みんなのタイムライン</strong>
+              <span>Minecraft Twitter のホームへ</span>
+            </button>
+          </div>
+        </section>
         <section className="feed-widget">
           <h2><IconTrend size={18} /> トレンド</h2>
           <div className="feed-trend-list">
