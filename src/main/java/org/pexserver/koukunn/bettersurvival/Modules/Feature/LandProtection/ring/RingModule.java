@@ -56,10 +56,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 土地保護内の闘技場「リング」モジュール。
  *
- * オーナー又は副リーダーが保護領域内に円形のリングを設置でき、
+ * オーナー又は副リーダーが保護領域内に名前付き矩形リングを設置でき、
  * リング内では PVP が有効になる。境界に近づくとパーティクルの壁が
  * 見えるため境界線が分かる。KeepInventory・即時復活・復活地点
- * （リング中心から50ブロック以内）を設定できる。
+ * （リング矩形から50ブロック以内）を設定できる。
  *
  * Duel モードのリングでは Duel を開始するまで攻撃できず、
  * 右クリックで出る UI から Duel を開始すると 3・2・1 → FIGHT の
@@ -85,12 +85,12 @@ public class RingModule implements Listener {
     private final RingMenu menu;
     private final Random random = new Random();
 
-    /** claimKey -> リング */
+    /** ringId (claimKey#name) -> リング */
     private final Map<String, RingRegion> rings = new LinkedHashMap<>();
     /** 対戦ボタンの位置キー (world:x:y:z) */
     private final Set<String> duelButtons = new LinkedHashSet<>();
 
-    /** claimKey -> 進行中の Duel */
+    /** ringId -> 進行中の Duel */
     private final Map<String, DuelSession> sessionByRing = new ConcurrentHashMap<>();
     /** 参加者 -> 進行中の Duel */
     private final Map<UUID, DuelSession> sessionByPlayer = new ConcurrentHashMap<>();
@@ -98,8 +98,25 @@ public class RingModule implements Listener {
     private final Map<UUID, Location> matchQueue = new LinkedHashMap<>();
     /** 対戦ボタン登録モード中のプレイヤー */
     private final Set<UUID> registeringButton = ConcurrentHashMap.newKeySet();
-    /** 返却チェスト登録モード中のプレイヤー (uuid -> claimKey) */
+    /** 返却チェスト登録モード中のプレイヤー (uuid -> ringId) */
     private final Map<UUID, String> registeringChest = new ConcurrentHashMap<>();
+    /** リング範囲選択モード中のプレイヤー */
+    private final Map<UUID, PendingSelection> selecting = new ConcurrentHashMap<>();
+
+    /** リング範囲選択のセッション。existingRingId が null なら新規作成。 */
+    private static class PendingSelection {
+        final String claimKey;
+        final String name;
+        final String existingRingId;
+        Location pos1;
+        Location pos2;
+
+        PendingSelection(String claimKey, String name, String existingRingId) {
+            this.claimKey = claimKey;
+            this.name = name;
+            this.existingRingId = existingRingId;
+        }
+    }
     /** Duel リクエスト (受信者 -> リクエスト) */
     private final Map<UUID, DuelRequest> duelRequests = new ConcurrentHashMap<>();
     /** 死亡後の復活地点 */
@@ -112,7 +129,7 @@ public class RingModule implements Listener {
     private final BukkitTask particleTask;
     private final BukkitTask tickTask;
 
-    private record DuelRequest(UUID requester, String claimKey, long expireAt) {
+    private record DuelRequest(UUID requester, String ringId, long expireAt) {
     }
 
     public RingModule(Loader plugin, LandProtectionModule landModule) {
@@ -152,8 +169,33 @@ public class RingModule implements Listener {
 
     // ================= 参照 API =================
 
+    public RingRegion getRing(String claimKey, String name) {
+        return rings.get(RingRegion.makeId(claimKey, name));
+    }
+
+    /** 互換用: 指定保護領域の先頭リングを返す。 */
     public RingRegion getRing(String claimKey) {
-        return rings.get(claimKey);
+        for (RingRegion ring : rings.values()) {
+            if (ring.getClaimKey().equals(claimKey)) {
+                return ring;
+            }
+        }
+        return null;
+    }
+
+    public RingRegion getRingById(String ringId) {
+        return rings.get(ringId);
+    }
+
+    /** 指定保護領域に属するリング一覧。 */
+    public List<RingRegion> getRingsForClaim(String claimKey) {
+        List<RingRegion> out = new ArrayList<>();
+        for (RingRegion ring : rings.values()) {
+            if (ring.getClaimKey().equals(claimKey)) {
+                out.add(ring);
+            }
+        }
+        return out;
     }
 
     /** リングが有効か（親の保護領域が存在し保護が有効）。 */
@@ -180,7 +222,7 @@ public class RingModule implements Listener {
     }
 
     public DuelSession getSessionInRing(RingRegion ring) {
-        return sessionByRing.get(ring.getClaimKey());
+        return sessionByRing.get(ring.ringId());
     }
 
     public boolean isQueued(UUID uuid) {
@@ -207,7 +249,7 @@ public class RingModule implements Listener {
     /** 指定リングで自分宛の Duel リクエストを出しているプレイヤー（なければ null）。 */
     public UUID getPendingRequester(UUID target, RingRegion ring) {
         DuelRequest request = getRequestFor(target);
-        if (request == null || !request.claimKey().equals(ring.getClaimKey())) {
+        if (request == null || !request.ringId().equals(ring.ringId())) {
             return null;
         }
         return request.requester();
@@ -223,31 +265,144 @@ public class RingModule implements Listener {
         return ring != null && ring.contains(attacker.getLocation());
     }
 
-    // ================= リング作成 / 削除 =================
+    // ================= リング作成 / 範囲選択 / 削除 =================
 
-    /** リングを作成する。失敗時はエラーメッセージ、成功時は null。 */
-    public String createRing(Player player, ClaimRegion claim) {
-        if (rings.containsKey(claim.key())) {
-            return "この保護領域には既にリングが設置されています";
+    /** リング名として使えるか検証する。問題があればエラーメッセージ。 */
+    public String validateRingName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "リング名を指定してください";
         }
-        Location loc = player.getLocation();
-        RingRegion ring = new RingRegion(claim.key(), claim.getWorldName(),
-                loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
-        String error = validateInsideClaim(claim, ring, ring.getRadius());
-        if (error != null) {
-            return error;
+        if (name.length() > 16) {
+            return "リング名は16文字以内にしてください";
         }
-        rings.put(claim.key(), ring);
-        saveAll();
+        if (name.contains("#") || name.contains(":") || name.contains(" ")) {
+            return "リング名に # : 空白 は使えません";
+        }
         return null;
     }
 
+    /**
+     * リング範囲の選択モードを開始する（新規作成用）。
+     * 左クリック = pos1 / 右クリック = pos2。両方選ぶと作成される。
+     * 失敗時はエラーメッセージ、成功時は null。
+     */
+    public String beginSelection(Player player, ClaimRegion claim, String name) {
+        String nameError = validateRingName(name);
+        if (nameError != null) {
+            return nameError;
+        }
+        if (rings.containsKey(RingRegion.makeId(claim.key(), name))) {
+            return "リング「" + name + "」は既に存在します (/land ring settings " + name + " で設定できます)";
+        }
+        selecting.put(player.getUniqueId(), new PendingSelection(claim.key(), name, null));
+        sendSelectionGuide(player, name);
+        return null;
+    }
+
+    /** 既存リングの範囲を再選択するモードを開始する。 */
+    public void beginReselect(Player player, RingRegion ring) {
+        selecting.put(player.getUniqueId(),
+                new PendingSelection(ring.getClaimKey(), ring.getName(), ring.ringId()));
+        sendSelectionGuide(player, ring.getName());
+    }
+
+    private void sendSelectionGuide(Player player, String name) {
+        player.sendMessage("§a§lリング「" + name + "」の範囲選択を開始しました");
+        player.sendMessage("§e左クリック §7= pos1 / §e右クリック §7= pos2 でブロックを選択");
+        player.sendMessage("§7視線の先で指定する場合: §e/land ring set pos1 §7と §e/land ring set pos2");
+        player.sendMessage("§7両方選択すると確定します (§e/land ring cancel §7で中止)");
+    }
+
+    public boolean isSelecting(Player player) {
+        return selecting.containsKey(player.getUniqueId());
+    }
+
+    public void cancelSelection(Player player) {
+        selecting.remove(player.getUniqueId());
+    }
+
+    /** 選択モード中の pos1 / pos2 を設定し、両方揃ったら確定する。 */
+    public void setSelectionPoint(Player player, boolean first, Location loc) {
+        PendingSelection selection = selecting.get(player.getUniqueId());
+        if (selection == null) {
+            player.sendMessage("§c範囲選択モードではありません。まず §e/land ring create <名前> §cを実行してください");
+            return;
+        }
+        if (first) {
+            selection.pos1 = loc.clone();
+        } else {
+            selection.pos2 = loc.clone();
+        }
+        player.sendMessage("§a" + (first ? "pos1" : "pos2") + " を設定: §e"
+                + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ());
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 0.8F, first ? 1.2F : 1.6F);
+        if (selection.pos1 != null && selection.pos2 != null) {
+            finishSelection(player, selection);
+        }
+    }
+
+    /** pos1 / pos2 が揃った選択を確定してリングを作成（または範囲変更）する。 */
+    private void finishSelection(Player player, PendingSelection selection) {
+        selecting.remove(player.getUniqueId());
+        ClaimRegion claim = landModule.getClaimByKey(selection.claimKey);
+        if (claim == null) {
+            player.sendMessage("§c保護領域が見つかりません");
+            return;
+        }
+        Location p1 = selection.pos1;
+        Location p2 = selection.pos2;
+        if (p1.getWorld() != p2.getWorld() || !p1.getWorld().getName().equals(claim.getWorldName())) {
+            player.sendMessage("§cpos1 と pos2 は保護領域と同じワールドで選択してください");
+            return;
+        }
+        int minX = Math.min(p1.getBlockX(), p2.getBlockX());
+        int maxX = Math.max(p1.getBlockX(), p2.getBlockX());
+        int minZ = Math.min(p1.getBlockZ(), p2.getBlockZ());
+        int maxZ = Math.max(p1.getBlockZ(), p2.getBlockZ());
+        if (maxX - minX + 1 < RingRegion.MIN_SIDE || maxZ - minZ + 1 < RingRegion.MIN_SIDE) {
+            player.sendMessage("§cリングは一辺 " + RingRegion.MIN_SIDE + " ブロック以上にしてください (現在 "
+                    + (maxX - minX + 1) + "×" + (maxZ - minZ + 1) + ")");
+            return;
+        }
+        String error = validateInsideClaim(claim, minX, minZ, maxX, maxZ);
+        if (error != null) {
+            player.sendMessage("§c" + error);
+            return;
+        }
+
+        if (selection.existingRingId != null) {
+            RingRegion ring = rings.get(selection.existingRingId);
+            if (ring == null) {
+                player.sendMessage("§cリングは既に削除されています");
+                return;
+            }
+            ring.setBounds(p1.getBlockX(), p1.getBlockY(), p1.getBlockZ(),
+                    p2.getBlockX(), p2.getBlockY(), p2.getBlockZ());
+            saveAll();
+            player.sendMessage("§a§lリング「" + ring.getName() + "」の範囲を変更しました §7("
+                    + ring.getSizeX() + "×" + ring.getSizeZ() + ")");
+            menu.openRing(player, claim, ring);
+            return;
+        }
+
+        RingRegion ring = new RingRegion(selection.claimKey, selection.name, claim.getWorldName(),
+                p1.getBlockX(), p1.getBlockY(), p1.getBlockZ(),
+                p2.getBlockX(), p2.getBlockY(), p2.getBlockZ());
+        rings.put(ring.ringId(), ring);
+        saveAll();
+        player.sendMessage("§a§lリング「" + ring.getName() + "」を作成しました！ §7("
+                + ring.getSizeX() + "×" + ring.getSizeZ() + ")");
+        player.sendMessage("§7境界に近づくとパーティクルで境界線が見えます");
+        player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.4F);
+        menu.openRing(player, claim, ring);
+    }
+
     public void deleteRing(RingRegion ring) {
-        DuelSession session = sessionByRing.get(ring.getClaimKey());
+        DuelSession session = sessionByRing.get(ring.ringId());
         if (session != null) {
             abortDuel(session, "§eリングが削除されたため Duel を中断しました");
         }
-        rings.remove(ring.getClaimKey());
+        rings.remove(ring.ringId());
         // このリング内の設置ブロック記録を破棄する
         placedBlocks.keySet().removeIf(key -> {
             Location loc = parseBlockKey(key);
@@ -256,14 +411,12 @@ public class RingModule implements Listener {
         saveAll();
     }
 
-    /** リング（円）が保護領域（正方形）に収まっているか検証する。 */
-    public String validateInsideClaim(ClaimRegion claim, RingRegion ring, int radius) {
-        int margin = claim.getRadius() - radius;
-        if (margin < 0
-                || Math.abs(ring.getCenterX() - claim.getX()) > margin
-                || Math.abs(ring.getCenterZ() - claim.getZ()) > margin) {
-            return "リングが保護範囲からはみ出しています (保護半径 " + claim.getRadius()
-                    + " / リング半径 " + radius + ")";
+    /** リング矩形が保護領域（正方形）に収まっているか検証する。 */
+    public String validateInsideClaim(ClaimRegion claim, int minX, int minZ, int maxX, int maxZ) {
+        int radius = claim.getRadius();
+        if (minX < claim.getX() - radius || maxX > claim.getX() + radius
+                || minZ < claim.getZ() - radius || maxZ > claim.getZ() + radius) {
+            return "リングが保護範囲からはみ出しています (保護半径 " + claim.getRadius() + ")";
         }
         return null;
     }
@@ -274,8 +427,8 @@ public class RingModule implements Listener {
         registeringButton.add(player.getUniqueId());
     }
 
-    public void beginChestRegistration(Player player, String claimKey) {
-        registeringChest.put(player.getUniqueId(), claimKey);
+    public void beginChestRegistration(Player player, String ringId) {
+        registeringChest.put(player.getUniqueId(), ringId);
     }
 
     public void clearButtons() {
@@ -433,7 +586,7 @@ public class RingModule implements Listener {
     private RingRegion findAvailableMatchRing() {
         for (RingRegion ring : rings.values()) {
             if (ring.isAutoMatch() && isRingActive(ring)
-                    && !sessionByRing.containsKey(ring.getClaimKey())
+                    && !sessionByRing.containsKey(ring.ringId())
                     && ring.getWorld() != null) {
                 return ring;
             }
@@ -445,7 +598,7 @@ public class RingModule implements Listener {
 
     /** リング内の相手へ Duel を申し込む。 */
     public void requestDuel(Player requester, Player target, RingRegion ring) {
-        if (sessionByRing.containsKey(ring.getClaimKey())) {
+        if (sessionByRing.containsKey(ring.ringId())) {
             requester.sendMessage("§cこのリングでは既に Duel が進行中です");
             return;
         }
@@ -460,7 +613,7 @@ public class RingModule implements Listener {
             return;
         }
         duelRequests.put(target.getUniqueId(), new DuelRequest(requester.getUniqueId(),
-                ring.getClaimKey(), System.currentTimeMillis() + DUEL_REQUEST_EXPIRE_MILLIS));
+                ring.ringId(), System.currentTimeMillis() + DUEL_REQUEST_EXPIRE_MILLIS));
         requester.sendMessage("§e" + target.getName() + " §fに Duel を申し込みました。相手の承諾を待っています…");
         target.sendMessage("§6§l[Duel] §e" + requester.getName() + " §fから Duel を申し込まれました！");
         target.sendMessage("§7リング内で素手で右クリック → §a承諾して開始 §7で試合が始まります (30秒で失効)");
@@ -470,7 +623,7 @@ public class RingModule implements Listener {
     /** 受け取った Duel リクエストを承諾して開始する。 */
     public void acceptDuel(Player accepter, RingRegion ring) {
         DuelRequest request = getRequestFor(accepter.getUniqueId());
-        if (request == null || !request.claimKey().equals(ring.getClaimKey())) {
+        if (request == null || !request.ringId().equals(ring.ringId())) {
             accepter.sendMessage("§c有効な Duel リクエストがありません");
             return;
         }
@@ -480,7 +633,7 @@ public class RingModule implements Listener {
             accepter.sendMessage("§c相手がオフラインになりました");
             return;
         }
-        if (sessionByRing.containsKey(ring.getClaimKey())) {
+        if (sessionByRing.containsKey(ring.ringId())) {
             accepter.sendMessage("§cこのリングでは既に Duel が進行中です");
             return;
         }
@@ -500,7 +653,7 @@ public class RingModule implements Listener {
         if (a == null || b == null) {
             return;
         }
-        sessionByRing.put(ring.getClaimKey(), session);
+        sessionByRing.put(ring.ringId(), session);
         sessionByPlayer.put(a.getUniqueId(), session);
         sessionByPlayer.put(b.getUniqueId(), session);
 
@@ -557,18 +710,31 @@ public class RingModule implements Listener {
         faceEachOther(a, b);
     }
 
-    /** リング内で最低 10 ブロック離れた対角の 2 地点を返す。 */
+    /** リング内で最低 10 ブロック離れた対称の 2 地点を返す。 */
     private Location[] randomStartPositions(RingRegion ring) {
         World world = ring.getWorld();
-        double angle = random.nextDouble() * Math.PI * 2;
-        double distance = Math.max(RingRegion.DUEL_MIN_DISTANCE / 2.0 + 0.5,
-                Math.min(ring.getRadius() - 1.5, ring.getRadius() * 0.7));
-        double cx = ring.getCenterX() + 0.5;
-        double cz = ring.getCenterZ() + 0.5;
-        Location a = groundLocation(world, cx + Math.cos(angle) * distance,
-                ring.getCenterY(), cz + Math.sin(angle) * distance);
-        Location b = groundLocation(world, cx - Math.cos(angle) * distance,
-                ring.getCenterY(), cz - Math.sin(angle) * distance);
+        double insetMinX = ring.getMinX() + 1.5;
+        double insetMaxX = ring.getMaxX() - 0.5;
+        double insetMinZ = ring.getMinZ() + 1.5;
+        double insetMaxZ = ring.getMaxZ() - 0.5;
+        double cx = (ring.getMinX() + ring.getMaxX() + 1) / 2.0;
+        double cz = (ring.getMinZ() + ring.getMaxZ() + 1) / 2.0;
+
+        double ax = insetMinX + random.nextDouble() * Math.max(0.1, insetMaxX - insetMinX);
+        double az = insetMinZ + random.nextDouble() * Math.max(0.1, insetMaxZ - insetMinZ);
+        // 中心を挟んだ点対称の位置に相手を置く
+        double bx = 2 * cx - ax;
+        double bz = 2 * cz - az;
+        double distance = Math.hypot(ax - bx, az - bz);
+        if (distance < RingRegion.DUEL_MIN_DISTANCE) {
+            // 狭い/中央寄りの場合は対角の隅から開始
+            ax = insetMinX;
+            az = insetMinZ;
+            bx = insetMaxX;
+            bz = insetMaxZ;
+        }
+        Location a = groundLocation(world, ax, ring.getMinY(), az);
+        Location b = groundLocation(world, bx, ring.getMinY(), bz);
         return new Location[]{a, b};
     }
 
@@ -758,7 +924,7 @@ public class RingModule implements Listener {
     }
 
     private void cleanupSession(DuelSession session) {
-        sessionByRing.remove(session.getRing().getClaimKey());
+        sessionByRing.remove(session.getRing().ringId());
         sessionByPlayer.remove(session.getPlayerA());
         sessionByPlayer.remove(session.getPlayerB());
     }
@@ -912,8 +1078,8 @@ public class RingModule implements Listener {
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK && block != null
                 && registeringChest.containsKey(player.getUniqueId())) {
             event.setCancelled(true);
-            String claimKey = registeringChest.remove(player.getUniqueId());
-            RingRegion ring = rings.get(claimKey);
+            String ringId = registeringChest.remove(player.getUniqueId());
+            RingRegion ring = rings.get(ringId);
             if (ring == null) {
                 player.sendMessage("§cリングは既に削除されています");
                 return;
@@ -1077,6 +1243,7 @@ public class RingModule implements Listener {
         matchQueue.remove(uuid);
         registeringButton.remove(uuid);
         registeringChest.remove(uuid);
+        selecting.remove(uuid);
         duelRequests.remove(uuid);
         DuelSession session = sessionByPlayer.get(uuid);
         if (session != null && session.getState() != DuelSession.State.ENDED) {
@@ -1103,13 +1270,12 @@ public class RingModule implements Listener {
                     continue;
                 }
                 double y = loc.getY();
-                if (y < ring.getCenterY() - RingRegion.VERTICAL_BELOW - 4
-                        || y > ring.getCenterY() + RingRegion.VERTICAL_ABOVE + 4) {
+                if (y < ring.getMinY() - RingRegion.VERTICAL_BELOW - 4
+                        || y > ring.getMaxY() + RingRegion.VERTICAL_ABOVE + 4) {
                     continue;
                 }
-                double distance = ring.horizontalDistance(loc);
-                // 境界の狭間（内外どちらからでも）に近づいたときだけ描画する
-                if (Math.abs(distance - ring.getRadius()) > BOUNDARY_VIEW_DISTANCE) {
+                double distance = ring.horizontalDistanceToBox(loc);
+                if (distance > BOUNDARY_VIEW_DISTANCE) {
                     continue;
                 }
                 drawBoundaryNear(player, ring);
@@ -1117,28 +1283,39 @@ public class RingModule implements Listener {
         }
     }
 
-    /** プレイヤーの近くの境界の弧をパーティクルで描画する。 */
+    /** プレイヤーの近くの矩形境界をパーティクルで描画する。 */
     private void drawBoundaryNear(Player player, RingRegion ring) {
         Location loc = player.getLocation();
-        double cx = ring.getCenterX() + 0.5;
-        double cz = ring.getCenterZ() + 0.5;
-        double playerAngle = Math.atan2(loc.getZ() - cz, loc.getX() - cx);
-        int radius = ring.getRadius();
-        // プレイヤー正面の弧 ±（半径に応じた視野）だけを描く
-        double arc = Math.min(Math.PI, 14.0 / radius);
-        double step = Math.max(0.03, 0.7 / radius);
+        double minX = ring.getMinX();
+        double maxX = ring.getMaxX() + 1.0;
+        double minZ = ring.getMinZ();
+        double maxZ = ring.getMaxZ() + 1.0;
+        double step = 0.7;
         double baseY = Math.floor(loc.getY());
         double[] heights = {baseY, baseY + 1.0, baseY + 2.0};
-        Particle.DustOptions color = sessionByRing.containsKey(ring.getClaimKey())
+        Particle.DustOptions color = sessionByRing.containsKey(ring.ringId())
                 ? BOUNDARY_COLOR_FIGHT : BOUNDARY_COLOR;
 
         Location point = new Location(player.getWorld(), 0, 0, 0);
-        for (double a = playerAngle - arc; a <= playerAngle + arc; a += step) {
-            double x = cx + Math.cos(a) * radius;
-            double z = cz + Math.sin(a) * radius;
+        drawLine(player, point, minX, minZ, maxX, minZ, step, heights, color);
+        drawLine(player, point, minX, maxZ, maxX, maxZ, step, heights, color);
+        drawLine(player, point, minX, minZ, minX, maxZ, step, heights, color);
+        drawLine(player, point, maxX, minZ, maxX, maxZ, step, heights, color);
+    }
+
+    private void drawLine(Player player, Location point, double x1, double z1, double x2, double z2,
+                          double step, double[] heights, Particle.DustOptions color) {
+        double dx = x2 - x1;
+        double dz = z2 - z1;
+        double length = Math.max(step, Math.hypot(dx, dz));
+        int count = Math.max(1, (int) Math.ceil(length / step));
+        for (int i = 0; i <= count; i++) {
+            double t = i / (double) count;
+            double x = x1 + dx * t;
+            double z = z1 + dz * t;
             for (double h : heights) {
                 point.setX(x);
-                point.setY(h + (a * 31 % 1) * 0.4);
+                point.setY(h + ((i * 37) % 10) * 0.04);
                 point.setZ(z);
                 player.spawnParticle(Particle.DUST, point, 1, 0, 0, 0, 0, color);
             }

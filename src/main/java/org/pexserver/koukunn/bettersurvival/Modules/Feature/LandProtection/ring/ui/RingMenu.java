@@ -13,6 +13,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingRegion;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -77,19 +78,29 @@ public class RingMenu {
             player.sendMessage("§cリングの設定はオーナー又は副リーダーのみ操作できます");
             return;
         }
-        RingRegion ring = module.getRing(claimKey);
-        if (ring == null) {
-            openCreate(player, claim);
+        List<RingRegion> claimRings = module.getRingsForClaim(claimKey);
+        if (claimRings.size() != 1) {
+            openRingList(player, claim);
+            return;
+        }
+        openRing(player, claim, claimRings.get(0));
+    }
+
+    public void openRing(Player player, ClaimRegion claim, RingRegion ring) {
+        String claimKey = claim.key();
+        if (!land().canManage(player, claim)) {
+            player.sendMessage("§cリングの設定はオーナー又は副リーダーのみ操作できます");
             return;
         }
 
         DuelSession session = module.getSessionInRing(ring);
         ChestUI.builder()
-                .title("§c§lリング(闘技場) の設定")
+                .title("§c§lリング: " + ring.getName())
                 .size(45)
-                .addButtonAt(4, "§c§lリング Lv.情報", Material.NETHER_STAR,
-                        "§7中心: §e" + ring.getCenterX() + ", " + ring.getCenterY() + ", " + ring.getCenterZ()
-                                + "\n§7半径: §e" + ring.getRadius() + " ブロック"
+                .addButtonAt(4, "§c§l" + ring.getName(), Material.NETHER_STAR,
+                        "§7範囲: §e" + ring.getMinX() + ", " + ring.getMinY() + ", " + ring.getMinZ()
+                                + " §7〜 §e" + ring.getMaxX() + ", " + ring.getMaxY() + ", " + ring.getMaxZ()
+                                + "\n§7サイズ: §e" + ring.getSizeX() + "×" + ring.getSizeZ()
                                 + "\n§7状態: " + (module.isRingActive(ring) ? "§a有効" : "§c無効(保護が無効)")
                                 + "\n§7Duel: " + (session == null ? "§8進行中の試合なし"
                                         : (session.getState() == DuelSession.State.FIGHTING ? "§c試合中！" : "§e開始準備中"))
@@ -128,12 +139,8 @@ public class RingMenu {
                         "§7カスタム開始位置 1\n§7現在: " + formatLoc(ring.getPos1()))
                 .addButtonAt(20, "§dpos2 を現在地に設定", Material.RED_CONCRETE,
                         "§7カスタム開始位置 2\n§7現在: " + formatLoc(ring.getPos2()))
-                .addButtonAt(22, "§6半径を変更", Material.SLIME_BALL,
-                        "§7チャットで新しい半径を入力します"
-                                + "\n§7現在: §e" + ring.getRadius()
-                                + " §7(" + RingRegion.MIN_RADIUS + "〜" + RingRegion.MAX_RADIUS + ")")
-                .addButtonAt(23, "§6中心を現在地に移動", Material.LODESTONE,
-                        "§7リングの中心を今立っている場所へ移動します")
+                .addButtonAt(22, "§6範囲を再選択", Material.WOODEN_AXE,
+                    "§7左クリック=pos1 / 右クリック=pos2 で\n§7このリングの矩形範囲を選び直します")
                 .addButtonAt(25, "§e§l対戦ボタンを登録", Material.STONE_BUTTON,
                         "§7クリック後、設置済みのボタンを右クリックすると"
                                 + "\n§7そのボタンが「対戦待ち登録ボタン」になります"
@@ -151,7 +158,7 @@ public class RingMenu {
                     if (currentClaim == null) {
                         return;
                     }
-                    RingRegion current = module.getRing(claimKey);
+                    RingRegion current = module.getRingById(ring.ringId());
                     if (current == null && result.slot != 40 && result.slot != 44) {
                         p.sendMessage("§cリングは既に削除されています");
                         ChestUI.closeMenu(p);
@@ -161,12 +168,12 @@ public class RingMenu {
                         case 10 -> {
                             current.setKeepInventory(!current.isKeepInventory());
                             module.saveAll();
-                            openRing(p, currentClaim);
+                            openRing(p, currentClaim, current);
                         }
                         case 11 -> {
                             current.setInstantRespawn(!current.isInstantRespawn());
                             module.saveAll();
-                            openRing(p, currentClaim);
+                            openRing(p, currentClaim, current);
                         }
                         case 12 -> {
                             current.setDuelMode(!current.isDuelMode());
@@ -174,17 +181,17 @@ public class RingMenu {
                             p.sendMessage(current.isDuelMode()
                                     ? "§aDuelモードを有効にしました。Duel 開始まで攻撃できなくなります"
                                     : "§eDuelモードを無効にしました。リング内は常時 PVP になります");
-                            openRing(p, currentClaim);
+                            openRing(p, currentClaim, current);
                         }
                         case 13 -> {
                             current.setAutoMatch(!current.isAutoMatch());
                             module.saveAll();
-                            openRing(p, currentClaim);
+                            openRing(p, currentClaim, current);
                         }
                         case 14 -> {
                             current.setStartMode(current.getStartMode().next());
                             module.saveAll();
-                            openRing(p, currentClaim);
+                            openRing(p, currentClaim, current);
                         }
                         case 15 -> setRespawnPoint(p, currentClaim, current);
                         case 16 -> {
@@ -194,17 +201,19 @@ public class RingMenu {
                                     && current.getReturnChest() == null) {
                                 p.sendMessage("§e返却モードにしました。「返却チェストを指定」でラージチェストを登録してください");
                             }
-                            openRing(p, currentClaim);
+                            openRing(p, currentClaim, current);
                         }
                         case 21 -> {
-                            module.beginChestRegistration(p, claimKey);
+                            module.beginChestRegistration(p, current.ringId());
                             ChestUI.closeMenu(p);
                             p.sendMessage("§a登録したいラージチェストを右クリックしてください");
                         }
                         case 19 -> setDuelPos(p, currentClaim, current, true);
                         case 20 -> setDuelPos(p, currentClaim, current, false);
-                        case 22 -> askRadius(p, claimKey);
-                        case 23 -> moveCenter(p, currentClaim, current);
+                        case 22 -> {
+                            module.beginReselect(p, current);
+                            ChestUI.closeMenu(p);
+                        }
                         case 25 -> {
                             module.beginButtonRegistration(p);
                             ChestUI.closeMenu(p);
@@ -216,7 +225,7 @@ public class RingMenu {
                             p.sendMessage("§eリングを削除しました");
                             land().getMenu().openMain(p, currentClaim);
                         }
-                        case 40 -> land().getMenu().openMain(p, currentClaim);
+                        case 40 -> openRingList(p, currentClaim);
                         case 44 -> ChestUI.closeMenu(p);
                         default -> {
                         }
@@ -225,47 +234,80 @@ public class RingMenu {
                 .show(player);
     }
 
-    /** リング未設置時の作成メニュー。 */
-    private void openCreate(Player player, ClaimRegion claim) {
+    private void openRingList(Player player, ClaimRegion claim) {
         String claimKey = claim.key();
-        ChestUI.builder()
-                .title("§c§lリング(闘技場) を作成")
-                .size(27)
-                .addButtonAt(13, "§c§l現在地にリングを作成", Material.IRON_SWORD,
-                        "§7今立っている場所を中心に闘技場リングを作成します"
-                                + "\n§7リング内では PVP が有効になります"
-                                + "\n§7(半径はあとから変更できます / 初期半径 12)"
-                                + "\n\n§cリング全体が保護範囲内に収まる必要があります")
-                .addButtonAt(26, "§7戻る", Material.ARROW)
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§c§lリング一覧")
+                .size(45);
+        Map<Integer, String> slotMap = new LinkedHashMap<>();
+        int slot = 10;
+        for (RingRegion ring : module.getRingsForClaim(claimKey)) {
+            if (slot >= 35) {
+                break;
+            }
+            DuelSession session = module.getSessionInRing(ring);
+            builder.addButtonAt(slot, "§c§l" + ring.getName(), Material.IRON_SWORD,
+                    "§7サイズ: §e" + ring.getSizeX() + "×" + ring.getSizeZ()
+                            + "\n§7自動マッチング: " + (ring.isAutoMatch() ? "§a有効" : "§c無効")
+                            + "\n§7Duel: " + (session == null ? "§8進行中なし" : "§e進行中")
+                            + "\n\n§eクリックで設定を開く");
+            slotMap.put(slot, ring.ringId());
+            slot++;
+        }
+        builder.addButtonAt(40, "§a§l新しいリングを作成", Material.LIME_CONCRETE,
+                        "§7チャットで名前を入力してから\n§7pos1/pos2 の範囲選択を開始します")
+                .addButtonAt(44, "§7コアメニューへ戻る", Material.ARROW)
                 .then((result, p) -> {
                     if (result.slot == null) {
                         return;
                     }
-                    ClaimRegion current = resolveManaged(p, claimKey);
-                    if (current == null) {
+                    ClaimRegion currentClaim = resolveManaged(p, claimKey);
+                    if (currentClaim == null) {
                         return;
                     }
-                    if (result.slot == 13) {
-                        String error = module.createRing(p, current);
-                        if (error != null) {
-                            p.sendMessage("§c" + error);
-                            return;
-                        }
-                        p.sendMessage("§aリングを作成しました！境界に近づくとパーティクルが表示されます");
-                        openRing(p, current);
+                    if (result.slot == 40) {
+                        askCreateName(p, currentClaim);
                         return;
                     }
-                    if (result.slot == 26) {
-                        land().getMenu().openMain(p, current);
+                    if (result.slot == 44) {
+                        land().getMenu().openMain(p, currentClaim);
+                        return;
                     }
+                    String ringId = slotMap.get(result.slot);
+                    if (ringId == null) {
+                        return;
+                    }
+                    RingRegion ring = module.getRingById(ringId);
+                    if (ring == null) {
+                        p.sendMessage("§cリングは既に削除されています");
+                        openRingList(p, currentClaim);
+                        return;
+                    }
+                    openRing(p, currentClaim, ring);
                 })
                 .show(player);
+    }
+
+    private void askCreateName(Player player, ClaimRegion claim) {
+        ChestUI.closeMenu(player);
+        ChestUI.openChat(player, "作成するリング名", "ring", input -> runSync(() -> {
+            ClaimRegion current = resolveManaged(player, claim.key());
+            if (current == null) {
+                return;
+            }
+            String name = input == null ? "" : input.trim();
+            String error = module.beginSelection(player, current, name);
+            if (error != null) {
+                player.sendMessage("§c" + error);
+                openRingList(player, current);
+            }
+        }));
     }
 
     private void setRespawnPoint(Player player, ClaimRegion claim, RingRegion ring) {
         Location loc = player.getLocation().clone();
         if (!ring.isValidRespawnPoint(loc)) {
-            player.sendMessage("§c復活地点はリング中心から " + RingRegion.RESPAWN_MAX_DISTANCE
+            player.sendMessage("§c復活地点はリングから " + RingRegion.RESPAWN_MAX_DISTANCE
                     + " ブロック以内に設定してください");
             return;
         }
@@ -276,7 +318,7 @@ public class RingMenu {
         ring.setRespawnPoint(loc);
         module.saveAll();
         player.sendMessage("§a復活地点を現在地に設定しました " + formatLoc(loc));
-        openRing(player, claim);
+        openRing(player, claim, ring);
     }
 
     private void setDuelPos(Player player, ClaimRegion claim, RingRegion ring, boolean first) {
@@ -298,69 +340,13 @@ public class RingMenu {
         }
         module.saveAll();
         player.sendMessage("§a" + (first ? "pos1" : "pos2") + " を現在地に設定しました " + formatLoc(loc));
-        openRing(player, claim);
-    }
-
-    private void moveCenter(Player player, ClaimRegion claim, RingRegion ring) {
-        Location loc = player.getLocation();
-        int oldX = ring.getCenterX();
-        int oldY = ring.getCenterY();
-        int oldZ = ring.getCenterZ();
-        ring.setCenter(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
-        String error = module.validateInsideClaim(claim, ring, ring.getRadius());
-        if (error != null) {
-            ring.setCenter(oldX, oldY, oldZ);
-            player.sendMessage("§c" + error);
-            return;
-        }
-        module.saveAll();
-        player.sendMessage("§aリングの中心を現在地に移動しました");
-        openRing(player, claim);
-    }
-
-    private void askRadius(Player player, String claimKey) {
-        ChestUI.closeMenu(player);
-        RingRegion ring = module.getRing(claimKey);
-        String current = ring == null ? "" : String.valueOf(ring.getRadius());
-        ChestUI.openChat(player, "新しい半径を入力 (" + RingRegion.MIN_RADIUS + "〜"
-                + RingRegion.MAX_RADIUS + ")", current, input -> runSync(() -> {
-            ClaimRegion claim = resolveManaged(player, claimKey);
-            RingRegion target = module.getRing(claimKey);
-            if (claim == null || target == null) {
-                return;
-            }
-            int radius;
-            try {
-                radius = Integer.parseInt(input == null ? "" : input.trim());
-            } catch (NumberFormatException e) {
-                player.sendMessage("§c数値を入力してください");
-                openRing(player, claim);
-                return;
-            }
-            if (radius < RingRegion.MIN_RADIUS || radius > RingRegion.MAX_RADIUS) {
-                player.sendMessage("§c半径は " + RingRegion.MIN_RADIUS + "〜"
-                        + RingRegion.MAX_RADIUS + " の範囲で指定してください");
-                openRing(player, claim);
-                return;
-            }
-            String error = module.validateInsideClaim(claim, target, radius);
-            if (error != null) {
-                player.sendMessage("§c" + error);
-                openRing(player, claim);
-                return;
-            }
-            target.setRadius(radius);
-            module.saveAll();
-            player.sendMessage("§a半径を " + target.getRadius() + " ブロックに変更しました");
-            openRing(player, claim);
-        }));
+        openRing(player, claim, ring);
     }
 
     // ================= Duel 開始 UI =================
 
     /** リング内で素手右クリックすると開く Duel メニュー。 */
     public void openDuel(Player player, RingRegion ring) {
-        String claimKey = ring.getClaimKey();
         DuelSession session = module.getSessionInRing(ring);
         UUID requester = module.getPendingRequester(player.getUniqueId(), ring);
         Player requesterPlayer = requester == null ? null : Bukkit.getPlayer(requester);
@@ -406,7 +392,7 @@ public class RingMenu {
             if (result.slot == null) {
                 return;
             }
-            RingRegion current = module.getRing(claimKey);
+            RingRegion current = module.getRingById(ring.ringId());
             if (current == null || !module.isRingActive(current)) {
                 p.sendMessage("§cこのリングは現在利用できません");
                 ChestUI.closeMenu(p);
