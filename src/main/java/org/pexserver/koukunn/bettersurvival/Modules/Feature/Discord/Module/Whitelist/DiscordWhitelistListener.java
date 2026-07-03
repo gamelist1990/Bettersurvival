@@ -23,6 +23,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotSettings;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessManager;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 
 import javax.annotation.Nonnull;
@@ -60,17 +61,20 @@ public class DiscordWhitelistListener extends ListenerAdapter {
 
     private final Plugin plugin;
     private final PendingWhitelistModule whitelistModule;
+    private final OfflineAccessManager offlineAccessManager;
     private final McApiClient mcApiClient;
     private final Supplier<DiscordBotSettings> settingsSupplier;
 
     public DiscordWhitelistListener(
             Plugin plugin,
             PendingWhitelistModule whitelistModule,
+            OfflineAccessManager offlineAccessManager,
             McApiClient mcApiClient,
             Supplier<DiscordBotSettings> settingsSupplier
     ) {
         this.plugin = plugin;
         this.whitelistModule = whitelistModule;
+        this.offlineAccessManager = offlineAccessManager;
         this.mcApiClient = mcApiClient;
         this.settingsSupplier = settingsSupplier;
     }
@@ -133,6 +137,13 @@ public class DiscordWhitelistListener extends ListenerAdapter {
         }
         String floodgateName = isBedrock ? prefix + lookupName.replace(" ", "_") : lookupName;
 
+        // オフラインアカウントは Java 版として扱う
+        if (!isBedrock && offlineAccessManager != null && offlineAccessManager.isAllowed(lookupName)) {
+            event.deferReply(true).queue();
+            handleValidatedApplication(event, floodgateName, lookupName, false);
+            return;
+        }
+
         event.deferReply(true).queue();
         if (isBedrock) {
             mcApiClient.validateBedrockPlayer(lookupName).thenAccept(valid -> {
@@ -149,7 +160,7 @@ public class DiscordWhitelistListener extends ListenerAdapter {
             if (valid) {
                 handleValidatedApplication(event, floodgateName, lookupName, false);
             } else {
-                event.getHook().sendMessage("❌ Java プレイヤーが見つかりませんでした: `" + lookupName + "`").queue();
+                event.getHook().sendMessage("❌ Java プレイヤーが見つかりませんでした: `" + lookupName + "`\nオフラインアカウントの場合は /offline から許可してください。").queue();
             }
         });
     }
@@ -172,6 +183,10 @@ public class DiscordWhitelistListener extends ListenerAdapter {
     private void handleValidatedApplication(ModalInteractionEvent event, String username, String lookupName, boolean isBedrock) {
         if (whitelistModule.isAlreadyWhitelisted(lookupName, isBedrock)) {
             event.getHook().sendMessage(buildAlreadyWhitelistedNotice(lookupName, isBedrock)).queue();
+            return;
+        }
+        if (!isBedrock && offlineAccessManager != null && offlineAccessManager.isAllowed(lookupName)) {
+            processWhitelistAdd(event, username, lookupName, false);
             return;
         }
         if (whitelistModule.getPendingNames().stream().anyMatch(name -> name.equalsIgnoreCase(username))) {

@@ -7,6 +7,7 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Whitelist.DiscordWhitelistMessageService;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Whitelist.DiscordWhitelistSettingsMenu;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessManager;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 
 /**
@@ -22,12 +23,12 @@ public class DiscordBotModule {
 
     private DiscordBotSettings settings;
 
-    public DiscordBotModule(Loader plugin, ConfigManager configManager, PendingWhitelistModule whitelistModule) {
+    public DiscordBotModule(Loader plugin, ConfigManager configManager, PendingWhitelistModule whitelistModule, OfflineAccessManager offlineAccessManager) {
         this.store = new DiscordBotStore(configManager);
         this.settings = store.load();
         McApiClient mcApiClient = new McApiClient(plugin);
         plugin.getServer().getPluginManager().registerEvents(mcApiClient, plugin);
-        this.runtime = new DiscordBotRuntime(plugin, whitelistModule, mcApiClient, this::getSettings);
+        this.runtime = new DiscordBotRuntime(plugin, whitelistModule, offlineAccessManager, mcApiClient, this::getSettings);
         this.settingsMenu = new DiscordBotSettingsMenu(plugin, this);
         this.whitelistMessageService = new DiscordWhitelistMessageService(plugin, runtime);
         this.whitelistSettingsMenu = new DiscordWhitelistSettingsMenu(this, whitelistMessageService);

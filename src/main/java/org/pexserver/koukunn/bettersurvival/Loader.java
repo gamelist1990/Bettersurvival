@@ -47,6 +47,7 @@ import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.hotp.HotpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.webservice.WebServiceCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.offline.OfflineCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.party.PartyCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.land.LandCommand;
@@ -57,6 +58,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChunkLoader.ChunkLoaderModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -85,6 +87,7 @@ public final class Loader extends JavaPlugin {
     private PartyModule partyModule;
     private PartyMenu partyMenu;
     private LandProtectionModule landProtectionModule;
+    private OfflineAccessModule offlineAccessModule;
 
     @Override
     public void onEnable() {
@@ -142,7 +145,7 @@ public final class Loader extends JavaPlugin {
         chestSortModule = new ChestSortModule(this, toggleModule, chestLockModule, chestShopModule);
         getServer().getPluginManager().registerEvents(chestSortModule, this);
         getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
-        discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule);
+        discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule, offlineAccessModule.getManager());
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
         getServer().getPluginManager().registerEvents(discordWebhookModule, this);
         homeModule = new HomeModule(this);
@@ -230,8 +233,8 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(
             new ToggleFeature("party", "Party", "パーティー(ギルド)機能を有効/無効にします (/party, /p)", Material.WHITE_BANNER, false));
         toggleModule.registerFeature(
-            new ToggleFeature("landprotect", "LandProtect", "ロデストーン+ダイヤで作る土地保護コアを有効/無効にします", Material.LODESTONE, false));
-        if (!toggleModule.hasGlobal("treemine")) {
+            new ToggleFeature("landprotect", "LandProtect", "ロデストーン+ダイヤで作る土地保護コアを有効/無効にします", Material.LODESTONE, false));        toggleModule.registerFeature(
+                new ToggleFeature("offlineaccess", "OfflineAccess", "オフラインアカウントのログインを許可/拒否します", Material.COMPASS, false));        if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
         if (!toggleModule.hasGlobal("oremine")) {
@@ -300,6 +303,14 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("landprotect")) {
             toggleModule.setGlobal("landprotect", true);
         }
+        if (!toggleModule.hasGlobal("offlineaccess")) {
+            toggleModule.setGlobal("offlineaccess", false);
+        }
+
+        // OfflineAccess モジュールの初期化と Netty インジェクション
+        offlineAccessModule = new OfflineAccessModule(this, configManager, toggleModule);
+        getServer().getPluginManager().registerEvents(offlineAccessModule, this);
+        offlineAccessModule.inject();
 
         getLogger().info("Better Survival Plugin が有効になりました");
     }
@@ -337,6 +348,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new PartyCommand(this, "p"));
         // Land command: 土地保護のデバッグ表示・情報
         commandManager.register(new LandCommand(this));
+        // OfflineAccess command: オフラインアカウントログイン許可リスト管理
+        commandManager.register(new OfflineCommand(offlineAccessModule.getManager()));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
@@ -413,6 +426,10 @@ public final class Loader extends JavaPlugin {
 
     public WebServiceModule getWebServiceModule() {
         return webServiceModule;
+    }
+
+    public OfflineAccessModule getOfflineAccessModule() {
+        return offlineAccessModule;
     }
 
     @Override

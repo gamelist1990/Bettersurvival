@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Whitelist.DiscordWhitelistListener;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessManager;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 
 import java.util.List;
@@ -23,6 +24,7 @@ import java.util.logging.Level;
 public class DiscordBotRuntime {
     private final Loader plugin;
     private final PendingWhitelistModule whitelistModule;
+    private final OfflineAccessManager offlineAccessManager;
     private final McApiClient mcApiClient;
     private final Supplier<DiscordBotSettings> settingsSupplier;
     private final List<Object> additionalListeners = new CopyOnWriteArrayList<>();
@@ -37,10 +39,12 @@ public class DiscordBotRuntime {
     public DiscordBotRuntime(
             Loader plugin,
             PendingWhitelistModule whitelistModule,
+            OfflineAccessManager offlineAccessManager,
             McApiClient mcApiClient,
             Supplier<DiscordBotSettings> settingsSupplier) {
         this.plugin = plugin;
         this.whitelistModule = whitelistModule;
+        this.offlineAccessManager = offlineAccessManager;
         this.mcApiClient = mcApiClient;
         this.settingsSupplier = settingsSupplier;
     }
@@ -62,7 +66,7 @@ public class DiscordBotRuntime {
                     .setRateLimitElastic(rateLimitElastic, false)
                     .setCallbackPool(callbackPool, false)
                     .addEventListeners(
-                            new DiscordWhitelistListener(plugin, whitelistModule, mcApiClient, settingsSupplier));
+                            new DiscordWhitelistListener(plugin, whitelistModule, offlineAccessManager, mcApiClient, settingsSupplier));
 
             for (Object listener : additionalListeners) {
                 builder.addEventListeners(listener);
