@@ -17,7 +17,7 @@ type ConsentModalProps = {
 };
 
 /**
- * 初回訪問時に利用規約・プライバシーポリシーへの同意を求めるモーダル。
+ * アカウント登録前に利用規約・プライバシーポリシーへの同意を求めるモーダル。
  * 同意チェックを入れるまで「同意して始める」は押せない（スキップ不可）。
  * ポリシー全文は同意前でも閲覧できる。
  */
@@ -37,9 +37,9 @@ export function ConsentModal({ onAgree, onNavigate }: ConsentModalProps) {
   return (
     <div className="consent-overlay" role="presentation">
       <section className="consent-modal" role="dialog" aria-modal="true" aria-labelledby="consent-title">
-        <p className="consent-eyebrow">ようこそ BetterSurvival へ</p>
-        <h1 id="consent-title">はじめる前に、大切なお知らせ</h1>
-        <p className="consent-lead">30秒だけ。あなたのデータの扱いについて確認してください。</p>
+        <p className="consent-eyebrow">アカウント登録の前に</p>
+        <h1 id="consent-title">登録内容とデータの扱いを確認してください</h1>
+        <p className="consent-lead">同意後、入力済みの内容でアカウント登録を続行します。</p>
 
         <div className="consent-points">
           <div className="consent-point">
@@ -76,7 +76,7 @@ export function ConsentModal({ onAgree, onNavigate }: ConsentModalProps) {
         </label>
 
         <button className="consent-agree-button" type="button" disabled={!checked} onClick={agree}>
-          同意して始める
+          同意して登録を続ける
         </button>
       </section>
     </div>

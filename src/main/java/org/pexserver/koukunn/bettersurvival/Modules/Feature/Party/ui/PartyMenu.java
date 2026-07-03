@@ -262,6 +262,8 @@ public class PartyMenu {
                         leader ? "§7イメージカラーを変更します\n§7他パーティーと同じ色は選べません" : "§cリーダーのみ使用できます")
                 .addButtonAt(20, coLeaderUp ? "§e§l説明を変更" : "§8説明を変更", coLeaderUp ? Material.WRITABLE_BOOK : Material.GRAY_DYE,
                         coLeaderUp ? "§7パーティーの説明文を変更します" : "§cサブリーダー以上のみ使用できます")
+                .addButtonAt(28, coLeaderUp ? "§b§lパーティー設定" : "§8パーティー設定", coLeaderUp ? Material.REDSTONE_TORCH : Material.GRAY_DYE,
+                        coLeaderUp ? "§7味方攻撃・ネームタグカラー・プレフィックスを設定します" : "§cサブリーダー以上のみ使用できます")
                 .addButtonAt(24, leader ? "§4§lパーティーを解散" : "§c§lパーティーを脱退",
                         leader ? Material.TNT : Material.OAK_DOOR,
                         leader ? "§c全メンバーが脱退し、パーティーが削除されます\n§c(共有中の土地保護は個人所有に戻ります)"
@@ -300,6 +302,11 @@ public class PartyMenu {
                 case 20 -> {
                     if (isCoUp) {
                         askRedescribe(p, current);
+                    }
+                }
+                case 28 -> {
+                    if (isCoUp) {
+                        openSettings(p, current);
                     }
                 }
                 case 24 -> {
@@ -534,6 +541,65 @@ public class PartyMenu {
             }
             openInviteTargets(p, party);
         }).show(player);
+    }
+
+    // ================= パーティー設定 =================
+
+    private void openSettings(Player player, Party party) {
+        ChestUI.builder()
+                .title("§bパーティー設定")
+                .size(27)
+                .addButtonAt(10, toggleLabel("味方同士の攻撃", party.isFriendlyFire()), Material.IRON_SWORD,
+                        toggleLore(party.isFriendlyFire()) + "\n§7無効時はパーティー内の攻撃が無効化されます")
+                .addButtonAt(12, toggleLabel("ネームタグカラー", party.isNameTagColor()), Material.LIME_DYE,
+                        toggleLore(party.isNameTagColor()) + "\n§7有効時はパーティーカラーが名前に反映されます")
+                .addButtonAt(14, toggleLabel("パーティープレフィックス", party.isNameTagPrefix()), Material.NAME_TAG,
+                        toggleLore(party.isNameTagPrefix()) + "\n§7有効時は名前の前に [パーティー名] が付きます")
+                .addButtonAt(26, "§7戻る", Material.ARROW)
+                .then((result, p) -> {
+                    if (result.slot == null) {
+                        return;
+                    }
+                    Party current = parties.getPartyOf(p.getUniqueId());
+                    if (current == null || !current.getId().equals(party.getId())) {
+                        openRoot(p);
+                        return;
+                    }
+                    switch (result.slot) {
+                        case 10 -> {
+                            String error = parties.setFriendlyFire(p, current, !current.isFriendlyFire());
+                            if (error != null) {
+                                p.sendMessage("§c" + error);
+                            }
+                            openSettings(p, current);
+                        }
+                        case 12 -> {
+                            String error = parties.setNameTagColor(p, current, !current.isNameTagColor());
+                            if (error != null) {
+                                p.sendMessage("§c" + error);
+                            }
+                            openSettings(p, current);
+                        }
+                        case 14 -> {
+                            String error = parties.setNameTagPrefix(p, current, !current.isNameTagPrefix());
+                            if (error != null) {
+                                p.sendMessage("§c" + error);
+                            }
+                            openSettings(p, current);
+                        }
+                        case 26 -> openMain(p, current);
+                        default -> {
+                        }
+                    }
+                }).show(player);
+    }
+
+    private static String toggleLabel(String name, boolean enabled) {
+        return (enabled ? "§a§l[有効] §f" : "§7[無効] §f") + name;
+    }
+
+    private static String toggleLore(boolean enabled) {
+        return enabled ? "§a現在: 有効 §7(クリックで無効化)" : "§c現在: 無効 §7(クリックで有効化)";
     }
 
     /** OfflinePlayer 表示名の解決補助。 */

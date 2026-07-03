@@ -184,6 +184,15 @@ export function ProfilePage({ busy, message, profile, posts, onLogin, onRegister
       <div className="profile-login-grid x-scope">
         <section className="panel profile-login-intro">
           <SectionHeader eyebrow="Profile" title="ログインが必要です" text="ログインするとプロフィールの編集やコミュニティ投稿を利用できます。" />
+          <div className="profile-register-steps" aria-label="登録手順">
+            <p>登録の流れ</p>
+            <ol>
+              <li>Minecraftサーバー内で確認コードを発行します。</li>
+              <li>この画面で確認コードとパスワードを入力します。</li>
+              <li>「登録する」を押した後、利用規約とプライバシーポリシーを確認します。</li>
+              <li>同意すると登録が完了し、プロフィール編集と投稿が使えるようになります。</li>
+            </ol>
+          </div>
           <div className="profile-login-points">
             <span>安全なログイン</span>
             <span>プロフィール編集</span>

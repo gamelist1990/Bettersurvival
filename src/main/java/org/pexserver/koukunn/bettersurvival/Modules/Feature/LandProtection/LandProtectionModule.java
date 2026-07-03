@@ -91,6 +91,8 @@ public class LandProtectionModule implements Listener {
     private final Map<UUID, String> insideClaim = new ConcurrentHashMap<>();
     /** 拒否メッセージのスパム防止 */
     private final Map<UUID, Long> denyMessageAt = new ConcurrentHashMap<>();
+    /** claimKey -> 進行中のレイド */
+    private final Map<String, RaidSession> activeRaids = new ConcurrentHashMap<>();
 
     private final NamespacedKey coreKey;
     private final NamespacedKey dataOwnerKey;
@@ -102,6 +104,7 @@ public class LandProtectionModule implements Listener {
     private final NamespacedKey dataSettingsKey;
 
     private final BukkitTask upkeepTask;
+    private final BukkitTask raidTask;
 
     public LandProtectionModule(Loader plugin, ToggleModule toggle,
                                 ItemCombineModule itemCombineModule, PartyModule partyModule) {
@@ -135,6 +138,8 @@ public class LandProtectionModule implements Listener {
         this.visualizer = new ClaimVisualizer(plugin, this);
         this.upkeepTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickUpkeep,
                 UPKEEP_PERIOD_TICKS, UPKEEP_PERIOD_TICKS);
+        this.raidTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickRaids,
+                20L, 20L);
     }
 
     public boolean isFeatureEnabled() {
@@ -155,6 +160,10 @@ public class LandProtectionModule implements Listener {
 
     public void shutdown() {
         upkeepTask.cancel();
+        raidTask.cancel();
+        for (RaidSession raid : new ArrayList<>(activeRaids.values())) {
+            endRaid(raid, false);
+        }
         visualizer.shutdown();
         saveAll();
     }
@@ -237,9 +246,11 @@ public class LandProtectionModule implements Listener {
         resolvePartyLazy(claim);
         if (claim.getPartyId() != null) {
             Party party = partyModule.getParty(claim.getPartyId());
-            return party != null && party.isMember(uuid);
+            if (party != null && party.isMember(uuid)) {
+                return true;
+            }
         }
-        return false;
+        return isRaidAttacker(player, claim);
     }
 
     /**
@@ -329,6 +340,29 @@ public class LandProtectionModule implements Listener {
         // アイテムに引き継がれたデータを読む（未使用のコアならデフォルト）
         ClaimRegion incoming = readClaimFromItem(hand, worldName, placed.getX(), placed.getY(), placed.getZ());
 
+        // 個人/ギルドごとに保護コアは 1 つまで
+        UUID placingOwner = incoming.getOwner() != null ? incoming.getOwner() : player.getUniqueId();
+        ClaimRegion existingPersonal = findClaimByOwner(placingOwner);
+        if (existingPersonal != null && !existingPersonal.key().equals(incoming.key())) {
+            event.setCancelled(true);
+            player.sendMessage("§c既に土地保護コアを設置済みです");
+            player.sendMessage("§7現在既に x: " + existingPersonal.getX()
+                    + " y: " + existingPersonal.getY()
+                    + " z: " + existingPersonal.getZ() + " に設置済みです");
+            return;
+        }
+        if (incoming.getPartyId() != null) {
+            ClaimRegion existingParty = findClaimByParty(incoming.getPartyId());
+            if (existingParty != null && !existingParty.key().equals(incoming.key())) {
+                event.setCancelled(true);
+                player.sendMessage("§c所属ギルドは既に別の土地保護コアを設置済みです");
+                player.sendMessage("§7現在既に x: " + existingParty.getX()
+                        + " y: " + existingParty.getY()
+                        + " z: " + existingParty.getZ() + " に設置済みです");
+                return;
+            }
+        }
+
         // 他人の保護エリアと重複する場所には設置できない
         for (ClaimRegion existing : getClaimsInWorld(worldName)) {
             if (!existing.intersects(worldName, placed.getX(), placed.getZ(), incoming.getRadius())) {
@@ -374,6 +408,10 @@ public class LandProtectionModule implements Listener {
         // 通常ブロックの破壊保護
         ClaimRegion claim = getActiveClaimAt(block.getLocation());
         if (claim != null && claim.getSettings().isBlockBreak() && !canBypass(player, claim)) {
+            // 国レベル（Lv.10 超）のギルド領地は別ギルドリーダーによるレイドが可能
+            if (tryStartRaid(player, claim)) {
+                return;
+            }
             event.setCancelled(true);
             sendDenyMessage(player, claim, "ブロックを破壊できません");
         }
@@ -381,6 +419,16 @@ public class LandProtectionModule implements Listener {
 
     private void handleCoreBreak(BlockBreakEvent event, ClaimRegion claim, Player player) {
         boolean manager = canManage(player, claim);
+        RaidSession raid = activeRaids.get(claim.key());
+
+        // レイド中に攻撃側がコアを破壊しようとしたら領地を乗っ取る
+        if (raid != null && !raid.isEnded() && isRaidAttacker(player, claim)) {
+            event.setCancelled(true);
+            endRaid(raid, true);
+            player.sendMessage("§c§l領地を乗っ取りました！");
+            return;
+        }
+
         // 有効な保護コアはオーナー(管理者)以外壊せない。
         // 燃料切れ・オーナー未登録のコアは誰でも壊せる（Rust の腐敗仕様に相当）。
         if (claim.isActive() && !manager) {
@@ -388,6 +436,12 @@ public class LandProtectionModule implements Listener {
             sendDenyMessage(player, claim, "この保護コアは壊せません");
             return;
         }
+
+        // 管理者がコアを回収・破壊した場合、進行中のレイドは防衛成功で終了する
+        if (raid != null && !raid.isEnded()) {
+            endRaid(raid, false);
+        }
+
         unregisterClaim(claim);
         insideClaim.values().removeIf(key -> key.equals(claim.key()));
         if (player.getGameMode() != GameMode.CREATIVE || manager) {
@@ -523,6 +577,28 @@ public class LandProtectionModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
+        // プレイヤー同士の攻撃（PVP / フレンドリーファイア）
+        if (event.getEntity() instanceof Player victim) {
+            Player attacker = resolvePlayer(event.getDamager());
+            if (attacker != null) {
+                // パーティー内の味方攻撃設定
+                Party attackerParty = partyModule.getPartyOf(attacker.getUniqueId());
+                if (attackerParty != null
+                        && attackerParty.equals(partyModule.getPartyOf(victim.getUniqueId()))
+                        && !attackerParty.isFriendlyFire()) {
+                    event.setCancelled(true);
+                    return;
+                }
+                // 領地内 PVP 設定（レイド中は無視）
+                ClaimRegion claim = getActiveClaimAt(victim.getLocation());
+                if (claim != null && !claim.getSettings().isPvpEnabled() && !isUnderRaid(claim)) {
+                    event.setCancelled(true);
+                    sendDenyMessage(attacker, claim, "この領地ではPVPは無効です");
+                    return;
+                }
+            }
+        }
+
         if (!(event.getEntity() instanceof ItemFrame) && !(event.getEntity() instanceof ArmorStand)
                 && !(event.getEntity() instanceof Hanging)) {
             return;
@@ -777,13 +853,32 @@ public class LandProtectionModule implements Listener {
         if (!ClaimLevel.canUpgrade(level)) {
             return "既に最大レベルです";
         }
-        Material material = ClaimLevel.upgradeMaterial(level);
-        int amount = ClaimLevel.upgradeAmount(level);
-        if (!player.getInventory().containsAtLeast(new ItemStack(material), amount)) {
-            return "素材が足りません: " + materialDisplayName(material) + " ×" + amount;
-        }
-        int newRadius = ClaimLevel.radius(level + 1);
+        int nextLevel = level + 1;
 
+        // 個人所有は Lv.10 まで
+        if (claim.getPartyId() == null && nextLevel > ClaimLevel.PERSONAL_MAX_LEVEL) {
+            return "個人の保護コアは Lv." + ClaimLevel.PERSONAL_MAX_LEVEL + " までです。ギルド共有にしてからレベルアップしてください";
+        }
+
+        // Lv.10 以降はギルドのオーナー・副リーダーのみ
+        if (nextLevel > ClaimLevel.PERSONAL_MAX_LEVEL) {
+            Party party = partyModule.getParty(claim.getPartyId());
+            PartyRank rank = party == null ? null : party.rankOf(player.getUniqueId());
+            if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) {
+                return "Lv." + ClaimLevel.PERSONAL_MAX_LEVEL + "以降のレベルアップはギルドのオーナー又は副リーダーのみ実行できます";
+            }
+        } else if (!canManage(player, claim)) {
+            return "このコアを管理できる権限がありません";
+        }
+
+        List<ClaimLevel.Requirement> requirements = ClaimLevel.upgradeRequirements(level);
+        for (ClaimLevel.Requirement req : requirements) {
+            if (!player.getInventory().containsAtLeast(new ItemStack(req.material()), req.amount())) {
+                return "素材が足りません: " + materialDisplayName(req.material()) + " ×" + req.amount();
+            }
+        }
+
+        int newRadius = ClaimLevel.radius(nextLevel);
         // 拡大後の範囲が他人の保護エリアと重ならないか確認
         for (ClaimRegion existing : getClaimsInWorld(claim.getWorldName())) {
             if (existing.key().equals(claim.key())) {
@@ -795,8 +890,10 @@ public class LandProtectionModule implements Listener {
             }
         }
 
-        player.getInventory().removeItem(new ItemStack(material, amount));
-        claim.setLevel(level + 1);
+        for (ClaimLevel.Requirement req : requirements) {
+            player.getInventory().removeItem(new ItemStack(req.material(), req.amount()));
+        }
+        claim.setLevel(nextLevel);
         saveAll();
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0F, 1.0F);
         return null;
@@ -841,9 +938,157 @@ public class LandProtectionModule implements Listener {
         if (party == null) {
             return "パーティーに所属していません";
         }
+        ClaimRegion existingParty = findClaimByParty(party.getId());
+        if (existingParty != null && !existingParty.key().equals(claim.key())) {
+            return "所属ギルドは既に別の土地保護コアを設置済みです (x: " + existingParty.getX()
+                    + " y: " + existingParty.getY() + " z: " + existingParty.getZ() + ")";
+        }
         claim.setPartyId(party.getId());
         saveAll();
         return null;
+    }
+
+    // ================= 所有制限 =================
+
+    public ClaimRegion findClaimByOwner(UUID owner) {
+        if (owner == null) {
+            return null;
+        }
+        for (ClaimRegion claim : claims.values()) {
+            if (owner.equals(claim.getOwner())) {
+                return claim;
+            }
+        }
+        return null;
+    }
+
+    public ClaimRegion findClaimByParty(UUID partyId) {
+        if (partyId == null) {
+            return null;
+        }
+        for (ClaimRegion claim : claims.values()) {
+            if (partyId.equals(claim.getPartyId())) {
+                return claim;
+            }
+        }
+        return null;
+    }
+
+    // ================= レイド =================
+
+    public boolean isUnderRaid(ClaimRegion claim) {
+        return claim != null && activeRaids.containsKey(claim.key());
+    }
+
+    private boolean isRaidAttacker(Player player, ClaimRegion claim) {
+        RaidSession raid = activeRaids.get(claim.key());
+        if (raid == null || raid.isEnded()) {
+            return false;
+        }
+        Party attacker = partyModule.getParty(raid.getAttackerPartyId());
+        return attacker != null && attacker.isMember(player.getUniqueId());
+    }
+
+    private boolean tryStartRaid(Player player, ClaimRegion claim) {
+        Party attackerParty = partyModule.getPartyOf(player.getUniqueId());
+        if (attackerParty == null) {
+            return false;
+        }
+        if (attackerParty.getId().equals(claim.getPartyId())) {
+            return false;
+        }
+        if (activeRaids.containsKey(claim.key())) {
+            return false;
+        }
+
+        // 国レベル（Lv.10 超）のギルド領地：別ギルドのリーダーがレイド可能
+        if (claim.getLevel() > ClaimLevel.PERSONAL_MAX_LEVEL && claim.getPartyId() != null) {
+            if (attackerParty.rankOf(player.getUniqueId()) != PartyRank.LEADER) {
+                return false;
+            }
+            startRaid(claim, attackerParty, player.getUniqueId());
+            return true;
+        }
+
+        // Lv.10 以下の個人領地は原則レイド不可だが、
+        // ギルドに所属するオーナー・副リーダーはその制限を受けない
+        if (claim.getLevel() <= ClaimLevel.PERSONAL_MAX_LEVEL && claim.getPartyId() == null) {
+            PartyRank rank = attackerParty.rankOf(player.getUniqueId());
+            if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) {
+                return false;
+            }
+            startRaid(claim, attackerParty, player.getUniqueId());
+            return true;
+        }
+
+        return false;
+    }
+
+    private void startRaid(ClaimRegion claim, Party attackerParty, UUID attackerLeaderId) {
+        Party defenderParty = partyModule.getParty(claim.getPartyId());
+        String defenderDisplay = defenderParty == null ? resolveOwnerDisplay(claim) : defenderParty.getColoredName();
+        String attackerDisplay = attackerParty.getColoredName();
+        RaidSession raid = new RaidSession(claim.key(), attackerParty.getId(), attackerLeaderId,
+                defenderDisplay, attackerDisplay);
+        activeRaids.put(claim.key(), raid);
+        raid.syncPlayers(defenderParty, attackerParty);
+
+        broadcastRaidMessage("§c§l[レイド] " + attackerDisplay + " §c§lが " + defenderDisplay
+                + " §c§lの領地にレイドを開始しました！");
+        broadcastRaidMessage("§7制限時間 30 分。コアを破壊すれば領地を乗っ取れます");
+    }
+
+    private void tickRaids() {
+        if (activeRaids.isEmpty()) {
+            return;
+        }
+        for (RaidSession raid : new ArrayList<>(activeRaids.values())) {
+            if (raid.isEnded()) {
+                activeRaids.remove(raid.getClaimKey());
+                continue;
+            }
+            raid.updateProgress();
+            ClaimRegion claim = getClaimByKey(raid.getClaimKey());
+            Party defender = claim == null ? null : partyModule.getParty(claim.getPartyId());
+            Party attacker = partyModule.getParty(raid.getAttackerPartyId());
+            raid.syncPlayers(defender, attacker);
+            if (raid.getRemainingMillis() <= 0) {
+                endRaid(raid, false);
+            }
+        }
+    }
+
+    private void endRaid(RaidSession raid, boolean attackerWon) {
+        if (raid.isEnded()) {
+            return;
+        }
+        raid.setEnded(true);
+        raid.removeAllPlayers();
+        activeRaids.remove(raid.getClaimKey());
+
+        ClaimRegion claim = getClaimByKey(raid.getClaimKey());
+        Party attacker = partyModule.getParty(raid.getAttackerPartyId());
+        String attackerDisplay = attacker == null ? "?" : attacker.getColoredName();
+        String defenderDisplay = claim == null ? "?" : resolveOwnerDisplay(claim);
+
+        if (attackerWon && claim != null && attacker != null) {
+            Player leader = Bukkit.getPlayer(raid.getAttackerLeaderId());
+            claim.setOwner(raid.getAttackerLeaderId());
+            claim.setOwnerName(leader != null ? leader.getName() : attacker.nameOf(raid.getAttackerLeaderId()));
+            claim.setPartyId(attacker.getId());
+            saveAll();
+            broadcastRaidMessage("§c§l[レイド] " + attackerDisplay + " §c§lが " + defenderDisplay
+                    + " §c§lの領地を乗っ取りました！");
+        } else {
+            broadcastRaidMessage("§c§l[レイド] " + defenderDisplay + " §c§lが " + attackerDisplay
+                    + " §c§lのレイドを防衛しました");
+        }
+    }
+
+    private void broadcastRaidMessage(String message) {
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            online.sendMessage(message);
+        }
     }
 
     // ================= 維持コスト =================

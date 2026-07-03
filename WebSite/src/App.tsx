@@ -14,6 +14,8 @@ import { useWebService } from './features/webservice/useWebService';
 export default function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [consented, setConsented] = useState(hasConsented);
+  const [showConsent, setShowConsent] = useState(false);
+  const [pendingRegister, setPendingRegister] = useState<{ code: string; email: string; password: string } | null>(null);
   const service = useWebService();
   const activePage = pageKeyFromPath(path);
   const fullMap = path === '/webmap/full' || path.startsWith('/webmap/full/');
@@ -30,10 +32,31 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  const registerWithConsent = async (code: string, email: string, password: string) => {
+    if (!consented) {
+      setPendingRegister({ code, email, password });
+      setShowConsent(true);
+      return false;
+    }
+
+    return service.register(code, email, password);
+  };
+
+  const agreeConsent = () => {
+    setConsented(true);
+    setShowConsent(false);
+
+    if (pendingRegister) {
+      const registration = pendingRegister;
+      setPendingRegister(null);
+      void service.register(registration.code, registration.email, registration.password);
+    }
+  };
+
   const page = (() => {
     switch (activePage) {
       case 'profile':
-        return <ProfilePage busy={service.busy} message={service.message} profile={service.profile} posts={service.feedPosts} onLogin={service.login} onRegister={service.register} onLogout={service.logout} onSave={service.updateProfile} onLike={service.likePost} onRepost={service.repostPost} onNavigate={navigate} />;
+        return <ProfilePage busy={service.busy} message={service.message} profile={service.profile} posts={service.feedPosts} onLogin={service.login} onRegister={registerWithConsent} onLogout={service.logout} onSave={service.updateProfile} onLike={service.likePost} onRepost={service.repostPost} onNavigate={navigate} />;
       case 'feed':
         return <FeedPage busy={service.busy} profile={service.profile} posts={service.feedPosts} onPost={service.postFeed} onLike={service.likePost} onRepost={service.repostPost} onNavigate={navigate} />;
       case 'features':
@@ -53,14 +76,10 @@ export default function App() {
     return <WebMapPage full />;
   }
 
-  // 規約ページ自体は同意前でも閲覧できるようにする（同意の前提となる情報のため）
-  const legalPage = activePage === 'privacy' || activePage === 'request';
-  const showConsent = !consented && !legalPage;
-
   return (
     <AppLayout activePage={activePage} profile={service.profile} wide={activePage === 'webmap'} onNavigate={navigate} onLogout={service.logout}>
       {page}
-      {showConsent ? <ConsentModal onAgree={() => setConsented(true)} onNavigate={navigate} /> : null}
+      {showConsent ? <ConsentModal onAgree={agreeConsent} onNavigate={navigate} /> : null}
     </AppLayout>
   );
 }

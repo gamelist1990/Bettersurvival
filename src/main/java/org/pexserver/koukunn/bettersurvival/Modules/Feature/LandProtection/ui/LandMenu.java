@@ -13,6 +13,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandP
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.Party;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -66,6 +67,22 @@ public class LandMenu {
         return sb.toString();
     }
 
+    private static String formatRequirements(int level) {
+        List<ClaimLevel.Requirement> requirements = ClaimLevel.upgradeRequirements(level);
+        if (requirements.isEmpty()) {
+            return "§aなし";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ClaimLevel.Requirement req : requirements) {
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append("§7- §e").append(LandProtectionModule.materialDisplayName(req.material()))
+                    .append(" ×").append(req.amount());
+        }
+        return sb.toString();
+    }
+
     // ================= メイン =================
 
     public void openMain(Player player, ClaimRegion claim) {
@@ -99,8 +116,10 @@ public class LandMenu {
                                 ? "§7鉱石を対価に保護範囲を拡大します"
                                 + "\n§7次のレベル: §eLv." + (claim.getLevel() + 1)
                                 + " §7(半径 " + ClaimLevel.radius(claim.getLevel() + 1) + ")"
-                                + "\n§7必要素材: §e" + LandProtectionModule.materialDisplayName(ClaimLevel.upgradeMaterial(claim.getLevel()))
-                                + " ×" + ClaimLevel.upgradeAmount(claim.getLevel())
+                                + "\n§7必要素材:\n" + formatRequirements(claim.getLevel())
+                                + (claim.getPartyId() == null && claim.getLevel() + 1 > ClaimLevel.PERSONAL_MAX_LEVEL
+                                        ? "\n§c個人所有は Lv." + ClaimLevel.PERSONAL_MAX_LEVEL + " までです"
+                                        : "")
                                 : "§a最大レベルに到達しています")
                 .addButtonAt(14, "§a§lホワイトリスト", Material.PLAYER_HEAD,
                         "§7登録したプレイヤーはこのエリア内で\n§7制限を受けずに行動できます"
@@ -212,16 +231,19 @@ public class LandMenu {
             builder.addButtonAt(13, "§a最大レベルです", Material.NETHER_STAR,
                     "§7このコアは既に最大レベル (Lv." + ClaimLevel.MAX_LEVEL + ") です");
         } else {
-            Material material = ClaimLevel.upgradeMaterial(level);
-            int amount = ClaimLevel.upgradeAmount(level);
             builder.addButtonAt(11, "§bLv." + level + " §f→ §bLv." + (level + 1), Material.EXPERIENCE_BOTTLE,
                     "§7保護半径: §e" + ClaimLevel.radius(level) + " §f→ §e" + ClaimLevel.radius(level + 1)
                             + "\n§7燃料消費: §e" + String.format("%.0f", ClaimLevel.upkeepPerHour(level))
                             + " §f→ §e" + String.format("%.0f", ClaimLevel.upkeepPerHour(level + 1)) + " ユニット/時"
-                            + "\n\n§7必要素材: §e" + LandProtectionModule.materialDisplayName(material) + " ×" + amount);
-            builder.addButtonAt(15, "§a§lレベルアップする", material,
-                    "§7インベントリから §e" + LandProtectionModule.materialDisplayName(material) + " ×" + amount
-                            + " §7を消費します");
+                            + "\n\n§7必要素材:\n" + formatRequirements(level)
+                            + (claim.getPartyId() == null && level + 1 > ClaimLevel.PERSONAL_MAX_LEVEL
+                                    ? "\n§c個人所有は Lv." + ClaimLevel.PERSONAL_MAX_LEVEL + " までです"
+                                    : "")
+                            + (level + 1 > ClaimLevel.PERSONAL_MAX_LEVEL
+                                    ? "\n§eLv." + ClaimLevel.PERSONAL_MAX_LEVEL + "以降はオーナー/副リーダーのみ"
+                                    : ""));
+            builder.addButtonAt(15, "§a§lレベルアップする", Material.NETHER_STAR,
+                    "§7インベントリから必要素材を消費します");
         }
         builder.addButtonAt(26, "§7戻る", Material.ARROW);
         builder.then((result, p) -> {
@@ -409,6 +431,8 @@ public class LandMenu {
                         toggleLore(settings.isBlockPlace()))
                 .addButtonAt(14, toggleLabel("ブロック破壊を禁止", settings.isBlockBreak()), Material.IRON_PICKAXE,
                         toggleLore(settings.isBlockBreak()))
+                .addButtonAt(15, toggleLabel("領地内PVP", settings.isPvpEnabled()), Material.DIAMOND_SWORD,
+                        toggleLore(settings.isPvpEnabled()) + "\n§7無効時は領地内でのプレイヤー同士の攻撃ができません")
                 .addButtonAt(28, "§e侵入通知: " + settings.getNotifyMode().getDisplayName(), Material.BELL,
                         "§7部外者がエリアに入った時の通知方法\n§7クリックで切替: タイトル → アクションバー → なし")
                 .addButtonAt(30, "§eタイトル文を編集", Material.PAPER,
@@ -451,6 +475,11 @@ public class LandMenu {
                         }
                         case 14 -> {
                             s.setBlockBreak(!s.isBlockBreak());
+                            module.saveAll();
+                            openSettings(p, current);
+                        }
+                        case 15 -> {
+                            s.setPvpEnabled(!s.isPvpEnabled());
                             module.saveAll();
                             openSettings(p, current);
                         }

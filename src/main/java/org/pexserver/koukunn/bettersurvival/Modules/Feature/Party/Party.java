@@ -24,6 +24,9 @@ public class Party {
     /** オフライン表示用に把握している名前 (uuid -> 最後に確認した名前) */
     private final Map<UUID, String> knownNames = new LinkedHashMap<>();
     private long createdAt;
+    private boolean friendlyFire = false;
+    private boolean nameTagColor = true;
+    private boolean nameTagPrefix = true;
 
     public Party(UUID id, String name, String colorKey, String description, UUID leader) {
         this.id = id;
@@ -97,6 +100,30 @@ public class Party {
 
     public void setCreatedAt(long createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public boolean isFriendlyFire() {
+        return friendlyFire;
+    }
+
+    public void setFriendlyFire(boolean friendlyFire) {
+        this.friendlyFire = friendlyFire;
+    }
+
+    public boolean isNameTagColor() {
+        return nameTagColor;
+    }
+
+    public void setNameTagColor(boolean nameTagColor) {
+        this.nameTagColor = nameTagColor;
+    }
+
+    public boolean isNameTagPrefix() {
+        return nameTagPrefix;
+    }
+
+    public void setNameTagPrefix(boolean nameTagPrefix) {
+        this.nameTagPrefix = nameTagPrefix;
     }
 
     /** リーダー含む全所属メンバーを返す。 */

@@ -65,6 +65,9 @@ public class PartyStore {
         }
         map.put("knownNames", names);
         map.put("createdAt", party.getCreatedAt());
+        map.put("friendlyFire", party.isFriendlyFire());
+        map.put("nameTagColor", party.isNameTagColor());
+        map.put("nameTagPrefix", party.isNameTagPrefix());
         return map;
     }
 
@@ -95,6 +98,15 @@ public class PartyStore {
         }
         if (map.get("createdAt") instanceof Number number) {
             party.setCreatedAt(number.longValue());
+        }
+        if (map.get("friendlyFire") instanceof Boolean b) {
+            party.setFriendlyFire(b);
+        }
+        if (map.get("nameTagColor") instanceof Boolean b) {
+            party.setNameTagColor(b);
+        }
+        if (map.get("nameTagPrefix") instanceof Boolean b) {
+            party.setNameTagPrefix(b);
         }
         return party;
     }

@@ -171,22 +171,23 @@
 
 .consent-overlay {
   position: fixed;
-  inset: 0;
+  inset: var(--app-header-height, 42px) 0 0;
   z-index: 400;
   display: grid;
   place-items: center;
-  padding: 18px;
+  padding: clamp(12px, 3dvh, 28px);
+  overflow-y: auto;
   background: rgba(31, 24, 18, 0.55);
   backdrop-filter: blur(6px);
 }
 
 .consent-modal {
-  width: min(520px, 100%);
-  max-height: calc(100dvh - 36px);
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--app-header-height, 42px) - clamp(24px, 6dvh, 56px));
   overflow-y: auto;
   display: grid;
   gap: 16px;
-  padding: 28px;
+  padding: clamp(18px, 4vw, 28px);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--glass-strong);
@@ -311,4 +312,26 @@
   .consent-modal { padding: 20px; }
   .site-footer { justify-content: center; text-align: center; }
   .site-footer nav { margin-left: 0; }
+}
+
+@media (max-height: 620px) {
+  .consent-modal {
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .consent-points { gap: 8px; }
+
+  .consent-point {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .consent-point > span {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    font-size: 1.1rem;
+  }
 }

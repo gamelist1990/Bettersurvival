@@ -93,6 +93,10 @@ public class LandCommand extends BaseCommand {
         player.sendMessage("§7レベル: §eLv." + claim.getLevel() + " §7(半径 " + claim.getRadius() + " ブロック)");
         player.sendMessage("§7コア座標: §e" + claim.getX() + ", " + claim.getY() + ", " + claim.getZ());
         player.sendMessage("§7消費速度: §e" + String.format("%.0f", ClaimLevel.upkeepPerHour(claim.getLevel())) + " ユニット/時");
+        player.sendMessage("§7領地内PVP: " + (claim.getSettings().isPvpEnabled() ? "§a有効" : "§c無効"));
+        if (module.isUnderRaid(claim)) {
+            player.sendMessage("§c§l現在この領地はレイド中です");
+        }
         if (module.canManage(player, claim)) {
             player.sendMessage("§7燃料: §e" + String.format("%.1f", claim.getFuelUnits()) + " ユニット");
             player.sendMessage("§7あなたはこのエリアを管理できます");

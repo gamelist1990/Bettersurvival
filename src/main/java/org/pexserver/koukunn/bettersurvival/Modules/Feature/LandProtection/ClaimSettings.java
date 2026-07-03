@@ -39,6 +39,7 @@ public class ClaimSettings {
     private boolean blockSwitches = true;
     private boolean blockPlace = true;
     private boolean blockBreak = true;
+    private boolean pvpEnabled = true;
     private NotifyMode notifyMode = NotifyMode.ACTIONBAR;
     private String titleText = "§c%owner%§fの保護エリア";
     private String subtitleText = "§7許可なく操作はできません";
@@ -82,6 +83,14 @@ public class ClaimSettings {
 
     public void setBlockBreak(boolean blockBreak) {
         this.blockBreak = blockBreak;
+    }
+
+    public boolean isPvpEnabled() {
+        return pvpEnabled;
+    }
+
+    public void setPvpEnabled(boolean pvpEnabled) {
+        this.pvpEnabled = pvpEnabled;
     }
 
     public NotifyMode getNotifyMode() {
@@ -133,6 +142,7 @@ public class ClaimSettings {
         map.put("blockSwitches", blockSwitches);
         map.put("blockPlace", blockPlace);
         map.put("blockBreak", blockBreak);
+        map.put("pvpEnabled", pvpEnabled);
         map.put("notifyMode", notifyMode.name());
         map.put("titleText", titleText);
         map.put("subtitleText", subtitleText);
@@ -150,6 +160,7 @@ public class ClaimSettings {
         settings.blockSwitches = readBool(map.get("blockSwitches"), true);
         settings.blockPlace = readBool(map.get("blockPlace"), true);
         settings.blockBreak = readBool(map.get("blockBreak"), true);
+        settings.pvpEnabled = readBool(map.get("pvpEnabled"), true);
         settings.notifyMode = readMode(map.get("notifyMode"));
         if (map.get("titleText") instanceof String s) {
             settings.titleText = s;

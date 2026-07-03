@@ -1,10 +1,12 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Party;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
@@ -62,11 +64,15 @@ public class PartyModule implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
         // 名前変更を追従してオフライン表示名を更新する
-        Party party = getPartyOf(event.getPlayer().getUniqueId());
+        Party party = getPartyOf(player.getUniqueId());
         if (party != null) {
-            party.rememberName(event.getPlayer().getUniqueId(), event.getPlayer().getName());
+            party.rememberName(player.getUniqueId(), player.getName());
+            updateDisplayName(player, party);
             save();
+        } else {
+            resetDisplayName(player);
         }
     }
 
@@ -147,6 +153,7 @@ public class PartyModule implements Listener {
         party.rememberName(leader.getUniqueId(), leader.getName());
         parties.put(party.getId(), party);
         memberIndex.put(leader.getUniqueId(), party.getId());
+        updateDisplayName(leader, party);
         save();
         return null;
     }
@@ -159,8 +166,11 @@ public class PartyModule implements Listener {
         for (UUID member : party.getAllMembers()) {
             memberIndex.remove(member);
             Player online = Bukkit.getPlayer(member);
-            if (online != null && !online.getUniqueId().equals(actor.getUniqueId())) {
-                online.sendMessage("§cパーティー " + party.getColoredName() + " §cは解散されました");
+            if (online != null) {
+                resetDisplayName(online);
+                if (!online.getUniqueId().equals(actor.getUniqueId())) {
+                    online.sendMessage("§cパーティー " + party.getColoredName() + " §cは解散されました");
+                }
             }
         }
         parties.remove(party.getId());
@@ -222,6 +232,7 @@ public class PartyModule implements Listener {
         party.getMembers().add(player.getUniqueId());
         party.rememberName(player.getUniqueId(), player.getName());
         memberIndex.put(player.getUniqueId(), party.getId());
+        updateDisplayName(player, party);
         save();
         broadcast(party, "§d[パーティー] §e" + player.getName() + " §fが加入しました");
         return null;
@@ -245,6 +256,7 @@ public class PartyModule implements Listener {
         }
         party.removeMember(player.getUniqueId());
         memberIndex.remove(player.getUniqueId());
+        resetDisplayName(player);
         save();
         broadcast(party, "§d[パーティー] §e" + player.getName() + " §fが脱退しました");
         return null;
@@ -269,6 +281,7 @@ public class PartyModule implements Listener {
         save();
         Player online = Bukkit.getPlayer(target);
         if (online != null) {
+            resetDisplayName(online);
             online.sendMessage("§cパーティー " + party.getColoredName() + " §cから追放されました");
         }
         broadcast(party, "§d[パーティー] §e" + targetName + " §fが追放されました");
@@ -319,6 +332,7 @@ public class PartyModule implements Listener {
         }
         party.setName(sanitized);
         save();
+        refreshDisplayNames(party);
         broadcast(party, "§d[パーティー] §fパーティー名が " + party.getColoredName() + " §fに変更されました");
         return null;
     }
@@ -333,6 +347,7 @@ public class PartyModule implements Listener {
         }
         party.setColorKey(color.name());
         save();
+        refreshDisplayNames(party);
         broadcast(party, "§d[パーティー] §fイメージカラーが " + color.getLegacyCode() + color.getDisplayName() + " §fに変更されました");
         return null;
     }
@@ -356,5 +371,69 @@ public class PartyModule implements Listener {
                 online.sendMessage(message);
             }
         }
+    }
+
+    // ================= 表示名・チャット =================
+
+    /**
+     * パーティー設定に応じてプレイヤーの表示名（チャット・ネームタグ・タブ）を更新する。
+     */
+    public void updateDisplayName(Player player, Party party) {
+        String name = player.getName();
+        String prefix = party.isNameTagPrefix() ? "[" + party.getName() + "] " : "";
+        String color = party.isNameTagColor() ? party.getColor().getLegacyCode() : "§f";
+        String display = color + prefix + name;
+        Component component = ComponentUtils.legacy(display);
+        player.displayName(component);
+        player.playerListName(component);
+    }
+
+    public void resetDisplayName(Player player) {
+        Component component = ComponentUtils.legacy("§f" + player.getName());
+        player.displayName(component);
+        player.playerListName(component);
+    }
+
+    public void refreshDisplayNames(Party party) {
+        for (UUID member : party.getAllMembers()) {
+            Player online = Bukkit.getPlayer(member);
+            if (online != null) {
+                updateDisplayName(online, party);
+            }
+        }
+    }
+
+    // ================= パーティー設定 =================
+
+    public String setFriendlyFire(Player actor, Party party, boolean enabled) {
+        if (!party.rankOf(actor.getUniqueId()).isAtLeast(PartyRank.CO_LEADER)) {
+            return "設定変更はサブリーダー以上のみ実行できます";
+        }
+        party.setFriendlyFire(enabled);
+        save();
+        broadcast(party, "§d[パーティー] §f味方同士の攻撃: " + (enabled ? "§a有効" : "§c無効"));
+        return null;
+    }
+
+    public String setNameTagColor(Player actor, Party party, boolean enabled) {
+        if (!party.rankOf(actor.getUniqueId()).isAtLeast(PartyRank.CO_LEADER)) {
+            return "設定変更はサブリーダー以上のみ実行できます";
+        }
+        party.setNameTagColor(enabled);
+        save();
+        refreshDisplayNames(party);
+        broadcast(party, "§d[パーティー] §fネームタグカラー: " + (enabled ? "§a有効" : "§c無効"));
+        return null;
+    }
+
+    public String setNameTagPrefix(Player actor, Party party, boolean enabled) {
+        if (!party.rankOf(actor.getUniqueId()).isAtLeast(PartyRank.CO_LEADER)) {
+            return "設定変更はサブリーダー以上のみ実行できます";
+        }
+        party.setNameTagPrefix(enabled);
+        save();
+        refreshDisplayNames(party);
+        broadcast(party, "§d[パーティー] §fパーティープレフィックス: " + (enabled ? "§a有効" : "§c無効"));
+        return null;
     }
 }
