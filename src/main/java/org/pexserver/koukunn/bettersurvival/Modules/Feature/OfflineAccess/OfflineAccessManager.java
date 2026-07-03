@@ -2,9 +2,11 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess;
 
 import org.bukkit.plugin.Plugin;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.util.Set;
+import java.util.logging.Level;
 
 /**
  * オフラインアクセス機能の状態と許可リストを管理する。
@@ -41,6 +43,30 @@ public class OfflineAccessManager {
         return toggleModule.getGlobal(TOGGLE_KEY);
     }
 
+    public boolean isDebugEnabled() {
+        return OfflineAccessModule.Debug;
+    }
+
+    public void debug(String message) {
+        if (!isDebugEnabled()) {
+            return;
+        }
+        plugin.getLogger().info("[OfflineAccess Debug] " + message);
+        if (plugin instanceof Loader loader && loader.getOfflineAccessModule() != null) {
+            loader.getOfflineAccessModule().appendDebug(message);
+        }
+    }
+
+    public void debug(String message, Throwable throwable) {
+        if (!isDebugEnabled()) {
+            return;
+        }
+        plugin.getLogger().log(Level.WARNING, "[OfflineAccess Debug] " + message, throwable);
+        if (plugin instanceof Loader loader && loader.getOfflineAccessModule() != null) {
+            loader.getOfflineAccessModule().appendDebug(message, throwable);
+        }
+    }
+
     /**
      * 指定プレイヤー名が許可されているか。
      * 機能が無効な場合は常に false。
@@ -49,10 +75,16 @@ public class OfflineAccessManager {
      * @return 許可されている場合 true
      */
     public boolean isAllowed(String name) {
-        if (!isEnabled()) {
+        if (!isEnabled() || plugin instanceof Loader loader
+                && loader.getOfflineAccessModule() != null
+                && loader.getOfflineAccessModule().isInjectionFailed()) {
+            debug("isAllowed=false name=" + name + " enabled=" + isEnabled() + " injectionFailed="
+                    + (plugin instanceof Loader l && l.getOfflineAccessModule() != null && l.getOfflineAccessModule().isInjectionFailed()));
             return false;
         }
-        return store.contains(name);
+        boolean allowed = store.contains(name);
+        debug("isAllowed=" + allowed + " name=" + name);
+        return allowed;
     }
 
     /**

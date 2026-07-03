@@ -3,11 +3,14 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess;
 import com.mojang.authlib.GameProfile;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
 import org.pexserver.koukunn.bettersurvival.Core.Util.OfflineUUIDUtil;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.UUID;
 import java.util.logging.Level;
 
@@ -26,8 +29,22 @@ public class LoginInterceptor extends ChannelDuplexHandler {
     private static final String START_CLIENT_VERIFICATION_METHOD = "startClientVerification";
     private static final String PACKET_HANDLER = "packet_handler";
     private static final String PACKET_LISTENER_FIELD = "packetListener";
+    private static final String HANDLER_NAME = "offline_access_handler";
+
+    private static boolean tracePipeline() {
+        return false;
+    }
+
+    private static final String DENIED_OFFLINE_LOGIN_MESSAGE = """
+            §cこのオフラインアカウントは許可されていません。
+            §7Discord 又は 管理者に申請して下さい。
+
+            §cThis offline account is not allowed.
+            §7Please apply via Discord or an administrator.
+            """;
 
     private final OfflineAccessManager manager;
+    private boolean loggedFirstRead;
 
     public LoginInterceptor(OfflineAccessManager manager) {
         this.manager = manager;
@@ -35,7 +52,27 @@ public class LoginInterceptor extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (relocateBeforePacketHandler(ctx)) {
+            super.channelRead(ctx, msg);
+            return;
+        }
+
+        String packetName = msg != null ? msg.getClass().getName() : "null";
+        if (manager.isDebugEnabled() && tracePipeline()) {
+            if (!loggedFirstRead) {
+                loggedFirstRead = true;
+                manager.debug("channelRead first packet=" + packetName
+                        + " simple=" + (msg != null ? msg.getClass().getSimpleName() : "null")
+                        + " pipeline=" + ctx.pipeline().names());
+            } else if (msg != null && shouldLogPacket(packetName)) {
+                manager.debug("channelRead packet=" + packetName + " pipeline=" + ctx.pipeline().names());
+            }
+        }
+
         if (!manager.isEnabled()) {
+            if (msg != null && "ServerboundHelloPacket".equals(msg.getClass().getSimpleName())) {
+                manager.debug("HelloPacket ignored because OfflineAccess toggle is disabled");
+            }
             super.channelRead(ctx, msg);
             return;
         }
@@ -51,14 +88,23 @@ public class LoginInterceptor extends ChannelDuplexHandler {
         try {
             name = (String) packetClass.getMethod("name").invoke(msg);
             profileId = (UUID) packetClass.getMethod("profileId").invoke(msg);
+            manager.debug("HelloPacket parsed name=" + name + " profileId=" + profileId);
         } catch (Exception e) {
             manager.getPlugin().getLogger().log(Level.WARNING, "[OfflineAccess] HelloPacket の解析に失敗しました", e);
+            manager.debug("HelloPacket parse failed packetClass=" + packetClass.getName(), e);
             super.channelRead(ctx, msg);
             return;
         }
 
         if (!manager.isAllowed(name)) {
-            super.channelRead(ctx, msg);
+            UUID offlineUuid = OfflineUUIDUtil.getUUID(name);
+            if (!offlineUuid.equals(profileId)) {
+                manager.debug("OfflineAccess ignored online-auth login name=" + name + " profileId=" + profileId);
+                super.channelRead(ctx, msg);
+                return;
+            }
+            manager.debug("Offline login not allowed name=" + name + " enabled=" + manager.isEnabled());
+            disconnectDeniedOfflineLogin(ctx, name);
             return;
         }
 
@@ -66,12 +112,15 @@ public class LoginInterceptor extends ChannelDuplexHandler {
         Object connection = channel.pipeline().get(PACKET_HANDLER);
         if (connection == null) {
             manager.getPlugin().getLogger().warning("[OfflineAccess] packet_handler が見つかりません: " + name);
+            manager.debug("packet_handler missing name=" + name + " pipeline=" + channel.pipeline().names());
             super.channelRead(ctx, msg);
             return;
         }
 
         Object packetListener = getField(connection, PACKET_LISTENER_FIELD);
         if (packetListener == null || !LOGIN_LISTENER_CLASS.equals(packetListener.getClass().getName())) {
+            manager.debug("packetListener not login listener name=" + name + " listener="
+                    + (packetListener == null ? "null" : packetListener.getClass().getName()));
             super.channelRead(ctx, msg);
             return;
         }
@@ -102,15 +151,101 @@ public class LoginInterceptor extends ChannelDuplexHandler {
                     .getDeclaredMethod(START_CLIENT_VERIFICATION_METHOD, GameProfile.class);
             startClientVerification.setAccessible(true);
             startClientVerification.invoke(packetListener, resultProfile);
+                manager.debug("Offline login accepted name=" + name + " profile=" + resultProfile);
 
             manager.getPlugin().getLogger().info("[OfflineAccess] オフラインログインを処理しました: " + name);
         } catch (Exception e) {
             manager.getPlugin().getLogger().log(Level.SEVERE, "[OfflineAccess] オフラインログイン処理に失敗しました: " + name, e);
+            manager.debug("Offline login process failed name=" + name, e);
             super.channelRead(ctx, msg);
             return;
         }
 
         // パケットを通常のハンドラに渡さない（こちらで処理済み）
+    }
+
+    private void disconnectDeniedOfflineLogin(ChannelHandlerContext ctx, String name) {
+        try {
+            ChannelHandler packetHandler = ctx.pipeline().get(PACKET_HANDLER);
+            if (packetHandler == null) {
+                manager.debug("Denied offline login but packet_handler was not found name=" + name
+                        + " pipeline=" + ctx.pipeline().names());
+                ctx.close();
+                return;
+            }
+
+            Class<?> componentClass = Class.forName("net.minecraft.network.chat.Component");
+            Object component = componentClass.getMethod("literal", String.class)
+                    .invoke(null, DENIED_OFFLINE_LOGIN_MESSAGE);
+
+            Object disconnectTarget = packetHandler;
+            try {
+                Object packetListener = getField(packetHandler, PACKET_LISTENER_FIELD);
+                if (packetListener != null) {
+                    Method listenerDisconnect = findMethod(packetListener.getClass(), "disconnect", componentClass);
+                    if (listenerDisconnect != null) {
+                        disconnectTarget = packetListener;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+
+            Method disconnect = findMethod(disconnectTarget.getClass(), "disconnect", componentClass);
+            if (disconnect == null) {
+                manager.debug("Denied offline login disconnect method not found name=" + name
+                        + " target=" + disconnectTarget.getClass().getName());
+                ctx.close();
+                return;
+            }
+
+            disconnect.setAccessible(true);
+            disconnect.invoke(disconnectTarget, component);
+            manager.debug("Denied offline login disconnected name=" + name
+                    + " target=" + disconnectTarget.getClass().getName());
+        } catch (Exception e) {
+            manager.debug("Failed to disconnect denied offline login name=" + name, e);
+            ctx.close();
+        }
+    }
+
+    private static boolean shouldLogPacket(String packetClassName) {
+        return packetClassName.contains(".handshake.")
+                || packetClassName.contains(".login.")
+                || packetClassName.contains(".status.")
+                || packetClassName.contains(".ping.");
+    }
+
+    private boolean relocateBeforePacketHandler(ChannelHandlerContext ctx) {
+        Channel channel = ctx.channel();
+        synchronized (channel) {
+            try {
+                ChannelPipeline pipeline = ctx.pipeline();
+                ChannelHandler packetHandler = pipeline.get(PACKET_HANDLER);
+                ChannelHandler currentHandler = pipeline.get(HANDLER_NAME);
+                if (packetHandler == null || currentHandler == null) {
+                    return false;
+                }
+
+                List<String> names = pipeline.names();
+                int offlineIndex = names.indexOf(HANDLER_NAME);
+                int packetIndex = names.indexOf(PACKET_HANDLER);
+                if (offlineIndex < 0 || packetIndex < 0 || offlineIndex == packetIndex - 1) {
+                    return false;
+                }
+
+                pipeline.remove(HANDLER_NAME);
+                pipeline.addBefore(PACKET_HANDLER, HANDLER_NAME, new LoginInterceptor(manager));
+                if (tracePipeline()) {
+                    manager.debug("LoginInterceptor self-relocated from index=" + offlineIndex
+                        + " to before packet_handler index=" + packetIndex
+                        + " pipeline=" + pipeline.names());
+                }
+                return true;
+            } catch (Exception e) {
+                manager.debug("LoginInterceptor self-relocation failed pipeline=" + ctx.pipeline().names(), e);
+                return false;
+            }
+        }
     }
 
     private static Object getField(Object target, String name) throws Exception {
@@ -136,6 +271,17 @@ public class LoginInterceptor extends ChannelDuplexHandler {
             try {
                 return clazz.getDeclaredField(name);
             } catch (NoSuchFieldException ignored) {
+                clazz = clazz.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    private static Method findMethod(Class<?> clazz, String name, Class<?>... parameterTypes) {
+        while (clazz != null && clazz != Object.class) {
+            try {
+                return clazz.getDeclaredMethod(name, parameterTypes);
+            } catch (NoSuchMethodException ignored) {
                 clazz = clazz.getSuperclass();
             }
         }

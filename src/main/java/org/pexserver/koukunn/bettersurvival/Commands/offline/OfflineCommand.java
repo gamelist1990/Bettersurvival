@@ -8,6 +8,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessManager;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessModule;
 
 import java.util.Set;
 
@@ -18,9 +19,16 @@ public class OfflineCommand extends BaseCommand {
 
     private static final String INPUT_KEY_NAME = "name";
 
+    private final OfflineAccessModule module;
     private final OfflineAccessManager manager;
 
+    public OfflineCommand(OfflineAccessModule module) {
+        this.module = module;
+        this.manager = module.getManager();
+    }
+
     public OfflineCommand(OfflineAccessManager manager) {
+        this.module = null;
         this.manager = manager;
     }
 
@@ -43,6 +51,11 @@ public class OfflineCommand extends BaseCommand {
     public boolean execute(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sendError(sender, "このコマンドはプレイヤーから実行してください");
+            return true;
+        }
+
+        if (module != null && module.isInjectionFailed()) {
+            openFailureMenu(player);
             return true;
         }
 
@@ -77,6 +90,53 @@ public class OfflineCommand extends BaseCommand {
                     }
                 })
                 .show(player);
+    }
+
+    private void openFailureMenu(Player player) {
+        String reason = module.getFailureReason();
+        ChestUI.builder()
+                .title("§cOfflineAccess Failed")
+                .size(27)
+                .defaultIcon(Material.BARRIER)
+                .type("offline_access_failed_menu")
+                .addButtonAt(11, "§cNMS 初期化失敗", Material.BARRIER, "OfflineAccess はフェールセーフで無効化されています")
+                .addButtonAt(13, "§e失敗原因", Material.PAPER, trim(reason, 120))
+                .addButtonAt(15, "§6デバッグログ", Material.WRITABLE_BOOK, "クリックして詳細 Dialog を表示")
+                .then((result, p) -> {
+                    if (result.cancelled || !result.success || result.slot == null) {
+                        return;
+                    }
+                    if (result.slot == 13 || result.slot == 15) {
+                        openFailureDialog(p);
+                    }
+                })
+                .show(player);
+    }
+
+    private void openFailureDialog(Player player) {
+        DialogUI.builder()
+                .title("OfflineAccess NMS 失敗")
+                .body("OfflineAccess の Netty/NMS 初期化に失敗したため、この機能だけを無効化しています。")
+                .body("発生時刻: " + module.getLastAttemptAtText())
+                .body("失敗原因: " + module.getFailureReason())
+                .addTextInput("debug", "デバッグログ", trim(module.getDebugLog(), 7900), 8192, true)
+                .confirmation("閉じる", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openFailureMenu(p);
+                    }
+                })
+                .show(player);
+    }
+
+    private String trim(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private void openAddDialog(Player player) {

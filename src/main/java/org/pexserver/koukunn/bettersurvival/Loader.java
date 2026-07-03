@@ -110,11 +110,18 @@ public final class Loader extends JavaPlugin {
         globalFilter.applyGlobalFilter();
         getServer().getPluginManager().registerEvents(globalFilter, this);
 
+        toggleModule = new ToggleModule(this);
+        if (!toggleModule.hasGlobal("offlineaccess")) {
+            toggleModule.setGlobal("offlineaccess", false);
+        }
+        offlineAccessModule = new OfflineAccessModule(this, configManager, toggleModule);
+        getServer().getPluginManager().registerEvents(offlineAccessModule, this);
+        offlineAccessModule.inject();
+
         // コマンドを登録
         registerCommands();
 
         // Toggle module (GUI)
-        toggleModule = new ToggleModule(this);
         getServer().getPluginManager().registerEvents(new ToggleListener(toggleModule), this);
         itemCombineModule = new ItemCombineModule(this);
         getServer().getPluginManager().registerEvents(itemCombineModule, this);
@@ -303,15 +310,6 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("landprotect")) {
             toggleModule.setGlobal("landprotect", true);
         }
-        if (!toggleModule.hasGlobal("offlineaccess")) {
-            toggleModule.setGlobal("offlineaccess", false);
-        }
-
-        // OfflineAccess モジュールの初期化と Netty インジェクション
-        offlineAccessModule = new OfflineAccessModule(this, configManager, toggleModule);
-        getServer().getPluginManager().registerEvents(offlineAccessModule, this);
-        offlineAccessModule.inject();
-
         getLogger().info("Better Survival Plugin が有効になりました");
     }
 
@@ -349,7 +347,7 @@ public final class Loader extends JavaPlugin {
         // Land command: 土地保護のデバッグ表示・情報
         commandManager.register(new LandCommand(this));
         // OfflineAccess command: オフラインアカウントログイン許可リスト管理
-        commandManager.register(new OfflineCommand(offlineAccessModule.getManager()));
+        commandManager.register(new OfflineCommand(offlineAccessModule));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
         // 他のコマンドはここに追加できます
