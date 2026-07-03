@@ -46,7 +46,7 @@ public class LandCommand extends BaseCommand {
 
     @Override
     public String getUsage() {
-        return "/land <debug|info>";
+        return "/land <debug|info|ring>";
     }
 
     @Override
@@ -75,6 +75,7 @@ public class LandCommand extends BaseCommand {
                 }
             }
             case "info" -> showInfo(player, module);
+            case "ring" -> openRing(player, module);
             default -> {
                 sendInfo(player, "使用法: " + getUsage());
             }
@@ -107,12 +108,30 @@ public class LandCommand extends BaseCommand {
         }
     }
 
+    /** 現在地の保護領域のリング設定メニューを開く（オーナー/副リーダーのみ）。 */
+    private void openRing(Player player, LandProtectionModule module) {
+        if (module.getRingModule() == null) {
+            sendError(player, "リング機能が初期化されていません");
+            return;
+        }
+        ClaimRegion claim = module.getActiveClaimAt(player.getLocation());
+        if (claim == null) {
+            sendError(player, "保護された土地の中で実行してください");
+            return;
+        }
+        if (!module.canManage(player, claim)) {
+            sendError(player, "リングの設定はオーナー又は副リーダーのみ操作できます");
+            return;
+        }
+        module.getRingModule().getMenu().openRing(player, claim);
+    }
+
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
             String prefix = args[0].toLowerCase();
-            for (String candidate : List.of("debug", "info")) {
+            for (String candidate : List.of("debug", "info", "ring")) {
                 if (candidate.startsWith(prefix)) {
                     out.add(candidate);
                 }

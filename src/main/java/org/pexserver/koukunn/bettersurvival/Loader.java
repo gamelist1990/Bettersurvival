@@ -87,6 +87,7 @@ public final class Loader extends JavaPlugin {
     private PartyModule partyModule;
     private PartyMenu partyMenu;
     private LandProtectionModule landProtectionModule;
+    private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
     private OfflineAccessModule offlineAccessModule;
 
     @Override
@@ -176,10 +177,15 @@ public final class Loader extends JavaPlugin {
         // Party モジュール登録 (ギルド風パーティー機能)
         partyModule = new PartyModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(partyModule, this);
+        chestLockModule.setPartyModule(partyModule);
         partyMenu = new PartyMenu(this, partyModule);
         // LandProtection モジュール登録 (Rust 風の土地保護コア)
         landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule);
         getServer().getPluginManager().registerEvents(landProtectionModule, this);
+        // Ring モジュール登録 (土地保護内の闘技場リング / Duel / マッチング)
+        ringModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule(this, landProtectionModule);
+        landProtectionModule.setRingModule(ringModule);
+        getServer().getPluginManager().registerEvents(ringModule, this);
         webServiceModule = new WebServiceModule(this);
         getServer().getPluginManager().registerEvents(webServiceModule, this);
         webMapModule = new WebMapModule(this);
@@ -418,6 +424,10 @@ public final class Loader extends JavaPlugin {
         return landProtectionModule;
     }
 
+    public org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule getRingModule() {
+        return ringModule;
+    }
+
     public WebMapModule getWebMapModule() {
         return webMapModule;
     }
@@ -458,6 +468,9 @@ public final class Loader extends JavaPlugin {
         }
         if (chunkLoaderModule != null) {
             chunkLoaderModule.shutdown();
+        }
+        if (ringModule != null) {
+            ringModule.shutdown();
         }
         if (landProtectionModule != null) {
             landProtectionModule.shutdown();

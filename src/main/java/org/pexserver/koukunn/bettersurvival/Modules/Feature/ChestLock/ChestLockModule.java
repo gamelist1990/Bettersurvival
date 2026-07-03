@@ -6,7 +6,10 @@ import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -20,6 +23,8 @@ import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -27,6 +32,9 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.event.inventory.InventoryType;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopStore;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.Party;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyRank;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import org.bukkit.OfflinePlayer;
 
@@ -73,6 +81,7 @@ public class ChestLockModule implements Listener {
     private final ChestShopStore shopStore;
     private final List<ExternalLockResolver> externalResolvers = new ArrayList<>();
     private final List<ExternalProtectionResolver> externalProtectionResolvers = new ArrayList<>();
+    private PartyModule partyModule;
 
     public ChestLockModule(ToggleModule toggle, ConfigManager manager) {
         this.toggle = toggle;
@@ -81,6 +90,24 @@ public class ChestLockModule implements Listener {
     }
 
     public static Location toLocation(Block b) { return b.getLocation(); }
+
+    public static Location getHolderLocation(InventoryHolder holder) {
+        if (holder instanceof BlockState) {
+            return ((BlockState) holder).getLocation();
+        }
+        if (holder instanceof DoubleChest) {
+            DoubleChest dc = (DoubleChest) holder;
+            InventoryHolder left = dc.getLeftSide();
+            if (left instanceof BlockState) {
+                return ((BlockState) left).getLocation();
+            }
+            InventoryHolder right = dc.getRightSide();
+            if (right instanceof BlockState) {
+                return ((BlockState) right).getLocation();
+            }
+        }
+        return null;
+    }
 
     public static List<Location> getChestRelatedLocations(Block b) {
         List<Location> list = new ArrayList<>();
@@ -134,6 +161,10 @@ public class ChestLockModule implements Listener {
             externalProtectionResolvers.add(resolver);
     }
 
+    public void setPartyModule(PartyModule partyModule) {
+        this.partyModule = partyModule;
+    }
+
     public boolean canAccess(Player p, Location loc) {
         if (!toggle.getGlobal("chestlock")) return true;
         Optional<Location> effectiveLoc = getEffectiveLockLocation(loc);
@@ -152,12 +183,27 @@ public class ChestLockModule implements Listener {
         if (!opt.isPresent()) return true;
         ChestLock lock = opt.get();
         if (p.isOp()) return true;
-        boolean allowed = lock.isOwner(p) || lock.isMember(p);
-        if (allowed) {
+        if (lock.isOwner(p) || lock.isMember(p)) {
             lock.remember(p);
             store.save(effectiveLoc.get(), lock);
+            return true;
         }
-        return allowed;
+        if (partyModule != null) {
+            String ownerUuid = lock.getOwner();
+            if (ownerUuid != null) {
+                try {
+                    UUID ownerUUID = UUID.fromString(ownerUuid);
+                    Party party = partyModule.getPartyOf(ownerUUID);
+                    if (party != null) {
+                        PartyRank rank = party.rankOf(p.getUniqueId());
+                        if (rank != null && rank.isAtLeast(PartyRank.CO_LEADER)) {
+                            return true;
+                        }
+                    }
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        return false;
     }
 
     public ChestLockStore getStore() { return store; }
@@ -210,13 +256,14 @@ public class ChestLockModule implements Listener {
         if (e.getInventory().getType() != InventoryType.CHEST && e.getInventory().getType() != InventoryType.BARREL) return;
         if (!(e.getPlayer() instanceof Player)) return;
 
-        // ChestLock UIの場合はスキップ（BlockStateをホルダーとして持たない）
-        if (!(e.getInventory().getHolder() instanceof BlockState)) {
+        InventoryHolder holder = e.getInventory().getHolder();
+        // ChestLock UIの場合はスキップ
+        if (ChestLockUI.isChestLockUI(e.getInventory())) {
             return;
         }
 
         Player p = (Player) e.getPlayer();
-        Location holderLoc = ((BlockState) e.getInventory().getHolder()).getLocation();
+        Location holderLoc = getHolderLocation(holder);
         if (holderLoc == null) return;
 
         List<Location> related = getChestRelatedLocations(holderLoc.getBlock());
@@ -262,8 +309,8 @@ public class ChestLockModule implements Listener {
     public void onInventoryMoveItem(InventoryMoveItemEvent e) {
         if (!toggle.getGlobal("chestlock")) return;
         if (e.getSource() == null || e.getDestination() == null) return;
-        Location srcLoc = (e.getSource().getHolder() instanceof BlockState) ? ((BlockState) e.getSource().getHolder()).getLocation() : null;
-        Location dstLoc = (e.getDestination().getHolder() instanceof BlockState) ? ((BlockState) e.getDestination().getHolder()).getLocation() : null;
+        Location srcLoc = getHolderLocation(e.getSource().getHolder());
+        Location dstLoc = getHolderLocation(e.getDestination().getHolder());
         if (srcLoc != null && getEffectiveLock(srcLoc).isPresent()) {
             Optional<Boolean> external = resolveExternalProtection(new ProtectionContext(
                     ProtectionAction.INVENTORY_MOVE_SOURCE,
@@ -332,6 +379,30 @@ public class ChestLockModule implements Listener {
                     e.setCancelled(true);
                     return;
                 }
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerInteract(PlayerInteractEvent e) {
+        if (!toggle.getGlobal("chestlock")) return;
+        if (e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        if (e.getHand() != EquipmentSlot.HAND) return;
+        Block clicked = e.getClickedBlock();
+        if (clicked == null) return;
+        if (clicked.getType() != Material.CHEST && clicked.getType() != Material.TRAPPED_CHEST && clicked.getType() != Material.BARREL) return;
+        if (!(e.getPlayer() instanceof Player)) return;
+        Player p = (Player) e.getPlayer();
+
+        for (Location loc : getChestRelatedLocations(clicked)) {
+            Optional<Location> effective = getEffectiveLockLocation(loc);
+            if (!effective.isPresent()) continue;
+            if (!canAccess(p, effective.get())) {
+                e.setCancelled(true);
+                Optional<ChestLock> opt = store.get(effective.get());
+                String ownerName = opt.map(this::getPlayerName).orElse("不明");
+                p.sendMessage("§cこのチェストは " + ownerName + " によって保護されています");
+                return;
             }
         }
     }

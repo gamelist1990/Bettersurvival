@@ -1,13 +1,20 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess;
 
+import com.destroystokyo.paper.event.profile.ProfileWhitelistVerifyEvent;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.Plugin;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Core.Util.OfflineUUIDUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * OfflineAccess 機能のエントリーポイント。
@@ -59,6 +66,51 @@ public class OfflineAccessModule implements Listener {
             plugin.getLogger().severe("[OfflineAccess] Netty インジェクションに失敗しました。OfflineAccess のみフェールセーフ無効化します: " + failureReason);
             plugin.getLogger().severe(debugLog);
         }
+    }
+
+    /**
+     * OfflineAccess の許可リストに載っているオフラインアカウントは
+     * whitelist 審査を自動で通過させる。
+     * （許可リスト入り = Discord 申請などで承認済みのため、
+     * 「許可されているのに whitelist で蹴られる」状態を防ぐ）
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onProfileWhitelistVerify(ProfileWhitelistVerifyEvent event) {
+        if (!event.isWhitelistEnabled() || event.isWhitelisted()) {
+            return;
+        }
+        String name = event.getPlayerProfile().getName();
+        UUID id = event.getPlayerProfile().getId();
+        if (name == null || id == null) {
+            return;
+        }
+        // オフライン UUID のプロフィールのみ対象（通常の Mojang 認証アカウントは対象外）
+        if (!id.equals(OfflineUUIDUtil.getUUID(name))) {
+            return;
+        }
+        if (!manager.isAllowed(name)) {
+            return;
+        }
+        event.setWhitelisted(true);
+        manager.debug("Whitelist auto-pass for allowed offline account name=" + name);
+    }
+
+    /** 許可済みオフラインアカウントが参加したら本 whitelist にも登録して永続化する。 */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (!player.getUniqueId().equals(OfflineUUIDUtil.getUUID(player.getName()))) {
+            return;
+        }
+        if (!manager.isAllowed(player.getName())) {
+            return;
+        }
+        if (!plugin.getServer().hasWhitelist() || player.isWhitelisted()) {
+            return;
+        }
+        player.setWhitelisted(true);
+        plugin.getLogger().info("[OfflineAccess] 許可済みオフラインアカウントを whitelist に追加しました: "
+                + player.getName());
     }
 
     public void appendDebug(String message) {
