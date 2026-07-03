@@ -132,6 +132,10 @@ public class LandMenu {
                         claim.getPartyId() != null
                                 ? "§7クリックで個人所有に戻します"
                                 : "§7所属パーティーの共有所有物にします\n§7(メンバーが制限を受けなくなり、\n§7 サブリーダー以上が管理できるようになります)")
+                .addButtonAt(24, "§c§lリング(闘技場)", Material.IRON_SWORD,
+                        module.getRingModule() != null && module.getRingModule().getRing(claim.key()) != null
+                                ? "§7この土地に設置済みのリングを設定します\n§7リング内では PVP が有効になります"
+                                : "§7土地の中に PVP 用の闘技場リングを作成します\n§7Keepインベントリ・即時復活・Duel などを設定できます")
                 .addButtonAt(35, "§c閉じる", Material.BARRIER)
                 .then((result, p) -> {
                     if (result.slot == null) {
@@ -152,6 +156,13 @@ public class LandMenu {
                                     ? "§aデバッグ境界線を表示します (緑=アクセス可 / 赤=他人 / 灰=無効)"
                                     : "§eデバッグ境界線を非表示にしました");
                             openMain(p, current);
+                        }
+                        case 24 -> {
+                            if (module.getRingModule() == null) {
+                                p.sendMessage("§cリング機能が初期化されていません");
+                                return;
+                            }
+                            module.getRingModule().getMenu().openRing(p, current);
                         }
                         case 22 -> {
                             String error = module.togglePartyShare(p, current);

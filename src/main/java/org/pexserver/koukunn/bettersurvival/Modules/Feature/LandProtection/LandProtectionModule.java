@@ -83,6 +83,8 @@ public class LandProtectionModule implements Listener {
     private final ClaimStore store;
     private final LandMenu menu;
     private final ClaimVisualizer visualizer;
+    /** リング(闘技場)モジュール。Loader から注入される。 */
+    private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
 
     private final Map<String, ClaimRegion> claims = new LinkedHashMap<>();
     /** ワールド名 -> そのワールドの保護領域一覧（高速参照用） */
@@ -156,6 +158,14 @@ public class LandProtectionModule implements Listener {
 
     public PartyModule getPartyModule() {
         return partyModule;
+    }
+
+    public org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule getRingModule() {
+        return ringModule;
+    }
+
+    public void setRingModule(org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule) {
+        this.ringModule = ringModule;
     }
 
     public void shutdown() {
@@ -581,6 +591,11 @@ public class LandProtectionModule implements Listener {
         if (event.getEntity() instanceof Player victim) {
             Player attacker = resolvePlayer(event.getDamager());
             if (attacker != null) {
+                // リング(闘技場)内では PVP 制限・フレンドリーファイアを適用しない
+                // (Duel モード時の未開始チェックは RingModule 側で行う)
+                if (ringModule != null && ringModule.allowsPvp(attacker, victim)) {
+                    return;
+                }
                 // パーティー内の味方攻撃設定
                 Party attackerParty = partyModule.getPartyOf(attacker.getUniqueId());
                 if (attackerParty != null
