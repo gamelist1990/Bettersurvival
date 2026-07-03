@@ -2,15 +2,12 @@ package org.pexserver.koukunn.bettersurvival.Commands.land;
 
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.block.Block;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimLevel;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimRegion;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
-import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule;
-import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingRegion;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -78,7 +75,7 @@ public class LandCommand extends BaseCommand {
                 }
             }
             case "info" -> showInfo(player, module);
-            case "ring" -> handleRing(player, module, args);
+            case "ring" -> openRing(player, module);
             default -> {
                 sendInfo(player, "使用法: " + getUsage());
             }
@@ -112,7 +109,7 @@ public class LandCommand extends BaseCommand {
     }
 
     /** 現在地の保護領域のリング設定メニューを開く（オーナー/副リーダーのみ）。 */
-    private void handleRing(Player player, LandProtectionModule module, String[] args) {
+    private void openRing(Player player, LandProtectionModule module) {
         if (module.getRingModule() == null) {
             sendError(player, "リング機能が初期化されていません");
             return;
@@ -126,57 +123,7 @@ public class LandCommand extends BaseCommand {
             sendError(player, "リングの設定はオーナー又は副リーダーのみ操作できます");
             return;
         }
-        RingModule ringModule = module.getRingModule();
-        if (args.length == 1) {
-            ringModule.getMenu().openRing(player, claim);
-            return;
-        }
-        String action = args[1].toLowerCase();
-        switch (action) {
-            case "create" -> {
-                if (args.length < 3) {
-                    sendError(player, "使用法: /land ring create <name>");
-                    return;
-                }
-                String error = ringModule.beginSelection(player, claim, args[2]);
-                if (error != null) {
-                    sendError(player, error);
-                }
-            }
-            case "settings" -> {
-                if (args.length < 3) {
-                    ringModule.getMenu().openRing(player, claim);
-                    return;
-                }
-                RingRegion ring = ringModule.getRing(claim.key(), args[2]);
-                if (ring == null) {
-                    sendError(player, "リング「" + args[2] + "」は存在しません");
-                    return;
-                }
-                ringModule.getMenu().openRing(player, claim, ring);
-            }
-            case "set" -> {
-                if (args.length < 3 || !(args[2].equalsIgnoreCase("pos1") || args[2].equalsIgnoreCase("pos2"))) {
-                    sendError(player, "使用法: /land ring set pos1|pos2");
-                    return;
-                }
-                Block target = player.getTargetBlockExact(100);
-                if (target == null) {
-                    sendError(player, "視線の先にブロックがありません");
-                    return;
-                }
-                ringModule.setSelectionPoint(player, args[2].equalsIgnoreCase("pos1"), target.getLocation());
-            }
-            case "cancel" -> {
-                if (ringModule.isSelecting(player)) {
-                    ringModule.cancelSelection(player);
-                    sendInfo(player, "リング範囲選択を中止しました");
-                } else {
-                    sendError(player, "範囲選択モードではありません");
-                }
-            }
-            default -> sendInfo(player, "使用法: /land ring create <name> | settings <name> | set pos1|pos2 | cancel");
-        }
+        module.getRingModule().getMenu().openRing(player, claim);
     }
 
     @Override
@@ -187,36 +134,6 @@ public class LandCommand extends BaseCommand {
             for (String candidate : List.of("debug", "info", "ring")) {
                 if (candidate.startsWith(prefix)) {
                     out.add(candidate);
-                }
-            }
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("ring")) {
-            String prefix = args[1].toLowerCase();
-            for (String candidate : List.of("create", "settings", "set", "cancel")) {
-                if (candidate.startsWith(prefix)) {
-                    out.add(candidate);
-                }
-            }
-        } else if (args.length == 3 && args[0].equalsIgnoreCase("ring")) {
-            LandProtectionModule module = getModule();
-            if (module == null || module.getRingModule() == null) {
-                return out;
-            }
-            if (args[1].equalsIgnoreCase("set")) {
-                String prefix = args[2].toLowerCase();
-                for (String candidate : List.of("pos1", "pos2")) {
-                    if (candidate.startsWith(prefix)) {
-                        out.add(candidate);
-                    }
-                }
-            } else if (sender instanceof Player player && args[1].equalsIgnoreCase("settings")) {
-                ClaimRegion claim = module.getActiveClaimAt(player.getLocation());
-                if (claim != null) {
-                    String prefix = args[2].toLowerCase();
-                    for (RingRegion ring : module.getRingModule().getRingsForClaim(claim.key())) {
-                        if (ring.getName().toLowerCase().startsWith(prefix)) {
-                            out.add(ring.getName());
-                        }
-                    }
                 }
             }
         }

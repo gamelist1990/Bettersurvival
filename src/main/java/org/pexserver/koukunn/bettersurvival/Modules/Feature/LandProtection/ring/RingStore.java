@@ -24,7 +24,7 @@ public class RingStore {
         this.cfg = cfg;
     }
 
-    /** ringId (claimKey#name) -> リング */
+    /** claimKey -> リング */
     public Map<String, RingRegion> loadRings() {
         Map<String, RingRegion> out = new LinkedHashMap<>();
         PEXConfig pc = cfg.loadConfig(PATH).orElseGet(PEXConfig::new);
@@ -34,12 +34,10 @@ public class RingStore {
                     continue;
                 }
                 try {
-                    Map<String, Object> data = (Map<String, Object>) entry.getValue();
-                    // 旧フォーマットはキーが claimKey だったため補完する
-                    data.putIfAbsent("claimKey", String.valueOf(entry.getKey()));
-                    RingRegion ring = RingRegion.fromMap(data);
+                    RingRegion ring = RingRegion.fromMap(String.valueOf(entry.getKey()),
+                            (Map<String, Object>) entry.getValue());
                     if (ring != null) {
-                        out.put(ring.ringId(), ring);
+                        out.put(ring.getClaimKey(), ring);
                     }
                 } catch (Exception ignored) {
                     // 壊れたエントリはスキップ
@@ -67,7 +65,7 @@ public class RingStore {
         PEXConfig pc = new PEXConfig();
         Map<String, Object> ringMap = new LinkedHashMap<>();
         for (RingRegion ring : rings) {
-            ringMap.put(ring.ringId(), ring.toMap());
+            ringMap.put(ring.getClaimKey(), ring.toMap());
         }
         pc.put("rings", ringMap);
         pc.put("buttons", List.copyOf(buttons));

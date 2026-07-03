@@ -88,6 +88,7 @@ public final class Loader extends JavaPlugin {
     private PartyMenu partyMenu;
     private LandProtectionModule landProtectionModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
+    private org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule tournamentModule;
     private OfflineAccessModule offlineAccessModule;
 
     @Override
@@ -177,7 +178,6 @@ public final class Loader extends JavaPlugin {
         // Party モジュール登録 (ギルド風パーティー機能)
         partyModule = new PartyModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(partyModule, this);
-        chestLockModule.setPartyModule(partyModule);
         partyMenu = new PartyMenu(this, partyModule);
         // LandProtection モジュール登録 (Rust 風の土地保護コア)
         landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule);
@@ -186,6 +186,9 @@ public final class Loader extends JavaPlugin {
         ringModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule(this, landProtectionModule);
         landProtectionModule.setRingModule(ringModule);
         getServer().getPluginManager().registerEvents(ringModule, this);
+        // Tournament モジュール登録 (頂点決定戦: リングを使ったトーナメント大会)
+        tournamentModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule(this, toggleModule, ringModule);
+        getServer().getPluginManager().registerEvents(tournamentModule, this);
         webServiceModule = new WebServiceModule(this);
         getServer().getPluginManager().registerEvents(webServiceModule, this);
         webMapModule = new WebMapModule(this);
@@ -246,7 +249,9 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(
             new ToggleFeature("party", "Party", "パーティー(ギルド)機能を有効/無効にします (/party, /p)", Material.WHITE_BANNER, false));
         toggleModule.registerFeature(
-            new ToggleFeature("landprotect", "LandProtect", "ロデストーン+ダイヤで作る土地保護コアを有効/無効にします", Material.LODESTONE, false));        toggleModule.registerFeature(
+            new ToggleFeature("landprotect", "LandProtect", "ロデストーン+ダイヤで作る土地保護コアを有効/無効にします", Material.LODESTONE, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("tournament", "Tournament", "リングを使った頂点決定戦(トーナメント大会)を有効/無効にします (/tournament)", Material.GOLDEN_SWORD, false));        toggleModule.registerFeature(
                 new ToggleFeature("offlineaccess", "OfflineAccess", "オフラインアカウントのログインを許可/拒否します", Material.COMPASS, false));        if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -316,6 +321,9 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal("landprotect")) {
             toggleModule.setGlobal("landprotect", true);
         }
+        if (!toggleModule.hasGlobal("tournament")) {
+            toggleModule.setGlobal("tournament", true);
+        }
         getLogger().info("Better Survival Plugin が有効になりました");
     }
 
@@ -352,6 +360,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new PartyCommand(this, "p"));
         // Land command: 土地保護のデバッグ表示・情報
         commandManager.register(new LandCommand(this));
+        // Tournament command: 頂点決定戦（トーナメント大会）の参加・管理
+        commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.tournament.TournamentCommand(this));
         // OfflineAccess command: オフラインアカウントログイン許可リスト管理
         commandManager.register(new OfflineCommand(offlineAccessModule));
         // Command: グローバル無効化コマンド
@@ -428,6 +438,10 @@ public final class Loader extends JavaPlugin {
         return ringModule;
     }
 
+    public org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule getTournamentModule() {
+        return tournamentModule;
+    }
+
     public WebMapModule getWebMapModule() {
         return webMapModule;
     }
@@ -468,6 +482,9 @@ public final class Loader extends JavaPlugin {
         }
         if (chunkLoaderModule != null) {
             chunkLoaderModule.shutdown();
+        }
+        if (tournamentModule != null) {
+            tournamentModule.shutdown();
         }
         if (ringModule != null) {
             ringModule.shutdown();

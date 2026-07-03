@@ -18,6 +18,15 @@ public class DuelSession {
         ENDED,
     }
 
+    /** 外部モジュール（トーナメント等）が試合結果を受け取るためのコールバック。 */
+    public interface ResultCallback {
+        /** 勝敗が付いて終了した。 */
+        void onEnd(UUID winner, UUID loser);
+
+        /** 勝敗が付かずに中断された。 */
+        void onAbort();
+    }
+
     private final RingRegion ring;
     private final UUID playerA;
     private final UUID playerB;
@@ -29,6 +38,8 @@ public class DuelSession {
     private State state = State.COUNTDOWN;
     /** カウントダウン残り秒（3,2,1 → 0 で FIGHT） */
     private int countdown = 3;
+    /** 試合結果の通知先（未設定は null） */
+    private ResultCallback resultCallback;
 
     public DuelSession(RingRegion ring, UUID playerA, UUID playerB, boolean matchmade) {
         this.ring = ring;
@@ -55,6 +66,14 @@ public class DuelSession {
 
     public Map<UUID, Location> getReturnLocations() {
         return returnLocations;
+    }
+
+    public ResultCallback getResultCallback() {
+        return resultCallback;
+    }
+
+    public void setResultCallback(ResultCallback resultCallback) {
+        this.resultCallback = resultCallback;
     }
 
     public State getState() {
