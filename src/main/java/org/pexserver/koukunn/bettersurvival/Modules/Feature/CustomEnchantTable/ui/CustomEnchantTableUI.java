@@ -159,7 +159,14 @@ public class CustomEnchantTableUI implements InventoryHolder {
         Player viewer = Bukkit.getPlayer(viewerId);
         ItemStack tool = toolItem();
         slotMapping.clear();
-        List<CustomEnchant> enchants = new ArrayList<>(registry.all());
+        List<CustomEnchant> enchants = new ArrayList<>();
+        if (tool != null) {
+            for (CustomEnchant enchant : registry.all()) {
+                if (enchant.supports(tool.getType())) {
+                    enchants.add(enchant);
+                }
+            }
+        }
         page = Math.max(0, Math.min(page, maxPage(enchants.size())));
         int start = page * BUTTON_SLOTS.length;
         int index = 0;
@@ -173,7 +180,8 @@ public class CustomEnchantTableUI implements InventoryHolder {
             renderEnchantButton(BUTTON_SLOTS[index], enchant, tool, viewer);
         }
         for (; index < BUTTON_SLOTS.length; index++) {
-            setButton(BUTTON_SLOTS[index], "§8－", Material.GRAY_STAINED_GLASS_PANE, "§7今後のエンチャント追加枠");
+            setButton(BUTTON_SLOTS[index], "§8－", Material.GRAY_STAINED_GLASS_PANE,
+                    tool == null ? "§7先に道具を入れてください" : "§7この道具に付けられるエンチャントはここまでです");
         }
         renderPageControls(enchants.size());
     }
@@ -195,7 +203,7 @@ public class CustomEnchantTableUI implements InventoryHolder {
                     "§7これ以上前のページはありません");
         }
         setButton(SLOT_PAGE_INFO, "§dページ §f" + (page + 1) + "§7/§f" + (maxPage + 1), Material.PAPER,
-                "§7登録済みエンチャント: §f" + enchantCount
+            "§7表示中の付与可能エンチャント: §f" + enchantCount
                         + "\n§71ページ表示数: §f" + BUTTON_SLOTS.length);
         if (page < maxPage) {
             setButton(SLOT_NEXT_PAGE, "§e次ページ →", Material.ARROW,

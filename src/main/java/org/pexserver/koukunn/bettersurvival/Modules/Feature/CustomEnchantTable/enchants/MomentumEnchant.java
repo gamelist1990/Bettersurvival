@@ -32,8 +32,10 @@ public class MomentumEnchant extends CustomEnchant {
     private static final long RESET_MS = 3_000L;
     /** 何ブロック連続で掘るごとに速度が1段階上がるか */
     private static final int BLOCKS_PER_TIER = 1;
-    /** 1段階ごとのブロック破壊速度倍率加算 */
-    private static final double SPEED_BONUS_PER_TIER = 0.35D;
+    /** Lv5 最大時のブロック破壊速度倍率 */
+    private static final double MAX_SPEED_MULTIPLIER = 10.0D;
+    /** 1レベルごとの最大段階数 */
+    private static final int TIERS_PER_LEVEL = 2;
     /** 1段階ごとの適正ツール採掘速度加算 */
     private static final double MINING_EFFICIENCY_BONUS_PER_TIER = 3.0D;
 
@@ -57,6 +59,7 @@ public class MomentumEnchant extends CustomEnchant {
     public String description() {
         return "§7掘り続けるほど採掘速度が上がる"
                 + "\n§7(" + BLOCKS_PER_TIER + "ブロックごとに加速、上限はレベル依存)"
+                + "\n§7Lv5最大時は採掘速度が約" + (int) MAX_SPEED_MULTIPLIER + "倍"
                 + "\n§73秒間掘らないと元に戻る"
                 + "\n§7ポーション効果ではなく採掘属性そのものを上げる";
     }
@@ -108,20 +111,36 @@ public class MomentumEnchant extends CustomEnchant {
         state.stacks++;
         state.lastBreakMs = now;
 
-        int tierCap = level + 1; // Lv1→2段階 / Lv2→3段階 / Lv3→4段階 / Lv4→5段階 / Lv5→6段階
+        int cappedLevel = Math.min(level, maxLevel());
+        int tierCap = tierCap(cappedLevel); // Lv1→2段階 / Lv2→4段階 / Lv3→6段階 / Lv4→8段階 / Lv5→10段階
         int tier = Math.min(state.stacks / BLOCKS_PER_TIER, tierCap);
         if (tier <= 0) {
             return;
         }
-        applySpeed(player, state, tier);
+        applySpeed(player, state, cappedLevel, tier);
         if (tier != state.lastTier) {
             state.lastTier = tier;
-            int bonusPercent = (int) Math.round(SPEED_BONUS_PER_TIER * tier * 100.0D);
+            int bonusPercent = (int) Math.round((speedMultiplier(cappedLevel, tier) - 1.0D) * 100.0D);
             player.sendActionBar(ComponentUtils.legacy("§d✦ 採掘加速 §f×" + state.stacks + " §7(採掘速度 +" + bonusPercent + "%)"));
         }
     }
 
-    private void applySpeed(Player player, State state, int tier) {
+    private int tierCap(int level) {
+        return Math.max(1, Math.min(maxLevel(), level) * TIERS_PER_LEVEL);
+    }
+
+    private double maxSpeedMultiplier(int level) {
+        int cappedLevel = Math.max(1, Math.min(maxLevel(), level));
+        return 1.0D + (MAX_SPEED_MULTIPLIER - 1.0D) * (double) cappedLevel / (double) maxLevel();
+    }
+
+    private double speedMultiplier(int level, int tier) {
+        int cap = tierCap(level);
+        int cappedTier = Math.max(0, Math.min(cap, tier));
+        return 1.0D + (maxSpeedMultiplier(level) - 1.0D) * (double) cappedTier / (double) cap;
+    }
+
+    private void applySpeed(Player player, State state, int level, int tier) {
         AttributeInstance blockBreakSpeed = player.getAttribute(Attribute.BLOCK_BREAK_SPEED);
         AttributeInstance miningEfficiency = player.getAttribute(Attribute.MINING_EFFICIENCY);
         if (blockBreakSpeed == null && miningEfficiency == null) {
@@ -133,7 +152,7 @@ public class MomentumEnchant extends CustomEnchant {
         if (miningEfficiency != null && Double.isNaN(state.originalMiningEfficiency)) {
             state.originalMiningEfficiency = miningEfficiency.getBaseValue();
         }
-        double multiplier = 1.0D + SPEED_BONUS_PER_TIER * tier;
+        double multiplier = speedMultiplier(level, tier);
         if (blockBreakSpeed != null) {
             blockBreakSpeed.setBaseValue(state.originalBlockBreakSpeed * multiplier);
         }
