@@ -36,6 +36,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandP
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ParallelFurnace.ParallelFurnaceModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AirDash.AirDashModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.CustomEnchantTableModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.WarpStone.WarpStoneModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.KeepAliveGuard.KeepAliveGuardModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.ui.PartyMenu;
@@ -94,6 +95,7 @@ public final class Loader extends JavaPlugin {
     private ParallelFurnaceModule parallelFurnaceModule;
     private AirDashModule airDashModule;
     private CustomEnchantTableModule customEnchantTableModule;
+    private WarpStoneModule warpStoneModule;
     private KeepAliveGuardModule keepAliveGuardModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule tournamentModule;
@@ -199,6 +201,9 @@ public final class Loader extends JavaPlugin {
         // CustomEnchantTable モジュール登録 (エンチャントテーブル×ラピスで作る特殊エンチャント台)
         customEnchantTableModule = new CustomEnchantTableModule(this, toggleModule, itemCombineModule);
         getServer().getPluginManager().registerEvents(customEnchantTableModule, this);
+        // WarpStone モジュール登録 (Waystones風ワープ + GTA風カメラ演出)
+        warpStoneModule = new WarpStoneModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(warpStoneModule, this);
         keepAliveGuardModule = new KeepAliveGuardModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(keepAliveGuardModule, this);
         // Ring モジュール登録 (土地保護内の闘技場リング / Duel / マッチング)
@@ -275,6 +280,8 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("airdash", "AirDash", "空中でジャンプキーを再入力するとエアダッシュします(クールダウンはActionBar表示)", Material.FEATHER));
         toggleModule.registerFeature(
             new ToggleFeature("customenchant", "CustomEnchant", "エンチャントテーブル×ラピスで作るカスタムエンチャント台を有効/無効にします", Material.ENCHANTING_TABLE, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("warpstone", "WarpStone", "エンダーパール×石レンガで作るワープストーンを有効/無効にします", Material.LODESTONE, false));
         toggleModule.registerFeature(
             new ToggleFeature("keepaliveguard", "KeepAliveGuard", "OPのkeepalive timeout kickを可能な範囲でキャンセルします", Material.REPEATER, false));
         toggleModule.registerFeature(
@@ -356,6 +363,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("customenchant")) {
             toggleModule.setGlobal("customenchant", true);
+        }
+        if (!toggleModule.hasGlobal("warpstone")) {
+            toggleModule.setGlobal("warpstone", true);
         }
         if (!toggleModule.hasGlobal("keepaliveguard")) {
             toggleModule.setGlobal("keepaliveguard", true);
@@ -485,6 +495,10 @@ public final class Loader extends JavaPlugin {
         return customEnchantTableModule;
     }
 
+    public WarpStoneModule getWarpStoneModule() {
+        return warpStoneModule;
+    }
+
     public org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule getRingModule() {
         return ringModule;
     }
@@ -551,6 +565,9 @@ public final class Loader extends JavaPlugin {
         }
         if (customEnchantTableModule != null) {
             customEnchantTableModule.shutdown();
+        }
+        if (warpStoneModule != null) {
+            warpStoneModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

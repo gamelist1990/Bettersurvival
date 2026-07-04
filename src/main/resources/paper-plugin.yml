@@ -5,3 +5,13 @@ bootstrapper: org.pexserver.koukunn.bettersurvival.BetterSurvivalBootstrap
 api-version: '1.21'
 authors: [ Koukunn ]
 description: PEXServer Plugin
+dependencies:
+  server:
+    floodgate:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    Geyser-Spigot:
+      load: BEFORE
+      required: false
+      join-classpath: true
