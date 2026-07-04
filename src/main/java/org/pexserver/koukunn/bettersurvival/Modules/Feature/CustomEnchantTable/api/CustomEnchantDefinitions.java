@@ -28,7 +28,15 @@ public final class CustomEnchantDefinitions {
             new Definition("autocollect", "自動回収", 1),
             new Definition("autosmelt", "オートスメルト", 1),
             new Definition("magnet", "マグネット", 3),
-            new Definition("xpboost", "経験値ブースト", 3));
+            new Definition("xpboost", "経験値ブースト", 3),
+            new Definition("nightvision", "ナイトビジョン", 1),
+            new Definition("haste", "ヘイスト", 3),
+            new Definition("wisdom", "知恵", 3),
+            new Definition("leaffortune", "リーフ・フォーチュン", 3),
+            new Definition("accelerategrowth", "成長加速", 3),
+            new Definition("fireproofboots", "耐火のブーツ", 3),
+            new Definition("handofthief", "泥棒の手", 1),
+            new Definition("voidprotection", "奈落の保護", 3));
 
     private CustomEnchantDefinitions() {
     }

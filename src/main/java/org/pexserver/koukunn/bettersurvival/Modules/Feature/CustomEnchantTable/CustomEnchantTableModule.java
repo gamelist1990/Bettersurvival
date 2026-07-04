@@ -45,6 +45,14 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.e
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.MomentumEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.SedimentBreakEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.XpBoostEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.NightVisionEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.HasteEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.WisdomEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.LeafFortuneEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AccelerateGrowthEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.FireproofBootsEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.HandOfThiefEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.VoidProtectionEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.ui.CustomEnchantTableUI;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -109,6 +117,14 @@ public class CustomEnchantTableModule implements Listener {
         registry.register(new AutoSmeltEnchant(plugin, autoCollect));
         registry.register(new MagnetEnchant(plugin));
         registry.register(new XpBoostEnchant(plugin));
+        registry.register(new NightVisionEnchant(plugin));
+        registry.register(new HasteEnchant(plugin));
+        registry.register(new WisdomEnchant(plugin));
+        registry.register(new LeafFortuneEnchant(plugin));
+        registry.register(new AccelerateGrowthEnchant(plugin));
+        registry.register(new FireproofBootsEnchant(plugin));
+        registry.register(new HandOfThiefEnchant(plugin));
+        registry.register(new VoidProtectionEnchant(plugin));
 
         itemCombineModule.recipe("custom_enchant_table")
                 .first(this::isPlainEnchantTable)
