@@ -7,12 +7,16 @@ import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.TileState;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant;
@@ -35,7 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 中心から波状に破壊アニメーション (ひび割れの進行 = block damage progress) が
  * 走ってから順番に壊れていく。
  *
- * - Lv1: 3x3 / Lv2: 3x3 奥行き2 / Lv3: 5x5 奥行き2
+ * - Lv1: 3x3 / Lv2: 3x3 奥行き2 / Lv3: 7x7 奥行き2
  * - スニーク + 掘るでのみ発動する
  * - 各ブロックは合成 BlockBreakEvent を経由するため、土地保護や
  *   自動回収など他の機能とそのまま連動する
@@ -48,15 +52,18 @@ public class AreaBreakEnchant extends CustomEnchant {
     private static final int LAYER_DELAY_TICKS = 8;
     /** ひび割れアニメーションの最短/最長 (tick) */
     private static final int MIN_CRACK_TICKS = 4;
-    private static final int MAX_CRACK_TICKS = 14;
+    private static final int MAX_CRACK_TICKS = 200;
     /** アニメーションを見せる範囲 */
     private static final double VIEW_RANGE = 32.0D;
     /** 1ジョブの最大ブロック数 (安全弁) */
     private static final int MAX_BLOCKS_PER_JOB = 60;
+    /** 同時に走らせられる渦ジョブ数の安全弁 */
+    private static final int MAX_PARALLEL_JOBS_PER_PLAYER = 8;
 
     private static final AtomicInteger CRACK_SOURCE_IDS = new AtomicInteger(-77_000_000);
 
-    private final Map<UUID, BukkitTask> activeJobs = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<BukkitTask>> activeJobs = new ConcurrentHashMap<>();
+    private final Map<UUID, BurstState> burstStates = new ConcurrentHashMap<>();
     /** 合成イベントの再帰発動を防ぐガード */
     private final Set<Block> processing = new HashSet<>();
 
@@ -78,7 +85,7 @@ public class AreaBreakEnchant extends CustomEnchant {
     public String description() {
         return "§7スニークしながら掘ると周囲のブロックを"
                 + "\n§7中心から渦を巻くように破壊する"
-                + "\n§7Lv1: 3x3 / Lv2: 3x3 奥行き2 / Lv3: 5x5 奥行き2"
+                + "\n§7Lv1: 3x3 / Lv2: 3x3 奥行き2 / Lv3: 7x7 奥行き2"
                 + "\n§7通常掘りでは発動しない";
     }
 
@@ -127,8 +134,12 @@ public class AreaBreakEnchant extends CustomEnchant {
         if (level <= 0) {
             return;
         }
-        if (activeJobs.containsKey(player.getUniqueId())) {
-            return; // 渦が進行中の間は新しい渦を起こさない
+        if (!tryConsumeBurst(player, level)) {
+            return;
+        }
+        Set<BukkitTask> jobs = activeJobs.get(player.getUniqueId());
+        if (jobs != null && jobs.size() >= MAX_PARALLEL_JOBS_PER_PLAYER) {
+            return;
         }
         List<TargetInfo> targets = collectTargets(player, origin, tool, level);
         if (targets.isEmpty()) {
@@ -139,7 +150,7 @@ public class AreaBreakEnchant extends CustomEnchant {
 
     /** レベルと視線方向から破壊対象の平面 (+奥行き) を集める */
     private List<TargetInfo> collectTargets(Player player, Block origin, ItemStack tool, int level) {
-        int radius = level >= 3 ? 2 : 1;
+        int radius = level >= 3 ? 3 : 1;
         int depth = level >= 2 ? 2 : 1;
 
         // 平面の向き: 見下ろし/見上げなら水平面、それ以外は視線に正対する垂直面
@@ -251,8 +262,7 @@ public class AreaBreakEnchant extends CustomEnchant {
         List<CrackEntry> entries = new ArrayList<>();
         for (TargetInfo target : targets) {
             Block block = target.block();
-            float hardness = block.getType().getHardness();
-            int duration = Math.max(MIN_CRACK_TICKS, Math.min(MAX_CRACK_TICKS, Math.round(hardness * 4.0F)));
+            int duration = crackDurationTicks(block, toolSnapshot, player);
             entries.add(new CrackEntry(block, block.getType(), originCenter, target.startTick(), duration, CRACK_SOURCE_IDS.getAndIncrement()));
             processing.add(block);
         }
@@ -262,7 +272,7 @@ public class AreaBreakEnchant extends CustomEnchant {
         final int[] brokenCount = {0};
         BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             Player owner = Bukkit.getPlayer(playerId);
-            if (owner == null || !owner.isOnline()) {
+            if (owner == null || !owner.isOnline() || owner.getInventory().getItemInMainHand().getType() != toolSnapshot.getType()) {
                 finishJob(playerId, entries);
                 return;
             }
@@ -304,7 +314,145 @@ public class AreaBreakEnchant extends CustomEnchant {
                 finishJob(playerId, entries);
             }
         }, 1L, 1L);
-        activeJobs.put(playerId, task);
+        activeJobs.computeIfAbsent(playerId, ignored -> ConcurrentHashMap.newKeySet()).add(task);
+    }
+
+    /**
+     * Lvごとに「連続発動できる回数」と「使い切った後のクールダウン」を変える。
+     * Lv1: 2回ごとに 4秒 / Lv2: 3回ごとに 1秒 / Lv3: 4回ごとに 1秒
+     */
+    private boolean tryConsumeBurst(Player player, int level) {
+        UUID playerId = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        BurstState state = burstStates.computeIfAbsent(playerId, ignored -> new BurstState());
+        if (now < state.cooldownUntilMillis) {
+            return false;
+        }
+        int burstLimit = burstLimit(level);
+        state.usesInWindow++;
+        if (state.usesInWindow >= burstLimit) {
+            state.usesInWindow = 0;
+            state.cooldownUntilMillis = now + cooldownMillis(level);
+        }
+        return true;
+    }
+
+    private int burstLimit(int level) {
+        return switch (Math.max(1, Math.min(maxLevel(), level))) {
+            case 1 -> 2;
+            case 2 -> 3;
+            default -> 4;
+        };
+    }
+
+    private long cooldownMillis(int level) {
+        return switch (Math.max(1, Math.min(maxLevel(), level))) {
+            case 1 -> 3_000L;
+            case 2 -> 500L;
+            default -> 0L;
+        };
+    }
+
+    /**
+     * ブロックごとに硬さ・道具素材・効率強化・採掘速度上昇/低下などを反映した
+     * 破壊プログレス時間を返す。
+     */
+    private int crackDurationTicks(Block block, ItemStack tool, Player player) {
+        float hardness = block.getType().getHardness();
+        if (hardness <= 0.0F) {
+            return MIN_CRACK_TICKS;
+        }
+        double speed = toolMiningSpeed(tool == null ? Material.AIR : tool.getType());
+        int efficiencyLevel = tool == null ? 0 : tool.getEnchantmentLevel(Enchantment.EFFICIENCY);
+        if (efficiencyLevel > 0) {
+            speed += efficiencyLevel * efficiencyLevel + 1.0D;
+        }
+        speed *= hasteMultiplier(player);
+        speed *= miningFatigueMultiplier(player);
+
+        if (player != null && player.isInWater() && !hasAquaAffinity(player)) {
+            speed /= 5.0D;
+        }
+        if (player != null && !isStandingOnGround(player)) {
+            speed /= 5.0D;
+        }
+
+        speed = Math.max(0.01D, speed);
+        int ticks = (int) Math.ceil(hardness * 30.0D / speed);
+        return Math.max(MIN_CRACK_TICKS, Math.min(MAX_CRACK_TICKS, ticks));
+    }
+
+    private double toolMiningSpeed(Material toolType) {
+        String name = toolType.name();
+        if (name.startsWith("WOODEN_")) {
+            return 2.0D;
+        }
+        if (name.startsWith("STONE_")) {
+            return 4.0D;
+        }
+        if (name.startsWith("IRON_")) {
+            return 6.0D;
+        }
+        if (name.startsWith("DIAMOND_")) {
+            return 8.0D;
+        }
+        if (name.startsWith("NETHERITE_")) {
+            return 9.0D;
+        }
+        if (name.startsWith("GOLDEN_")) {
+            return 12.0D;
+        }
+        return 1.0D;
+    }
+
+    private double hasteMultiplier(Player player) {
+        if (player == null) {
+            return 1.0D;
+        }
+        PotionEffect haste = player.getPotionEffect(PotionEffectType.HASTE);
+        if (haste == null) {
+            return 1.0D;
+        }
+        return 1.0D + 0.2D * (haste.getAmplifier() + 1);
+    }
+
+    private double miningFatigueMultiplier(Player player) {
+        if (player == null) {
+            return 1.0D;
+        }
+        PotionEffect fatigue = player.getPotionEffect(PotionEffectType.MINING_FATIGUE);
+        if (fatigue == null) {
+            return 1.0D;
+        }
+        return switch (fatigue.getAmplifier()) {
+            case 0 -> 0.3D;
+            case 1 -> 0.09D;
+            case 2 -> 0.0027D;
+            default -> 0.00081D;
+        };
+    }
+
+    private boolean hasAquaAffinity(Player player) {
+        ItemStack helmet = player.getInventory().getHelmet();
+        return helmet != null && helmet.getEnchantmentLevel(Enchantment.AQUA_AFFINITY) > 0;
+    }
+
+    private boolean isStandingOnGround(Player player) {
+        World world = player.getWorld();
+        BoundingBox box = player.getBoundingBox();
+        int minX = (int) Math.floor(box.getMinX() + 1.0E-6D);
+        int maxX = (int) Math.floor(box.getMaxX() - 1.0E-6D);
+        int minZ = (int) Math.floor(box.getMinZ() + 1.0E-6D);
+        int maxZ = (int) Math.floor(box.getMaxZ() - 1.0E-6D);
+        int y = (int) Math.floor(box.getMinY() - 0.05D);
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                if (world.getBlockAt(x, y, z).getType().isSolid()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** 中央から対象ブロックへ向かう渦状の粒子を出す */
@@ -398,22 +546,41 @@ public class AreaBreakEnchant extends CustomEnchant {
                 sendCrackClear(entry);
             }
         }
-        BukkitTask task = activeJobs.remove(playerId);
-        if (task != null) {
-            task.cancel();
+        Set<BukkitTask> jobs = activeJobs.get(playerId);
+        if (jobs != null) {
+            BukkitTask current = Bukkit.getScheduler().getPendingTasks().stream()
+                    .filter(BukkitTask::isSync)
+                    .filter(task -> jobs.contains(task) && !task.isCancelled())
+                    .findFirst()
+                    .orElse(null);
+            if (current != null) {
+                jobs.remove(current);
+                current.cancel();
+            }
+            if (jobs.isEmpty()) {
+                activeJobs.remove(playerId);
+            }
         }
     }
 
     @Override
     public void shutdown() {
-        for (BukkitTask task : activeJobs.values()) {
-            task.cancel();
+        for (Set<BukkitTask> jobs : activeJobs.values()) {
+            for (BukkitTask task : jobs) {
+                task.cancel();
+            }
         }
         activeJobs.clear();
+        burstStates.clear();
         processing.clear();
     }
 
     private record TargetInfo(Block block, int startTick) {
+    }
+
+    private static final class BurstState {
+        int usesInWindow;
+        long cooldownUntilMillis;
     }
 
     private static final class CrackEntry {

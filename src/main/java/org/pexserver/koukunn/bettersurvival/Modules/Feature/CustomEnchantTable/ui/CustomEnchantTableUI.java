@@ -19,12 +19,13 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * カスタムエンチャントテーブルの UI (27スロット、プレイヤーごと)。
+ * カスタムエンチャントテーブルの UI (54スロット、プレイヤーごと)。
  *
  * <pre>
  * Row0: [枠×4] [✦タイトル] [枠×4]
- * Row1: [→道具] [道具スロット(編集可)] [枠] [エンチャント×5まで] [枠]
- * Row2: [枠×4] [使い方] [枠×4]
+ * Row1: [道具案内] [道具スロット] [枠×6]
+ * Row2-4: [枠] [エンチャント一覧 7×3] [枠]
+ * Row5: [前ページ] [枠×2] [使い方] [ページ] [枠×2] [次ページ]
  * </pre>
  *
  * 道具スロットに対象を入れると、対応エンチャントのボタンが点灯し、
@@ -32,24 +33,32 @@ import java.util.UUID;
  */
 public class CustomEnchantTableUI implements InventoryHolder {
 
-    public static final int SIZE = 27;
+        public static final int SIZE = 54;
     public static final int SLOT_TITLE = 4;
     public static final int SLOT_TOOL_LABEL = 9;
     public static final int SLOT_TOOL = 10;
-    /** エンチャントボタンのスロット (2列 / 最大10個) */
-    public static final int[] BUTTON_SLOTS = {12, 13, 14, 15, 16, 19, 20, 21, 22, 23};
-    public static final int SLOT_INFO = 25;
+        public static final int SLOT_PREV_PAGE = 45;
+        public static final int SLOT_INFO = 49;
+        public static final int SLOT_PAGE_INFO = 50;
+        public static final int SLOT_NEXT_PAGE = 53;
+        /** エンチャントボタンのスロット (7列×3段 / 1ページ最大21個) */
+        public static final int[] BUTTON_SLOTS = {
+            19, 20, 21, 22, 23, 24, 25,
+            28, 29, 30, 31, 32, 33, 34,
+            37, 38, 39, 40, 41, 42, 43
+        };
 
     private final CustomEnchantRegistry registry;
     private final UUID viewerId;
     private final Inventory inventory;
     /** ボタンスロット → エンチャント */
     private final List<CustomEnchant> slotMapping = new ArrayList<>();
+    private int page;
 
     public CustomEnchantTableUI(CustomEnchantRegistry registry, Player viewer) {
         this.registry = registry;
         this.viewerId = viewer.getUniqueId();
-        this.inventory = Bukkit.createInventory(this, SIZE, ComponentUtils.legacy("§8✦ §dカスタムエンチャント §8✦"));
+        this.inventory = Bukkit.createInventory(this, SIZE, ComponentUtils.legacy("§8✦ §dカスタムエンチャント管理 §8✦"));
         renderStatic();
         render();
     }
@@ -128,19 +137,20 @@ public class CustomEnchantTableUI implements InventoryHolder {
     private void renderStatic() {
         for (int slot = 0; slot < SIZE; slot++) {
             if (slot == SLOT_TOOL || slot == SLOT_TITLE || slot == SLOT_TOOL_LABEL || slot == SLOT_INFO
-                    || isButtonSlot(slot)) {
+                    || slot == SLOT_PREV_PAGE || slot == SLOT_PAGE_INFO || slot == SLOT_NEXT_PAGE || isButtonSlot(slot)) {
                 continue;
             }
             setButton(slot, "§7 ", Material.PURPLE_STAINED_GLASS_PANE, "");
         }
-        setButton(SLOT_TITLE, "§d✦ カスタムエンチャント ✦", Material.ENCHANTING_TABLE,
-                "§7道具を入れて、素材を払って特殊効果を付与");
+        setButton(SLOT_TITLE, "§d✦ カスタムエンチャント管理 ✦", Material.ENCHANTING_TABLE,
+                "§7今後エンチャントが増えてもページで管理できます");
         setButton(SLOT_TOOL_LABEL, "§e→ 道具をここへ", Material.ITEM_FRAME,
                 "§7右のスロットにエンチャントしたい\n§7道具や装備を入れてください");
         setButton(SLOT_INFO, "§b使い方", Material.WRITABLE_BOOK,
                 "§7① 道具をスロットに入れる"
                         + "\n§7② 付けたい効果をクリック"
                         + "\n§7③ 素材は手持ちから消費されます"
+                        + "\n§7④ 下の矢印でページを切り替え"
                         + "\n§7効果はレベル制で、繰り返し強化できます");
     }
 
@@ -149,17 +159,50 @@ public class CustomEnchantTableUI implements InventoryHolder {
         Player viewer = Bukkit.getPlayer(viewerId);
         ItemStack tool = toolItem();
         slotMapping.clear();
+        List<CustomEnchant> enchants = new ArrayList<>(registry.all());
+        page = Math.max(0, Math.min(page, maxPage(enchants.size())));
+        int start = page * BUTTON_SLOTS.length;
         int index = 0;
-        for (CustomEnchant enchant : registry.all()) {
-            if (index >= BUTTON_SLOTS.length) {
+        for (; index < BUTTON_SLOTS.length; index++) {
+            int enchantIndex = start + index;
+            if (enchantIndex >= enchants.size()) {
                 break;
             }
+            CustomEnchant enchant = enchants.get(enchantIndex);
             slotMapping.add(enchant);
             renderEnchantButton(BUTTON_SLOTS[index], enchant, tool, viewer);
-            index++;
         }
         for (; index < BUTTON_SLOTS.length; index++) {
             setButton(BUTTON_SLOTS[index], "§8－", Material.GRAY_STAINED_GLASS_PANE, "§7今後のエンチャント追加枠");
+        }
+        renderPageControls(enchants.size());
+    }
+
+    private int maxPage(int enchantCount) {
+        if (enchantCount <= 0) {
+            return 0;
+        }
+        return (enchantCount - 1) / BUTTON_SLOTS.length;
+    }
+
+    private void renderPageControls(int enchantCount) {
+        int maxPage = maxPage(enchantCount);
+        if (page > 0) {
+            setButton(SLOT_PREV_PAGE, "§e← 前ページ", Material.ARROW,
+                    "§7前のエンチャント一覧へ戻ります");
+        } else {
+            setButton(SLOT_PREV_PAGE, "§8← 前ページ", Material.GRAY_STAINED_GLASS_PANE,
+                    "§7これ以上前のページはありません");
+        }
+        setButton(SLOT_PAGE_INFO, "§dページ §f" + (page + 1) + "§7/§f" + (maxPage + 1), Material.PAPER,
+                "§7登録済みエンチャント: §f" + enchantCount
+                        + "\n§71ページ表示数: §f" + BUTTON_SLOTS.length);
+        if (page < maxPage) {
+            setButton(SLOT_NEXT_PAGE, "§e次ページ →", Material.ARROW,
+                    "§7次のエンチャント一覧へ進みます");
+        } else {
+            setButton(SLOT_NEXT_PAGE, "§8次ページ →", Material.GRAY_STAINED_GLASS_PANE,
+                    "§7これ以上次のページはありません");
         }
     }
 
@@ -205,6 +248,23 @@ public class CustomEnchantTableUI implements InventoryHolder {
 
     /** エンチャントボタンのクリック処理 */
     public void handleClick(Player player, int slot) {
+        if (slot == SLOT_PREV_PAGE) {
+            if (page > 0) {
+                page--;
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.6F, 0.8F);
+                render();
+            }
+            return;
+        }
+        if (slot == SLOT_NEXT_PAGE) {
+            int maxPage = maxPage(registry.all().size());
+            if (page < maxPage) {
+                page++;
+                player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.6F, 1.2F);
+                render();
+            }
+            return;
+        }
         int index = -1;
         for (int i = 0; i < BUTTON_SLOTS.length; i++) {
             if (BUTTON_SLOTS[i] == slot) {

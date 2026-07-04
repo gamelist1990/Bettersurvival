@@ -21,8 +21,10 @@ public final class CustomEnchantDefinitions {
     }
 
     private static final List<Definition> DEFINITIONS = List.of(
-            new Definition("momentum", "採掘加速", 3),
+            new Definition("momentum", "採掘加速", 5),
             new Definition("areabreak", "範囲採掘", 3),
+            new Definition("sedimentbreak", "土砂掘削", 3),
+            new Definition("battlerepair", "戦利修復", 3),
             new Definition("autocollect", "自動回収", 1),
             new Definition("autosmelt", "オートスメルト", 1),
             new Definition("magnet", "マグネット", 3),

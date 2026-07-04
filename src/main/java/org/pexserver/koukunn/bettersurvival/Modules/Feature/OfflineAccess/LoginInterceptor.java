@@ -6,6 +6,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
+import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.OfflineUUIDUtil;
 
 import java.lang.reflect.Field;
@@ -92,6 +93,14 @@ public class LoginInterceptor extends ChannelDuplexHandler {
         } catch (Exception e) {
             manager.getPlugin().getLogger().log(Level.WARNING, "[OfflineAccess] HelloPacket の解析に失敗しました", e);
             manager.debug("HelloPacket parse failed packetClass=" + packetClass.getName(), e);
+            super.channelRead(ctx, msg);
+            return;
+        }
+
+        // 統合版(Floodgate/Geyser)ユーザーは OfflineAccess の対象外。
+        // 初回参加時の Floodgate 側ログイン処理・チャンク送信を邪魔しないよう、ここで完全に素通しする。
+        if (FloodgateUtil.isBedrock(profileId) || FloodgateUtil.isBedrockName(name)) {
+            manager.debug("OfflineAccess ignored Floodgate/Bedrock login name=" + name + " profileId=" + profileId);
             super.channelRead(ctx, msg);
             return;
         }

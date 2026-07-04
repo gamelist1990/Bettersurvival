@@ -25,7 +25,7 @@ public class ParallelFurnaceData {
     /** 完成品(回収口)スロット数 */
     public static final int OUTPUT_SLOTS = 16;
     /** 追加できる作業コア(かまど)の最大数 */
-    public static final int MAX_EXTRA_CORES = 31;
+    public static final int MAX_EXTRA_CORES = 199;
     /** 最大並列ライン数 (基本1 + 追加コア) */
     public static final int MAX_LINES = 1 + MAX_EXTRA_CORES;
 

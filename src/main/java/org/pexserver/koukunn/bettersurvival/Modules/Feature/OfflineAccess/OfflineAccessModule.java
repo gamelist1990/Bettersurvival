@@ -8,6 +8,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.Plugin;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
+import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.OfflineUUIDUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
@@ -84,6 +85,11 @@ public class OfflineAccessModule implements Listener {
         if (name == null || id == null) {
             return;
         }
+        // 統合版(Floodgate/Geyser)ユーザーは OfflineAccess の対象外。
+        // Bedrock 側は Floodgate の通常処理に任せ、ここでは whitelist 自動通過などを行わない。
+        if (FloodgateUtil.isBedrock(id) || FloodgateUtil.isBedrockName(name)) {
+            return;
+        }
         // オフライン UUID のプロフィールのみ対象（通常の Mojang 認証アカウントは対象外）
         if (!id.equals(OfflineUUIDUtil.getUUID(name))) {
             return;
@@ -99,6 +105,10 @@ public class OfflineAccessModule implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        // 統合版(Floodgate/Geyser)ユーザーは OfflineAccess の対象外。
+        if (FloodgateUtil.isBedrock(player)) {
+            return;
+        }
         if (!player.getUniqueId().equals(OfflineUUIDUtil.getUUID(player.getName()))) {
             return;
         }

@@ -1,5 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.ParallelFurnace;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -11,6 +12,7 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -218,16 +220,31 @@ public class ParallelFurnaceUI implements InventoryHolder {
     // ================= 描画 =================
 
     private void setButton(int slot, String name, Material icon, String lore) {
+        setButton(slot, name, icon, legacyLore(lore));
+    }
+
+    private void setButton(int slot, String name, Material icon, List<Component> lore) {
         ItemStack item = new ItemStack(icon);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             ComponentUtils.setDisplayName(meta, name);
             if (lore != null && !lore.isEmpty()) {
-                ComponentUtils.setLore(meta, lore.split("\\n", -1));
+                ComponentUtils.setLoreComponents(meta, lore);
             }
             item.setItemMeta(meta);
         }
         inventory.setItem(slot, item);
+    }
+
+    private static List<Component> legacyLore(String lore) {
+        List<Component> lines = new ArrayList<>();
+        if (lore == null || lore.isEmpty()) {
+            return lines;
+        }
+        for (String line : lore.split("\\n", -1)) {
+            lines.add(ComponentUtils.legacy(line));
+        }
+        return lines;
     }
 
     private void renderStatic() {
@@ -341,7 +358,6 @@ public class ParallelFurnaceUI implements InventoryHolder {
     }
 
     private void renderProgress(int frame) {
-        Player viewer = primaryViewer();
         ParallelFurnaceData.SmeltJob[] jobs = data.jobs();
         int lines = data.lines();
         List<Integer> activeLines = new ArrayList<>();
@@ -365,10 +381,12 @@ public class ParallelFurnaceUI implements InventoryHolder {
             String name = job.isDone()
                     ? "§aライン" + (lineIndex + 1) + ": 完成待ち (回収口が満杯)"
                     : flame + " §fライン" + (lineIndex + 1) + ": §e焼成中 §f" + percent + "%";
+                List<Component> lore = new ArrayList<>();
+                lore.add(ComponentUtils.legacy("§7" + progressBar(job.progressRatio())));
+                lore.add(ComponentUtils.legacy("§7焼成中: §f").append(materialNameComponent(job.source)));
+                lore.add(ComponentUtils.legacy("§7完成品: §f").append(materialNameComponent(job.result)));
             setButton(slot, name, job.source == null ? Material.FIRE_CHARGE : job.source.getType(),
-                    "§7" + progressBar(job.progressRatio())
-                        + "\n§7焼成中: §f" + ParallelFurnaceModule.materialName(job.source, viewer)
-                        + "\n§7完成品: §f" + ParallelFurnaceModule.materialName(job.result, viewer));
+                    lore);
         }
         if (overflowSummary) {
             int remaining = activeLines.size() - jobSlots;
@@ -415,13 +433,15 @@ public class ParallelFurnaceUI implements InventoryHolder {
         return bar.toString();
     }
 
-    private Player primaryViewer() {
-        for (HumanEntity viewer : inventory.getViewers()) {
-            if (viewer instanceof Player player) {
-                return player;
-            }
+    private static Component materialNameComponent(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return ComponentUtils.legacy("不明");
         }
-        return null;
+        ItemMeta meta = stack.getItemMeta();
+        if (meta != null && meta.displayName() != null) {
+            return meta.displayName();
+        }
+        return ItemNameUtil.localizedComponent(stack);
     }
 
     // ================= クリック処理 (module のリスナーから呼ばれる) =================

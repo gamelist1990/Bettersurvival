@@ -40,8 +40,10 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.a
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AreaBreakEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AutoCollectEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AutoSmeltEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.BattleRepairEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.MagnetEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.MomentumEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.SedimentBreakEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.XpBoostEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.ui.CustomEnchantTableUI;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
@@ -101,6 +103,8 @@ public class CustomEnchantTableModule implements Listener {
         AutoCollectEnchant autoCollect = new AutoCollectEnchant(plugin);
         registry.register(new MomentumEnchant(plugin));
         registry.register(new AreaBreakEnchant(plugin));
+        registry.register(new SedimentBreakEnchant(plugin));
+        registry.register(new BattleRepairEnchant(plugin));
         registry.register(autoCollect);
         registry.register(new AutoSmeltEnchant(plugin, autoCollect));
         registry.register(new MagnetEnchant(plugin));
