@@ -1,6 +1,7 @@
 name: Bettersurvival
 version: "${version}"
 main: org.pexserver.koukunn.bettersurvival.Loader
+bootstrapper: org.pexserver.koukunn.bettersurvival.BetterSurvivalBootstrap
 api-version: '1.21'
 authors: [ Koukunn ]
 description: PEXServer Plugin

@@ -35,6 +35,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.GeyserWorkbench.Geys
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ParallelFurnace.ParallelFurnaceModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AirDash.AirDashModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.CustomEnchantTableModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.KeepAliveGuard.KeepAliveGuardModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.ui.PartyMenu;
@@ -92,6 +93,7 @@ public final class Loader extends JavaPlugin {
     private LandProtectionModule landProtectionModule;
     private ParallelFurnaceModule parallelFurnaceModule;
     private AirDashModule airDashModule;
+    private CustomEnchantTableModule customEnchantTableModule;
     private KeepAliveGuardModule keepAliveGuardModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule tournamentModule;
@@ -146,7 +148,7 @@ public final class Loader extends JavaPlugin {
         // AutoPlant モジュール登録
         getServer().getPluginManager().registerEvents(new AutoPlantModule(toggleModule), this);
         // OreMine モジュール登録
-        OreMineModule oremine = new OreMineModule(toggleModule);
+        OreMineModule oremine = new OreMineModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(oremine, this);
         // ChestLock module registration
         chestLockModule = new ChestLockModule(toggleModule, configManager);
@@ -194,6 +196,9 @@ public final class Loader extends JavaPlugin {
         // AirDash モジュール登録 (空中ジャンプ再入力でダッシュ / Apexのアッシュ風)
         airDashModule = new AirDashModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(airDashModule, this);
+        // CustomEnchantTable モジュール登録 (エンチャントテーブル×ラピスで作る特殊エンチャント台)
+        customEnchantTableModule = new CustomEnchantTableModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(customEnchantTableModule, this);
         keepAliveGuardModule = new KeepAliveGuardModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(keepAliveGuardModule, this);
         // Ring モジュール登録 (土地保護内の闘技場リング / Duel / マッチング)
@@ -268,6 +273,8 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("parallelfurnace", "ParallelFurnace", "かまど×石炭ブロックで作る並列かまどを有効/無効にします", Material.FURNACE, false));
         toggleModule.registerFeature(
             new ToggleFeature("airdash", "AirDash", "空中でジャンプキーを再入力するとエアダッシュします(クールダウンはActionBar表示)", Material.FEATHER));
+        toggleModule.registerFeature(
+            new ToggleFeature("customenchant", "CustomEnchant", "エンチャントテーブル×ラピスで作るカスタムエンチャント台を有効/無効にします", Material.ENCHANTING_TABLE, false));
         toggleModule.registerFeature(
             new ToggleFeature("keepaliveguard", "KeepAliveGuard", "OPのkeepalive timeout kickを可能な範囲でキャンセルします", Material.REPEATER, false));
         toggleModule.registerFeature(
@@ -346,6 +353,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("airdash")) {
             toggleModule.setGlobal("airdash", true);
+        }
+        if (!toggleModule.hasGlobal("customenchant")) {
+            toggleModule.setGlobal("customenchant", true);
         }
         if (!toggleModule.hasGlobal("keepaliveguard")) {
             toggleModule.setGlobal("keepaliveguard", true);
@@ -471,6 +481,10 @@ public final class Loader extends JavaPlugin {
         return airDashModule;
     }
 
+    public CustomEnchantTableModule getCustomEnchantTableModule() {
+        return customEnchantTableModule;
+    }
+
     public org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule getRingModule() {
         return ringModule;
     }
@@ -534,6 +548,9 @@ public final class Loader extends JavaPlugin {
         }
         if (airDashModule != null) {
             airDashModule.shutdown();
+        }
+        if (customEnchantTableModule != null) {
+            customEnchantTableModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }
