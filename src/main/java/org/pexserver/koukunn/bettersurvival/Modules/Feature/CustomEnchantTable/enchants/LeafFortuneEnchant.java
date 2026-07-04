@@ -101,9 +101,9 @@ public class LeafFortuneEnchant extends CustomEnchant {
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         event.getItems().forEach(item -> {
             if (rng.nextDouble() < chance) {
-                ItemStack copy = item.getItemStack().clone();
-                copy.setAmount(copy.getAmount());
-                item.getItemStack().setAmount(item.getItemStack().getAmount() * 2);
+                ItemStack stack = item.getItemStack();
+                int newAmount = Math.min(stack.getAmount() * 2, stack.getMaxStackSize());
+                stack.setAmount(newAmount);
             }
         });
     }

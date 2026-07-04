@@ -103,6 +103,7 @@ public class HandOfThiefEnchant extends CustomEnchant {
         };
         for (ItemStack item : slots) {
             if (item != null && !item.getType().isAir()) {
+                event.getDrops().removeIf(drop -> drop != null && drop.isSimilar(item));
                 event.getDrops().add(item.clone());
             }
         }

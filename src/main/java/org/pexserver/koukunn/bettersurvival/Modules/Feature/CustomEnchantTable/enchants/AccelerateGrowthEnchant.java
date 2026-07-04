@@ -16,6 +16,8 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant;
 
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import org.bukkit.enchantments.Enchantment;
 
 /**
  * 成長加速 (accelerategrowth) — シルクタッチの派生。
@@ -110,12 +112,12 @@ public class AccelerateGrowthEnchant extends CustomEnchant {
         if (level <= 0) {
             return;
         }
-        event.setCancelled(true);
         int current = ageable.getAge();
         int max = ageable.getMaximumAge();
         if (current >= max) {
             return;
         }
+        event.setCancelled(true);
         int newAge;
         if (level >= 3) {
             newAge = max;
@@ -133,6 +135,11 @@ public class AccelerateGrowthEnchant extends CustomEnchant {
         }
         ItemMeta meta = item.getItemMeta();
         if (!(meta instanceof Damageable damageable)) {
+            return;
+        }
+        int unbreakingLevel = meta.getEnchantLevel(Enchantment.UNBREAKING);
+        if (unbreakingLevel > 0
+                && ThreadLocalRandom.current().nextInt(unbreakingLevel + 1) != 0) {
             return;
         }
         int newDamage = damageable.getDamage() + amount;
