@@ -66,10 +66,25 @@ public class VoidProtectionEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
+        // 奈落の保護: 黒曜石・エンダーパール・エンドストーン・クライング黒曜石・エメラルド
         return switch (nextLevel) {
-            case 1 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 16), new ItemStack(Material.OBSIDIAN, 4));
-            case 2 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.OBSIDIAN, 8));
-            default -> List.of(new ItemStack(Material.LAPIS_LAZULI, 48), new ItemStack(Material.CRYING_OBSIDIAN, 4));
+            case 1 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 16),
+                    new ItemStack(Material.OBSIDIAN, 8),
+                    new ItemStack(Material.ENDER_PEARL, 4),
+                    new ItemStack(Material.END_STONE, 8));
+            case 2 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 32),
+                    new ItemStack(Material.OBSIDIAN, 16),
+                    new ItemStack(Material.ENDER_PEARL, 8),
+                    new ItemStack(Material.CRYING_OBSIDIAN, 4),
+                    new ItemStack(Material.END_STONE_BRICKS, 16));
+            default -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 48),
+                    new ItemStack(Material.CRYING_OBSIDIAN, 8),
+                    new ItemStack(Material.ENDER_PEARL, 16),
+                    new ItemStack(Material.END_STONE_BRICKS, 32),
+                    new ItemStack(Material.EMERALD, 4));
         };
     }
 

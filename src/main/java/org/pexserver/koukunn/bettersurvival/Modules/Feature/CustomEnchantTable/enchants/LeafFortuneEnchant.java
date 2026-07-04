@@ -64,10 +64,25 @@ public class LeafFortuneEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
+        // リーフフォーチュン: 苗木・リンゴ・クモの巣・ハニカム・金のリンゴ
         return switch (nextLevel) {
-            case 1 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 16), new ItemStack(Material.OAK_SAPLING, 8));
-            case 2 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.OAK_SAPLING, 16));
-            default -> List.of(new ItemStack(Material.LAPIS_LAZULI, 48), new ItemStack(Material.EMERALD, 4));
+            case 1 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 16),
+                    new ItemStack(Material.OAK_SAPLING, 16),
+                    new ItemStack(Material.APPLE, 8),
+                    new ItemStack(Material.COBWEB, 4));
+            case 2 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 32),
+                    new ItemStack(Material.JUNGLE_SAPLING, 16),
+                    new ItemStack(Material.APPLE, 16),
+                    new ItemStack(Material.HONEYCOMB, 8),
+                    new ItemStack(Material.EMERALD, 2));
+            default -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 48),
+                    new ItemStack(Material.DARK_OAK_SAPLING, 16),
+                    new ItemStack(Material.GOLDEN_APPLE, 2),
+                    new ItemStack(Material.HONEYCOMB, 16),
+                    new ItemStack(Material.EMERALD, 4));
         };
     }
 

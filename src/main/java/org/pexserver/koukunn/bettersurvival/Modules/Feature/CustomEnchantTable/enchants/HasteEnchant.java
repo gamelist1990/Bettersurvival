@@ -68,10 +68,25 @@ public class HasteEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
+        // ヘイスト: レッドストーン（速度）・砂糖・金インゴット・ダイヤモンド・アメジスト
         return switch (nextLevel) {
-            case 1 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 16), new ItemStack(Material.REDSTONE, 16));
-            case 2 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.REDSTONE_BLOCK, 4));
-            default -> List.of(new ItemStack(Material.LAPIS_LAZULI, 48), new ItemStack(Material.DIAMOND, 4));
+            case 1 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 16),
+                    new ItemStack(Material.REDSTONE, 32),
+                    new ItemStack(Material.IRON_INGOT, 8),
+                    new ItemStack(Material.SUGAR, 16));
+            case 2 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 32),
+                    new ItemStack(Material.REDSTONE_BLOCK, 4),
+                    new ItemStack(Material.GOLD_INGOT, 8),
+                    new ItemStack(Material.REDSTONE, 32),
+                    new ItemStack(Material.AMETHYST_SHARD, 8));
+            default -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 48),
+                    new ItemStack(Material.REDSTONE_BLOCK, 8),
+                    new ItemStack(Material.DIAMOND, 4),
+                    new ItemStack(Material.AMETHYST_SHARD, 16),
+                    new ItemStack(Material.GOLD_INGOT, 16));
         };
     }
 

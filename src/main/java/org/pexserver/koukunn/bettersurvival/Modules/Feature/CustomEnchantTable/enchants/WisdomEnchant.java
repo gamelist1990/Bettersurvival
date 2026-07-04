@@ -62,10 +62,25 @@ public class WisdomEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
+        // 知恵: 経験値ボトル・本・金インゴット・エンチャント本・ネザースター
         return switch (nextLevel) {
-            case 1 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 16), new ItemStack(Material.BOOK, 4));
-            case 2 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.BOOK, 8));
-            default -> List.of(new ItemStack(Material.LAPIS_LAZULI, 48), new ItemStack(Material.ENCHANTED_BOOK, 2));
+            case 1 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 16),
+                    new ItemStack(Material.EXPERIENCE_BOTTLE, 16),
+                    new ItemStack(Material.BOOK, 8),
+                    new ItemStack(Material.GOLD_INGOT, 4));
+            case 2 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 32),
+                    new ItemStack(Material.EXPERIENCE_BOTTLE, 32),
+                    new ItemStack(Material.ENCHANTED_BOOK, 2),
+                    new ItemStack(Material.GOLD_INGOT, 8),
+                    new ItemStack(Material.EMERALD, 4));
+            default -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 48),
+                    new ItemStack(Material.EXPERIENCE_BOTTLE, 64),
+                    new ItemStack(Material.ENCHANTED_BOOK, 4),
+                    new ItemStack(Material.EMERALD, 8),
+                    new ItemStack(Material.NETHER_STAR, 1));
         };
     }
 

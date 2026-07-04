@@ -61,7 +61,13 @@ public class NightVisionEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
-        return List.of(new ItemStack(Material.LAPIS_LAZULI, 24), new ItemStack(Material.GOLDEN_CARROT, 8));
+        // ナイトビジョン: 夜目のニンジン・グロウストーン・クモの目・スパイグラス
+        return List.of(
+                new ItemStack(Material.LAPIS_LAZULI, 24),
+                new ItemStack(Material.GOLDEN_CARROT, 8),
+                new ItemStack(Material.GLOWSTONE_DUST, 16),
+                new ItemStack(Material.SPIDER_EYE, 4),
+                new ItemStack(Material.GLASS_BOTTLE, 4));
     }
 
     @Override

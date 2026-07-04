@@ -66,7 +66,13 @@ public class HandOfThiefEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
-        return List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.GOLD_INGOT, 8));
+        // 泥棒の手: 金インゴット・皮革・トリップワイヤーフック・鎖・エメラルド（盗賊テーマ）
+        return List.of(
+                new ItemStack(Material.LAPIS_LAZULI, 32),
+                new ItemStack(Material.GOLD_INGOT, 16),
+                new ItemStack(Material.LEATHER, 8),
+                new ItemStack(Material.TRIPWIRE_HOOK, 4),
+                new ItemStack(Material.STRING, 16));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

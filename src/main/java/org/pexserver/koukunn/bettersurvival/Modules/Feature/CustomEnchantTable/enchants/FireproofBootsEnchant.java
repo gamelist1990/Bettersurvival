@@ -71,10 +71,25 @@ public class FireproofBootsEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
+        // 耐火のブーツ: マグマクリーム・ファイヤーチャージ・ブレイズパウダー・ブレイズロッド・ネザーレンガ・ネザライトスクラップ
         return switch (nextLevel) {
-            case 1 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 16), new ItemStack(Material.MAGMA_CREAM, 8));
-            case 2 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.MAGMA_CREAM, 16));
-            default -> List.of(new ItemStack(Material.LAPIS_LAZULI, 48), new ItemStack(Material.BLAZE_ROD, 4));
+            case 1 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 16),
+                    new ItemStack(Material.MAGMA_CREAM, 8),
+                    new ItemStack(Material.FIRE_CHARGE, 4),
+                    new ItemStack(Material.BLAZE_POWDER, 8));
+            case 2 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 32),
+                    new ItemStack(Material.MAGMA_CREAM, 16),
+                    new ItemStack(Material.BLAZE_ROD, 4),
+                    new ItemStack(Material.NETHER_BRICK, 16),
+                    new ItemStack(Material.FIRE_CHARGE, 8));
+            default -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 48),
+                    new ItemStack(Material.MAGMA_CREAM, 32),
+                    new ItemStack(Material.BLAZE_ROD, 8),
+                    new ItemStack(Material.NETHERITE_SCRAP, 2),
+                    new ItemStack(Material.EMERALD, 4));
         };
     }
 

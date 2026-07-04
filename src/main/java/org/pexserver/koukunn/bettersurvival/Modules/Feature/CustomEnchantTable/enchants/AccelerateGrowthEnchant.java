@@ -70,10 +70,25 @@ public class AccelerateGrowthEnchant extends CustomEnchant {
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
+        // 成長加速: 骨粉・骨・種・小麦・ニンジン・カボチャ
         return switch (nextLevel) {
-            case 1 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 16), new ItemStack(Material.BONE_MEAL, 16));
-            case 2 -> List.of(new ItemStack(Material.LAPIS_LAZULI, 32), new ItemStack(Material.BONE_MEAL, 32));
-            default -> List.of(new ItemStack(Material.LAPIS_LAZULI, 48), new ItemStack(Material.EMERALD, 4));
+            case 1 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 16),
+                    new ItemStack(Material.BONE_MEAL, 32),
+                    new ItemStack(Material.WHEAT_SEEDS, 16),
+                    new ItemStack(Material.BONE, 8));
+            case 2 -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 32),
+                    new ItemStack(Material.BONE_MEAL, 64),
+                    new ItemStack(Material.WHEAT, 16),
+                    new ItemStack(Material.CARROT, 8),
+                    new ItemStack(Material.POTATO, 8));
+            default -> List.of(
+                    new ItemStack(Material.LAPIS_LAZULI, 48),
+                    new ItemStack(Material.BONE_MEAL, 64),
+                    new ItemStack(Material.PUMPKIN, 4),
+                    new ItemStack(Material.MELON_SLICE, 16),
+                    new ItemStack(Material.EMERALD, 4));
         };
     }
 
