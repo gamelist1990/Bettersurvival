@@ -33,6 +33,9 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.Shared
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.CopperGolemModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.GeyserWorkbench.GeyserWorkbenchModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.ParallelFurnace.ParallelFurnaceModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.AirDash.AirDashModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.KeepAliveGuard.KeepAliveGuardModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.ui.PartyMenu;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
@@ -87,6 +90,9 @@ public final class Loader extends JavaPlugin {
     private PartyModule partyModule;
     private PartyMenu partyMenu;
     private LandProtectionModule landProtectionModule;
+    private ParallelFurnaceModule parallelFurnaceModule;
+    private AirDashModule airDashModule;
+    private KeepAliveGuardModule keepAliveGuardModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
     private org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule tournamentModule;
     private OfflineAccessModule offlineAccessModule;
@@ -182,6 +188,14 @@ public final class Loader extends JavaPlugin {
         // LandProtection モジュール登録 (Rust 風の土地保護コア)
         landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule);
         getServer().getPluginManager().registerEvents(landProtectionModule, this);
+        // ParallelFurnace モジュール登録 (かまど×石炭ブロックで作る並列稼働かまど)
+        parallelFurnaceModule = new ParallelFurnaceModule(this, toggleModule, itemCombineModule, chestLockModule, landProtectionModule);
+        getServer().getPluginManager().registerEvents(parallelFurnaceModule, this);
+        // AirDash モジュール登録 (空中ジャンプ再入力でダッシュ / Apexのアッシュ風)
+        airDashModule = new AirDashModule(this, toggleModule);
+        getServer().getPluginManager().registerEvents(airDashModule, this);
+        keepAliveGuardModule = new KeepAliveGuardModule(this, toggleModule);
+        getServer().getPluginManager().registerEvents(keepAliveGuardModule, this);
         // Ring モジュール登録 (土地保護内の闘技場リング / Duel / マッチング)
         ringModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule(this, landProtectionModule);
         landProtectionModule.setRingModule(ringModule);
@@ -250,6 +264,12 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("party", "Party", "パーティー(ギルド)機能を有効/無効にします (/party, /p)", Material.WHITE_BANNER, false));
         toggleModule.registerFeature(
             new ToggleFeature("landprotect", "LandProtect", "ロデストーン+ダイヤで作る土地保護コアを有効/無効にします", Material.LODESTONE, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("parallelfurnace", "ParallelFurnace", "かまど×石炭ブロックで作る並列かまどを有効/無効にします", Material.FURNACE, false));
+        toggleModule.registerFeature(
+            new ToggleFeature("airdash", "AirDash", "空中でジャンプキーを再入力するとエアダッシュします(クールダウンはActionBar表示)", Material.FEATHER));
+        toggleModule.registerFeature(
+            new ToggleFeature("keepaliveguard", "KeepAliveGuard", "OPのkeepalive timeout kickを可能な範囲でキャンセルします", Material.REPEATER, false));
         toggleModule.registerFeature(
             new ToggleFeature("tournament", "Tournament", "リングを使った頂点決定戦(トーナメント大会)を有効/無効にします (/tournament)", Material.GOLDEN_SWORD, false));        toggleModule.registerFeature(
                 new ToggleFeature("offlineaccess", "OfflineAccess", "オフラインアカウントのログインを許可/拒否します", Material.COMPASS, false));        if (!toggleModule.hasGlobal("treemine")) {
@@ -320,6 +340,15 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("landprotect")) {
             toggleModule.setGlobal("landprotect", true);
+        }
+        if (!toggleModule.hasGlobal("parallelfurnace")) {
+            toggleModule.setGlobal("parallelfurnace", true);
+        }
+        if (!toggleModule.hasGlobal("airdash")) {
+            toggleModule.setGlobal("airdash", true);
+        }
+        if (!toggleModule.hasGlobal("keepaliveguard")) {
+            toggleModule.setGlobal("keepaliveguard", true);
         }
         if (!toggleModule.hasGlobal("tournament")) {
             toggleModule.setGlobal("tournament", true);
@@ -434,6 +463,14 @@ public final class Loader extends JavaPlugin {
         return landProtectionModule;
     }
 
+    public ParallelFurnaceModule getParallelFurnaceModule() {
+        return parallelFurnaceModule;
+    }
+
+    public AirDashModule getAirDashModule() {
+        return airDashModule;
+    }
+
     public org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule getRingModule() {
         return ringModule;
     }
@@ -491,6 +528,12 @@ public final class Loader extends JavaPlugin {
         }
         if (landProtectionModule != null) {
             landProtectionModule.shutdown();
+        }
+        if (parallelFurnaceModule != null) {
+            parallelFurnaceModule.shutdown();
+        }
+        if (airDashModule != null) {
+            airDashModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

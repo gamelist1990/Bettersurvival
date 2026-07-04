@@ -1,9 +1,12 @@
 package org.pexserver.koukunn.bettersurvival.Core.Util;
 
-// Bukkit import not required
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.geysermc.floodgate.api.FloodgateApi;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 
 /**
@@ -32,12 +35,38 @@ public final class FloodgateUtil {
 
     public static String getBedrockPrefix() {
         FloodgateApi api = api();
-        if (api == null) return "";
-        try {
-            return api.getPlayerPrefix();
-        } catch (NoClassDefFoundError e) {
+        if (api != null) {
+            try {
+                String prefix = api.getPlayerPrefix();
+                return prefix == null ? "" : prefix;
+            } catch (NoClassDefFoundError e) {
+                return getBedrockPrefixFromConfig();
+            }
+        }
+        return getBedrockPrefixFromConfig();
+    }
+
+    private static String getBedrockPrefixFromConfig() {
+        Path configPath = Bukkit.getWorldContainer().toPath().resolve("plugins").resolve("floodgate").resolve("config.yml");
+        if (!Files.isRegularFile(configPath)) {
             return "";
         }
+        try {
+            for (String line : Files.readAllLines(configPath)) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("#") || !trimmed.startsWith("username-prefix:")) {
+                    continue;
+                }
+                String value = trimmed.substring("username-prefix:".length()).trim();
+                if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.substring(1, value.length() - 1);
+                }
+                return value;
+            }
+        } catch (IOException ignored) {
+            return "";
+        }
+        return "";
     }
 
     /**
@@ -70,7 +99,7 @@ public final class FloodgateUtil {
         if (prefix != null && !prefix.isEmpty() && name.startsWith(prefix)) {
             return true;
         }
-        return name.startsWith(".");
+        return false;
     }
 
     /**
@@ -81,9 +110,6 @@ public final class FloodgateUtil {
         String prefix = getBedrockPrefix();
         if (prefix != null && !prefix.isEmpty() && name.startsWith(prefix)) {
             return name.substring(prefix.length());
-        }
-        if (name.startsWith(".")) {
-            return name.substring(1);
         }
         return name;
     }

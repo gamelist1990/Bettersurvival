@@ -12,6 +12,11 @@ import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.AnaloguePowerable;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Openable;
+import org.bukkit.block.data.Powerable;
+import org.bukkit.block.data.type.Bell;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -27,6 +32,7 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitTask;
@@ -894,8 +900,7 @@ public class RingModule implements Listener {
             return;
         }
         // 保護コアやチェスト・ドアなど操作可能ブロックの右クリックとは競合させない
-        if (block != null && (block.getType() == LandProtectionModule.CORE_MATERIAL
-                || block.getType().isInteractable())) {
+        if (block != null && isDuelUiBlockedInteraction(block)) {
             return;
         }
         RingRegion ring = getActiveRingAt(player.getLocation());
@@ -906,6 +911,40 @@ public class RingModule implements Listener {
             return;
         }
         menu.openDuel(player, ring);
+    }
+
+    private boolean isDuelUiBlockedInteraction(Block block) {
+        if (block.getType() == LandProtectionModule.CORE_MATERIAL) {
+            return true;
+        }
+        if (block.getState() instanceof InventoryHolder) {
+            return true;
+        }
+
+        BlockData blockData = block.getBlockData();
+        if (blockData instanceof Openable
+                || blockData instanceof Powerable
+                || blockData instanceof AnaloguePowerable
+                || blockData instanceof Bell) {
+            return true;
+        }
+
+        return switch (block.getType()) {
+            case ANVIL,
+                    CHIPPED_ANVIL,
+                    DAMAGED_ANVIL,
+                    CRAFTING_TABLE,
+                    ENCHANTING_TABLE,
+                    CARTOGRAPHY_TABLE,
+                    SMITHING_TABLE,
+                    FLETCHING_TABLE,
+                    GRINDSTONE,
+                    STONECUTTER,
+                    LECTERN,
+                    JUKEBOX,
+                    NOTE_BLOCK -> true;
+            default -> false;
+        };
     }
 
     // ================= イベント: 死亡 / 復活 =================

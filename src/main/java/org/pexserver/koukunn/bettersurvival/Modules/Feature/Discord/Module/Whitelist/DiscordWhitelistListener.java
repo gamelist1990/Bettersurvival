@@ -132,12 +132,8 @@ public class DiscordWhitelistListener extends ListenerAdapter {
 
         String lookupName = FloodgateUtil.stripPrefix(rawName);
         String prefix = FloodgateUtil.getBedrockPrefix();
-        if (prefix == null || prefix.isEmpty()) {
-            prefix = ".";
-        }
         String floodgateName = isBedrock ? prefix + lookupName.replace(" ", "_") : lookupName;
 
-        // オフラインアカウントは Java 版として扱う
         if (!isBedrock && offlineAccessManager != null && offlineAccessManager.isAllowed(lookupName)) {
             event.deferReply(true).queue();
             handleValidatedApplication(event, floodgateName, lookupName, false);
@@ -183,10 +179,6 @@ public class DiscordWhitelistListener extends ListenerAdapter {
     private void handleValidatedApplication(ModalInteractionEvent event, String username, String lookupName, boolean isBedrock) {
         if (whitelistModule.isAlreadyWhitelisted(lookupName, isBedrock)) {
             event.getHook().sendMessage(buildAlreadyWhitelistedNotice(lookupName, isBedrock)).queue();
-            return;
-        }
-        if (!isBedrock && offlineAccessManager != null && offlineAccessManager.isAllowed(lookupName)) {
-            processWhitelistAdd(event, username, lookupName, false);
             return;
         }
         if (whitelistModule.getPendingNames().stream().anyMatch(name -> name.equalsIgnoreCase(username))) {
@@ -434,10 +426,13 @@ public class DiscordWhitelistListener extends ListenerAdapter {
 
     private void updateApprovalMessage(Message message, MessageEmbed updatedEmbed) {
         message.editMessageEmbeds(updatedEmbed).queue(
-                success -> message.clearReactions().queue(
-                        cleared -> { },
-                        error -> { }
-                ),
+            success -> {
+                message.clearReactions().queue(
+                    cleared -> { },
+                    error -> { }
+                );
+                triggerWhitelistReorder(message.getChannel().getId());
+            },
                 error -> plugin.getLogger().warning("[DiscordBot] 承認結果 Embed 更新失敗: " + error.getMessage())
         );
     }
@@ -531,7 +526,7 @@ public class DiscordWhitelistListener extends ListenerAdapter {
         if (plugin instanceof org.pexserver.koukunn.bettersurvival.Loader loader) {
             var botModule = loader.getDiscordBotModule();
             if (botModule != null) {
-                botModule.triggerWhitelistReorderDelay(channelId);
+                botModule.triggerWhitelistReorderNow(channelId);
             }
         }
     }

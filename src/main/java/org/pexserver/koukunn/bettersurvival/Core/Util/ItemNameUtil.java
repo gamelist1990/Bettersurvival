@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.translation.GlobalTranslator;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
@@ -62,6 +63,20 @@ public final class ItemNameUtil {
      */
     public static String localizedPlainText(ItemStack item, Locale locale) {
         return localizedPlainText(localizedComponent(item), locale);
+    }
+
+    /**
+     * ItemStack 名をプレイヤーのクライアント言語でローカライズしたプレーン文字列へ変換します。
+     */
+    public static String localizedPlainText(ItemStack item, Player player) {
+        return localizedPlainText(item, player == null ? null : player.locale());
+    }
+
+    /**
+     * Material 名をプレイヤーのクライアント言語でローカライズしたプレーン文字列へ変換します。
+     */
+    public static String localizedPlainText(Material material, Player player) {
+        return localizedPlainText(material, player == null ? null : player.locale());
     }
 
     /**

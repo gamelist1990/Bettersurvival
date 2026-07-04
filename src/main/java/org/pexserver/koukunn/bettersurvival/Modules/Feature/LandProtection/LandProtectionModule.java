@@ -44,6 +44,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ui.LandMenu;
@@ -889,7 +890,7 @@ public class LandProtectionModule implements Listener {
         List<ClaimLevel.Requirement> requirements = ClaimLevel.upgradeRequirements(level);
         for (ClaimLevel.Requirement req : requirements) {
             if (!player.getInventory().containsAtLeast(new ItemStack(req.material()), req.amount())) {
-                return "素材が足りません: " + materialDisplayName(req.material()) + " ×" + req.amount();
+                return "素材が足りません: " + materialDisplayName(req.material(), player) + " ×" + req.amount();
             }
         }
 
@@ -915,14 +916,11 @@ public class LandProtectionModule implements Listener {
     }
 
     public static String materialDisplayName(Material material) {
-        return switch (material) {
-            case IRON_INGOT -> "鉄インゴット";
-            case GOLD_INGOT -> "金インゴット";
-            case DIAMOND -> "ダイヤモンド";
-            case NETHERITE_INGOT -> "ネザライトインゴット";
-            case EMERALD -> "エメラルド";
-            default -> material.name();
-        };
+        return ItemNameUtil.serverReadableName(material);
+    }
+
+    public static String materialDisplayName(Material material, Player player) {
+        return ItemNameUtil.localizedPlainText(material, player == null ? null : player.locale());
     }
 
     // ================= ホワイトリスト =================

@@ -14,6 +14,8 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.D
 import java.time.Instant;
 
 public class DiscordWhitelistMessageService {
+    private static final int WHITELIST_MESSAGE_HISTORY_LOOKUP_LIMIT = 100;
+
     private final Loader plugin;
     private final DiscordBotRuntime runtime;
 
@@ -65,6 +67,14 @@ public class DiscordWhitelistMessageService {
         reorderTask = Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> executeWhitelistReorder(channelId), 180 * 20L);
     }
 
+    public synchronized void triggerWhitelistReorderNow(String channelId) {
+        if (reorderTask != null) {
+            reorderTask.cancel();
+            reorderTask = null;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> executeWhitelistReorder(channelId));
+    }
+
     public synchronized void shutdown() {
         if (reorderTask == null) return;
         reorderTask.cancel();
@@ -77,21 +87,21 @@ public class DiscordWhitelistMessageService {
         var channel = jda.getTextChannelById(channelId);
         if (channel == null) return;
 
-        channel.getHistory().retrievePast(5).queue(messages -> {
+        channel.getHistory().retrievePast(WHITELIST_MESSAGE_HISTORY_LOOKUP_LIMIT).queue(messages -> {
             if (messages.isEmpty()) return;
-            if (isLatestWhitelistMessage(messages.get(0), jda)) return;
+            boolean latestIsWhitelistMessage = isLatestWhitelistMessage(messages.get(0), jda);
 
-            boolean hasOldButton = false;
-            for (var msg : messages) {
+            for (int i = 0; i < messages.size(); i++) {
+                var msg = messages.get(i);
                 if (!hasWhitelistButton(msg, jda)) continue;
-                hasOldButton = true;
+                if (latestIsWhitelistMessage && i == 0) continue;
                 msg.delete().queue(
                         success -> { },
                         err -> plugin.getLogger().warning("[DiscordBot] 古い募集メッセージの削除に失敗しました: " + err.getMessage())
                 );
             }
 
-            if (hasOldButton) {
+            if (!latestIsWhitelistMessage) {
                 sendWhitelistEmbed(channelId);
             }
         }, err -> plugin.getLogger().warning("[DiscordBot] 履歴メッセージの取得に失敗しました: " + err.getMessage()));

@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimLevel;
@@ -67,7 +68,7 @@ public class LandMenu {
         return sb.toString();
     }
 
-    private static String formatRequirements(int level) {
+    private static String formatRequirements(Player player, int level) {
         List<ClaimLevel.Requirement> requirements = ClaimLevel.upgradeRequirements(level);
         if (requirements.isEmpty()) {
             return "§aなし";
@@ -77,7 +78,7 @@ public class LandMenu {
             if (sb.length() > 0) {
                 sb.append("\n");
             }
-            sb.append("§7- §e").append(LandProtectionModule.materialDisplayName(req.material()))
+            sb.append("§7- §e").append(ItemNameUtil.localizedPlainText(req.material(), player))
                     .append(" ×").append(req.amount());
         }
         return sb.toString();
@@ -116,7 +117,7 @@ public class LandMenu {
                                 ? "§7鉱石を対価に保護範囲を拡大します"
                                 + "\n§7次のレベル: §eLv." + (claim.getLevel() + 1)
                                 + " §7(半径 " + ClaimLevel.radius(claim.getLevel() + 1) + ")"
-                                + "\n§7必要素材:\n" + formatRequirements(claim.getLevel())
+                                + "\n§7必要素材:\n" + formatRequirements(player, claim.getLevel())
                                 + (claim.getPartyId() == null && claim.getLevel() + 1 > ClaimLevel.PERSONAL_MAX_LEVEL
                                         ? "\n§c個人所有は Lv." + ClaimLevel.PERSONAL_MAX_LEVEL + " までです"
                                         : "")
@@ -246,7 +247,7 @@ public class LandMenu {
                     "§7保護半径: §e" + ClaimLevel.radius(level) + " §f→ §e" + ClaimLevel.radius(level + 1)
                             + "\n§7燃料消費: §e" + String.format("%.0f", ClaimLevel.upkeepPerHour(level))
                             + " §f→ §e" + String.format("%.0f", ClaimLevel.upkeepPerHour(level + 1)) + " ユニット/時"
-                            + "\n\n§7必要素材:\n" + formatRequirements(level)
+                                + "\n\n§7必要素材:\n" + formatRequirements(player, level)
                             + (claim.getPartyId() == null && level + 1 > ClaimLevel.PERSONAL_MAX_LEVEL
                                     ? "\n§c個人所有は Lv." + ClaimLevel.PERSONAL_MAX_LEVEL + " までです"
                                     : "")

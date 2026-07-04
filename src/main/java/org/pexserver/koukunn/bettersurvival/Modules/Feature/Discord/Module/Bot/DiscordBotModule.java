@@ -65,6 +65,10 @@ public class DiscordBotModule {
         whitelistMessageService.triggerWhitelistReorderDelay(channelId);
     }
 
+    public void triggerWhitelistReorderNow(String channelId) {
+        whitelistMessageService.triggerWhitelistReorderNow(channelId);
+    }
+
     public void openMenu(Player player) {
         settingsMenu.openMenu(player);
     }

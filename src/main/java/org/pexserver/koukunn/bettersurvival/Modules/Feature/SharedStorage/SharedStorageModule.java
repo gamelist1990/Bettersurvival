@@ -223,14 +223,17 @@ public class SharedStorageModule implements Listener {
         if (network == null)
             return;
 
-        handleDestroyedContainers(List.of(event.getBlock().getLocation()));
+        List<ItemStack> droppedContents = placement.isMain() ? List.of() : snapshotBrokenContainerContents(event.getBlock());
 
         if (event.getPlayer().getGameMode() != org.bukkit.GameMode.CREATIVE) {
             event.setDropItems(false);
+            dropItemStacks(event.getBlock().getLocation().add(0.5D, 0.1D, 0.5D), droppedContents);
             event.getBlock().getWorld().dropItemNaturally(
                     event.getBlock().getLocation().add(0.5D, 0.1D, 0.5D),
                     createSharedChestItem(placement.id(), placement.role()));
         }
+
+        handleDestroyedContainers(List.of(event.getBlock().getLocation()));
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
@@ -1168,6 +1171,40 @@ public class SharedStorageModule implements Listener {
         if (changed) {
             reindexAllPlacements();
             saveNetworks();
+        }
+    }
+
+    private List<ItemStack> snapshotBrokenContainerContents(Block block) {
+        if (block == null)
+            return List.of();
+        BlockState state = block.getState();
+        Inventory inventory;
+        if (state instanceof Chest chest) {
+            inventory = chest.getBlockInventory();
+        } else if (state instanceof InventoryHolder holder) {
+            inventory = holder.getInventory();
+        } else {
+            return List.of();
+        }
+        List<ItemStack> contents = new ArrayList<>();
+        for (ItemStack item : inventory.getContents()) {
+            if (item == null || item.getType() == Material.AIR)
+                continue;
+            contents.add(item.clone());
+        }
+        return contents;
+    }
+
+    private void dropItemStacks(Location location, Collection<ItemStack> items) {
+        if (location == null || items == null || items.isEmpty())
+            return;
+        World world = location.getWorld();
+        if (world == null)
+            return;
+        for (ItemStack item : items) {
+            if (item == null || item.getType() == Material.AIR)
+                continue;
+            world.dropItemNaturally(location, item.clone());
         }
     }
 
