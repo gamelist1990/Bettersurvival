@@ -45,7 +45,11 @@ public final class CustomEnchantDefinitions {
             new Definition("aqualung", "水中呼吸", 1),
             new Definition("hungersaver", "満腹維持", 3),
             new Definition("thornless", "棘無効", 1),
-            new Definition("jumpboost", "跳躍", 3));
+            new Definition("jumpboost", "跳躍", 3),
+            new Definition("swiftboots", "俊足のブーツ", 2),
+            new Definition("autoreplant", "自動再植", 1),
+            new Definition("obsidianshield", "黒曜石の盾", 3),
+            new Definition("beekeeper", "養蜂家", 1));
 
     private CustomEnchantDefinitions() {
     }

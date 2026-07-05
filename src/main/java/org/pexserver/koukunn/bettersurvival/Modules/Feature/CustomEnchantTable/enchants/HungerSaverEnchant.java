@@ -37,7 +37,7 @@ public class HungerSaverEnchant extends CustomEnchant {
     @Override
     public String description() {
         return "\u00a77チェストプレート装備中、空腹の消費を軽減する"
-                + "\n\u00a77Lv1=25%軽減 / Lv2=50%軽減 / Lv3=75%軽減";
+                + "\n\u00a77Lv1=15%軽減 / Lv2=25%軽減 / Lv3=35%軽減";
     }
 
     @Override
@@ -94,7 +94,8 @@ public class HungerSaverEnchant extends CustomEnchant {
         if (level <= 0) {
             return;
         }
-        double reduction = level * 0.25D;
+        // Lv1=15% / Lv2=25% / Lv3=35% 軽減 (0.15 + 0.10 * (level-1))
+        double reduction = 0.15D + 0.10D * (level - 1);
         // 減少量を軽減。四捨五入で最低1は減らす (完全無効化はしない)
         int reducedDelta = (int) Math.max(1L, Math.round(delta * (1.0D - reduction)));
         if (reducedDelta >= delta) {

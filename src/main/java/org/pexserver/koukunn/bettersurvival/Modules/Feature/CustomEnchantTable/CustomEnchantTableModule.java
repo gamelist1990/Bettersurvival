@@ -63,6 +63,10 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.e
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.HungerSaverEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.ThornlessEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.JumpBoostBootsEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.SwiftBootsEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AutoReplantEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.ObsidianShieldEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.BeekeeperEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.ui.CustomEnchantTableUI;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -145,6 +149,10 @@ public class CustomEnchantTableModule implements Listener {
         registry.register(new HungerSaverEnchant(plugin));
         registry.register(new ThornlessEnchant(plugin));
         registry.register(new JumpBoostBootsEnchant(plugin));
+        registry.register(new SwiftBootsEnchant(plugin));
+        registry.register(new AutoReplantEnchant(plugin));
+        registry.register(new ObsidianShieldEnchant(plugin));
+        registry.register(new BeekeeperEnchant(plugin));
 
         itemCombineModule.recipe("custom_enchant_table")
                 .first(this::isPlainEnchantTable)

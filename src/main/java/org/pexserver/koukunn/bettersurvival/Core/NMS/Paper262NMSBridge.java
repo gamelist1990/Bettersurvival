@@ -20,7 +20,6 @@ import java.util.List;
  */
 final class Paper262NMSBridge implements NMSBridge {
 
-    private static final boolean DEBUG_SPYGLASS = Boolean.getBoolean("bettersurvival.debugSpyglass");
     /** ClientboundContainerSetSlotPacket の container=-2 で使う PlayerInventory 上のオフハンド index */
     private static final int PLAYER_INVENTORY_OFFHAND_SLOT = 40;
 
@@ -60,12 +59,9 @@ final class Paper262NMSBridge implements NMSBridge {
     public boolean sendFakeSlot(Player player, int rawSlot, ItemStack item) {
         if (!isAvailable()) return false;
         try {
-            debug(player, "sendFakeSlot rawSlot=" + rawSlot + " item=" + describe(item));
             Object handle = getHandle.invoke(player);
             int stateId = resolveStateId(handle);
                 int playerInventorySlot = rawSlot == NMSApi.RAW_SLOT_OFFHAND ? PLAYER_INVENTORY_OFFHAND_SLOT : rawSlot;
-                debug(player, "sendFakeSlot stateId=" + stateId + " container=0 rawSlot=" + rawSlot
-                    + " container=-2 playerSlot=" + playerInventorySlot);
             Object nmsItem = asNmsCopy.invoke(null, item);
             // containerId 0 だけだと、Paper/クライアント側の同期で player inventory 側に偽スロットが残ることがある。
                 // -2 はプレイヤーインベントリの任意スロット更新だが、オフハンドは container raw slot 45 ではなく
@@ -74,7 +70,6 @@ final class Paper262NMSBridge implements NMSBridge {
                 sendToPlayer(handle, setSlotCtor.newInstance(-2, stateId, playerInventorySlot, nmsItem));
             return true;
         } catch (Throwable t) {
-            debug(player, "sendFakeSlot FAILED rawSlot=" + rawSlot + " item=" + describe(item) + " error=" + t);
             return false;
         }
     }
@@ -83,17 +78,14 @@ final class Paper262NMSBridge implements NMSBridge {
     public boolean sendUsingItemFlags(Player player, boolean using, boolean offhand) {
         if (!isAvailable()) return false;
         try {
-            debug(player, "sendUsingItemFlags using=" + using + " offhand=" + offhand);
             Object handle = getHandle.invoke(player);
             byte flags = buildUsingFlags(using, offhand);
-            debug(player, "sendUsingItemFlags flags=" + flags);
             Object dataValue = dataValueCreate.invoke(null, livingFlagsAccessor, Byte.valueOf(flags));
             int entityId = (int) getEntityId.invoke(handle);
             Object packet = setEntityDataCtor.newInstance(entityId, List.of(dataValue));
             sendToPlayer(handle, packet);
             return true;
         } catch (Throwable t) {
-            debug(player, "sendUsingItemFlags FAILED using=" + using + " offhand=" + offhand + " error=" + t);
             return false;
         }
     }
@@ -102,7 +94,6 @@ final class Paper262NMSBridge implements NMSBridge {
     public boolean startUsingItem(Player player, boolean offhand, boolean forceUpdate) {
         if (!isAvailable() || startUsingItemMethod == null) return false;
         try {
-            debug(player, "startUsingItem offhand=" + offhand + " forceUpdate=" + forceUpdate);
             Object handle = getHandle.invoke(player);
             Object hand = offhand ? offHandEnum : mainHandEnum;
             if (startUsingItemHasForce) {
@@ -112,28 +103,22 @@ final class Paper262NMSBridge implements NMSBridge {
             }
             return true;
         } catch (Throwable t) {
-            debug(player, "startUsingItem FAILED offhand=" + offhand + " error=" + t);
             return false;
         }
     }
 
     @Override
     public boolean startSpyglassScope(Player player) {
-        debug(player, "startSpyglassScope actualOffhand=" + describe(player.getInventory().getItemInOffHand()));
         if (!sendFakeSlot(player, NMSApi.RAW_SLOT_OFFHAND, new ItemStack(Material.SPYGLASS))) {
-            debug(player, "startSpyglassScope FAILED fake slot");
             return false;
         }
-        boolean result = sendUsingItemFlags(player, true, true);
-        debug(player, "startSpyglassScope result=" + result);
-        return result;
+        return sendUsingItemFlags(player, true, true);
     }
 
     @Override
     public boolean refreshSpyglassScope(Player player) {
         // 維持中に fake slot を再送すると、クライアント側で望遠鏡使用状態が一瞬リセットされて点滅する。
         // slot 偽装は開始時だけ行い、維持は using item flags の再送だけにする。
-        debug(player, "refreshSpyglassScope");
         return sendUsingItemFlags(player, true, true);
     }
 
@@ -143,28 +128,14 @@ final class Paper262NMSBridge implements NMSBridge {
         if (actualOffhand == null || actualOffhand.getType().isAir()) {
             actualOffhand = new ItemStack(Material.AIR);
         }
-        debug(player, "restoreSpyglassSlot actualOffhand=" + describe(actualOffhand));
         sendFakeSlot(player, NMSApi.RAW_SLOT_OFFHAND, actualOffhand);
         player.updateInventory();
-        debug(player, "restoreSpyglassSlot updateInventory done");
     }
 
     @Override
     public void stopSpyglassScope(Player player) {
-        debug(player, "stopSpyglassScope");
         sendUsingItemFlags(player, false, false);
         restoreSpyglassSlot(player);
-    }
-
-    private static void debug(Player player, String message) {
-        if (!DEBUG_SPYGLASS) return;
-        Bukkit.getLogger().info("[Bettersurvival/SniperScope] "
-                + player.getName() + " " + message);
-    }
-
-    private static String describe(ItemStack item) {
-        if (item == null) return "null";
-        return item.getType() + "x" + item.getAmount();
     }
 
     // ========================= 内部ヘルパー =========================

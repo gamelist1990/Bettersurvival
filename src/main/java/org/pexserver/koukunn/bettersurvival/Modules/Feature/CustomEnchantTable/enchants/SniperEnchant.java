@@ -73,8 +73,6 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class SniperEnchant extends CustomEnchant {
 
-    private static final boolean DEBUG_SCOPE = Boolean.getBoolean("bettersurvival.debugSpyglass");
-
     /** レベル別射撃クールダウン (tick) */
     private static final int[] COOLDOWN_TICKS = {50, 40, 30};
     /** 矢の初速 (通常クロスボウは約3.15) */
@@ -255,12 +253,10 @@ public class SniperEnchant extends CustomEnchant {
     private void zoom(Player player, ItemStack crossbow) {
         UUID uuid = player.getUniqueId();
         if (zoomed.contains(uuid)) {
-            debug(player, "zoom ignored already zoomed");
             return;
         }
         PlayerInventory inventory = player.getInventory();
         int slot = inventory.getHeldItemSlot();
-        debug(player, "zoom start slot=" + slot + " weapon=" + describe(crossbow));
         savedWeapon.put(uuid, crossbow.clone());
         savedSlot.put(uuid, slot);
         zoomStartMs.put(uuid, System.currentTimeMillis());
@@ -276,7 +272,6 @@ public class SniperEnchant extends CustomEnchant {
         if (!zoomed.remove(uuid)) {
             return;
         }
-        debug(player, "unzoom sound=" + sound);
         zoomStartMs.remove(uuid);
         stopActiveScopeUse(player);
         restoreWeapon(player);
@@ -365,7 +360,6 @@ public class SniperEnchant extends CustomEnchant {
         if (!isScopeSpyglass(event.getItem())) {
             return;
         }
-        debug(player, "onStopUsingItem -> unzoom");
         // 停止音は Vanilla (SpyglassItem#releaseUsing) が鳴らすため無音で解除
         unzoom(player, false);
     }
@@ -388,7 +382,6 @@ public class SniperEnchant extends CustomEnchant {
             Integer slot = savedSlot.get(uuid);
             if (slot == null || player.getInventory().getHeldItemSlot() != slot
                     || !isScopeSpyglass(player.getInventory().getItemInMainHand())) {
-                debug(player, "watchScopes cleanup slotChangedOrItemGone");
                 unzoom(player, false);
                 continue;
             }
@@ -406,21 +399,9 @@ public class SniperEnchant extends CustomEnchant {
             // まだ使用が始まっていない: 開始猶予を過ぎていたら右クリックは離されたと判断
             long started = zoomStartMs.getOrDefault(uuid, 0L);
             if (now - started > SCOPE_START_GRACE_MS) {
-                debug(player, "watchScopes cleanup useNeverStarted");
                 unzoom(player, false);
             }
         }
-    }
-
-    private static void debug(Player player, String message) {
-        if (!DEBUG_SCOPE) return;
-        player.getServer().getLogger().info("[Bettersurvival/SniperEnchant] "
-                + player.getName() + " " + message);
-    }
-
-    private static String describe(ItemStack item) {
-        if (item == null) return "null";
-        return item.getType() + "x" + item.getAmount();
     }
 
     // ================= 射撃 =================
@@ -442,7 +423,6 @@ public class SniperEnchant extends CustomEnchant {
         long now = System.currentTimeMillis();
         long cooldownUntil = shotCooldownUntilMs.getOrDefault(player.getUniqueId(), 0L);
         if (now < cooldownUntil) {
-            debug(player, "fire ignored cooldownLeftMs=" + (cooldownUntil - now));
             return; // ボルトアクション中 (連打対策も兼ねる)
         }
         // 弾の確保 (Vanilla 同様: クリエイティブは消費なし)
