@@ -67,6 +67,10 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.e
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AutoReplantEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.ObsidianShieldEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.BeekeeperEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.LifestealEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.UndeadBaneEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.ArthropodBaneEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.IgnitionStrikeEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.ui.CustomEnchantTableUI;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -153,6 +157,10 @@ public class CustomEnchantTableModule implements Listener {
         registry.register(new AutoReplantEnchant(plugin));
         registry.register(new ObsidianShieldEnchant(plugin));
         registry.register(new BeekeeperEnchant(plugin));
+        registry.register(new LifestealEnchant(plugin));
+        registry.register(new UndeadBaneEnchant(plugin));
+        registry.register(new ArthropodBaneEnchant(plugin));
+        registry.register(new IgnitionStrikeEnchant(plugin));
 
         itemCombineModule.recipe("custom_enchant_table")
                 .first(this::isPlainEnchantTable)

@@ -49,7 +49,11 @@ public final class CustomEnchantDefinitions {
             new Definition("swiftboots", "俊足のブーツ", 2),
             new Definition("autoreplant", "自動再植", 1),
             new Definition("obsidianshield", "黒曜石の盾", 3),
-            new Definition("beekeeper", "養蜂家", 1));
+            new Definition("beekeeper", "養蜂家", 1),
+            new Definition("lifesteal", "吸血", 3),
+            new Definition("undeadbane", "不死特効", 3),
+            new Definition("arthropodbane", "虫殺し", 3),
+            new Definition("ignitionstrike", "点火の一撃", 3));
 
     private CustomEnchantDefinitions() {
     }
