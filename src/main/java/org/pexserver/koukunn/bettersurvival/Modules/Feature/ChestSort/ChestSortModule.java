@@ -221,74 +221,79 @@ public class ChestSortModule implements Listener {
     }
 
     private void sortInventories(List<ResolvedContainer> containers) {
-        List<ItemStack> items = new ArrayList<>();
-        int totalSlots = 0;
+        // 1. スナップショット取得(失敗時ロールバック用)と、同種アイテムの総数集計
+        List<ItemStack[]> snapshots = new ArrayList<>();
+        Map<ItemStack, Long> totals = new LinkedHashMap<>();
+        long totalBefore = 0L;
         for (ResolvedContainer container : containers) {
-            totalSlots += container.inventory().getSize();
-            for (ItemStack item : container.inventory().getContents()) {
-                if (item == null || item.getType() == Material.AIR)
+            ItemStack[] contents = container.inventory().getContents();
+            ItemStack[] snapshot = new ItemStack[contents.length];
+            for (int slot = 0; slot < contents.length; slot++)
+                snapshot[slot] = contents[slot] == null ? null : contents[slot].clone();
+            snapshots.add(snapshot);
+            for (ItemStack item : contents) {
+                if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0)
                     continue;
-                items.add(item.clone());
+                totalBefore += item.getAmount();
+                ItemStack key = item.clone();
+                key.setAmount(1);
+                totals.merge(key, (long) item.getAmount(), Long::sum);
+            }
+        }
+        if (totals.isEmpty())
+            return;
+
+        // 2. 総数から満杯スタックを優先して再構成(端数は各種類につき最大1つ)
+        List<ItemStack> stacks = new ArrayList<>();
+        for (Map.Entry<ItemStack, Long> entry : totals.entrySet()) {
+            ItemStack key = entry.getKey();
+            int maxStackSize = Math.max(1, key.getMaxStackSize());
+            long remaining = entry.getValue();
+            while (remaining > 0) {
+                int amount = (int) Math.min(maxStackSize, remaining);
+                ItemStack stack = key.clone();
+                stack.setAmount(amount);
+                stacks.add(stack);
+                remaining -= amount;
             }
         }
 
-        items.sort((a, b) -> {
-            int priorityCompare = Integer.compare(determineCategoryPriority(a.getType()), determineCategoryPriority(b.getType()));
-            if (priorityCompare != 0)
-                return priorityCompare;
-            int materialCompare = a.getType().name().compareTo(b.getType().name());
-            if (materialCompare != 0)
-                return materialCompare;
-            String aName = a.hasItemMeta() && a.getItemMeta().hasDisplayName() ? a.getItemMeta().getDisplayName() : null;
-            String bName = b.hasItemMeta() && b.getItemMeta().hasDisplayName() ? b.getItemMeta().getDisplayName() : null;
-            if (aName == null && bName != null)
-                return 1;
-            if (aName != null && bName == null)
-                return -1;
-            if (aName != null) {
-                int nameCompare = aName.compareTo(bName);
-                if (nameCompare != 0)
-                    return nameCompare;
-            }
-            int damageCompare = Integer.compare(damage(a), damage(b));
-            if (damageCompare != 0)
-                return damageCompare;
-            return Integer.compare(b.getEnchantments().size(), a.getEnchantments().size());
-        });
+        // 3. カテゴリ → 素材 → メタ情報 → 数量(多い順)の全順序でソート
+        stacks.sort(ChestSortModule::compareStacks);
 
-        List<ItemStack> merged = new ArrayList<>();
-        for (ItemStack item : items) {
-            boolean mergedFlag = false;
-            for (ItemStack existing : merged) {
-                if (!canMerge(existing, item))
-                    continue;
-                int space = existing.getMaxStackSize() - existing.getAmount();
-                if (space <= 0)
-                    continue;
-                int moveAmount = Math.min(space, item.getAmount());
-                existing.setAmount(existing.getAmount() + moveAmount);
-                item.setAmount(item.getAmount() - moveAmount);
-                if (item.getAmount() <= 0) {
-                    mergedFlag = true;
-                    break;
-                }
-            }
-            if (!mergedFlag)
-                merged.add(item.clone());
-        }
-
-        List<ItemStack> sortedItems = new ArrayList<>();
-        for (ItemStack item : merged) {
-            if (item.getAmount() > 0)
-                sortedItems.add(item);
-        }
-
-        int maxItems = Math.min(totalSlots, sortedItems.size());
+        // 4. 配置。書き込み前に総数一致を検証し、不一致なら何もせずロールバック
         int index = 0;
+        long totalAfter = 0L;
+        List<ItemStack[]> layouts = new ArrayList<>();
         for (ResolvedContainer container : containers) {
-            container.inventory().clear();
-            for (int slot = 0; slot < container.inventory().getSize() && index < maxItems; slot++) {
-                container.inventory().setItem(slot, sortedItems.get(index++));
+            int size = container.inventory().getSize();
+            ItemStack[] layout = new ItemStack[size];
+            for (int slot = 0; slot < size && index < stacks.size(); slot++) {
+                layout[slot] = stacks.get(index++);
+                totalAfter += layout[slot].getAmount();
+            }
+            layouts.add(layout);
+        }
+        List<ItemStack> overflow = new ArrayList<>();
+        for (; index < stacks.size(); index++) {
+            overflow.add(stacks.get(index));
+            totalAfter += stacks.get(index).getAmount();
+        }
+        if (totalAfter != totalBefore) {
+            for (int i = 0; i < containers.size(); i++)
+                containers.get(i).inventory().setContents(snapshots.get(i));
+            return;
+        }
+        for (int i = 0; i < containers.size(); i++)
+            containers.get(i).inventory().setContents(layouts.get(i));
+
+        // オーバースタック品の再展開などで枠が足りない場合のみ発生。消滅させずドロップする
+        if (!overflow.isEmpty()) {
+            Location dropLocation = containers.get(containers.size() - 1).displayLocation().clone().add(0.5D, 1.0D, 0.5D);
+            World world = dropLocation.getWorld();
+            if (world != null) {
+                for (ItemStack leftover : overflow)
+                    world.dropItemNaturally(dropLocation, leftover);
             }
         }
     }
@@ -466,30 +471,204 @@ public class ChestSortModule implements Listener {
         return location.getWorld().getName() + ":" + location.getBlockX() + "," + location.getBlockY() + "," + location.getBlockZ();
     }
 
-    private static int determineCategoryPriority(Material material) {
-        if (material == null)
-            return Integer.MAX_VALUE / 2;
-        if (material.isBlock())
-            return 0;
-        if (material.isEdible())
-            return 4;
-        EquipmentSlot slot = material.getEquipmentSlot();
-        if (slot == EquipmentSlot.HEAD || slot == EquipmentSlot.CHEST || slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET)
-            return 2;
-        String name = material.name();
-        if (name.endsWith("_SWORD") || name.endsWith("_AXE") || name.endsWith("_PICKAXE") || name.endsWith("_SHOVEL")
-                || name.endsWith("_HOE") || name.equals("BOW") || name.equals("CROSSBOW") || name.equals("TRIDENT")
-                || name.equals("SHEARS") || name.equals("FISHING_ROD"))
-            return 3;
-        return 1;
+    /**
+     * 仕分けカテゴリ。宣言順がそのまま格納順になる。
+     */
+    private enum SortCategory {
+        VALUABLES,
+        TOOLS,
+        WEAPONS,
+        ARMOR,
+        FOOD,
+        POTIONS,
+        REDSTONE,
+        STORAGE,
+        BLOCKS,
+        MATERIALS,
+        MISC
     }
 
-    private boolean canMerge(ItemStack first, ItemStack second) {
-        if (first == null || second == null)
-            return false;
-        if (first.getType() == Material.AIR || second.getType() == Material.AIR)
-            return false;
-        return first.isSimilar(second);
+    private static int compareStacks(ItemStack a, ItemStack b) {
+        int compare = Integer.compare(categoryOf(a.getType()).ordinal(), categoryOf(b.getType()).ordinal());
+        if (compare != 0)
+            return compare;
+        // Material の宣言順(レジストリ順)は同系統のアイテムが隣接するため、アルファベット順より自然に並ぶ
+        compare = Integer.compare(a.getType().ordinal(), b.getType().ordinal());
+        if (compare != 0)
+            return compare;
+        compare = Integer.compare(enchantWeight(b), enchantWeight(a));
+        if (compare != 0)
+            return compare;
+        String aName = displayNameOf(a);
+        String bName = displayNameOf(b);
+        if (aName == null && bName != null)
+            return 1;
+        if (aName != null && bName == null)
+            return -1;
+        if (aName != null) {
+            compare = aName.compareTo(bName);
+            if (compare != 0)
+                return compare;
+        }
+        compare = Integer.compare(damage(a), damage(b));
+        if (compare != 0)
+            return compare;
+        // 残るメタ差(ロア・ポーション効果など)を決定的に順序付けする
+        compare = metaKey(a).compareTo(metaKey(b));
+        if (compare != 0)
+            return compare;
+        return Integer.compare(b.getAmount(), a.getAmount());
+    }
+
+    private static SortCategory categoryOf(Material material) {
+        if (material == null)
+            return SortCategory.MISC;
+        String name = material.name();
+        if (isValuable(material, name))
+            return SortCategory.VALUABLES;
+        if (isTool(material, name))
+            return SortCategory.TOOLS;
+        if (isWeapon(material, name))
+            return SortCategory.WEAPONS;
+        if (isArmor(material, name))
+            return SortCategory.ARMOR;
+        if (isPotion(material, name))
+            return SortCategory.POTIONS;
+        if (material.isEdible() || name.endsWith("_SEEDS") || material == Material.WHEAT
+                || material == Material.SUGAR_CANE || material == Material.EGG || material == Material.MILK_BUCKET)
+            return SortCategory.FOOD;
+        if (isRedstone(material, name))
+            return SortCategory.REDSTONE;
+        if (name.endsWith("SHULKER_BOX") || material == Material.BUNDLE || material == Material.ENDER_CHEST)
+            return SortCategory.STORAGE;
+        if (material.isBlock())
+            return SortCategory.BLOCKS;
+        if (material.isItem())
+            return SortCategory.MATERIALS;
+        return SortCategory.MISC;
+    }
+
+    private static boolean isValuable(Material material, String name) {
+        switch (material) {
+            case DIAMOND:
+            case EMERALD:
+            case NETHERITE_SCRAP:
+            case ANCIENT_DEBRIS:
+            case LAPIS_LAZULI:
+            case QUARTZ:
+            case AMETHYST_SHARD:
+                return true;
+            default:
+                break;
+        }
+        return name.endsWith("_INGOT") || name.endsWith("_NUGGET") || name.startsWith("RAW_")
+                || name.endsWith("_ORE") || name.endsWith("_BLOCK") && isValuableBlock(name);
+    }
+
+    private static boolean isValuableBlock(String name) {
+        return name.equals("DIAMOND_BLOCK") || name.equals("EMERALD_BLOCK") || name.equals("GOLD_BLOCK")
+                || name.equals("IRON_BLOCK") || name.equals("NETHERITE_BLOCK") || name.equals("COPPER_BLOCK")
+                || name.equals("LAPIS_BLOCK") || name.equals("REDSTONE_BLOCK") || name.equals("COAL_BLOCK")
+                || name.equals("RAW_IRON_BLOCK") || name.equals("RAW_GOLD_BLOCK") || name.equals("RAW_COPPER_BLOCK");
+    }
+
+    private static boolean isTool(Material material, String name) {
+        switch (material) {
+            case FLINT_AND_STEEL:
+            case SHEARS:
+            case FISHING_ROD:
+            case COMPASS:
+            case RECOVERY_COMPASS:
+            case CLOCK:
+            case SPYGLASS:
+            case BRUSH:
+            case LEAD:
+            case NAME_TAG:
+                return true;
+            default:
+                break;
+        }
+        return name.endsWith("_PICKAXE") || name.endsWith("_AXE") || name.endsWith("_SHOVEL") || name.endsWith("_HOE");
+    }
+
+    private static boolean isWeapon(Material material, String name) {
+        switch (material) {
+            case BOW:
+            case CROSSBOW:
+            case TRIDENT:
+            case MACE:
+            case ARROW:
+            case SPECTRAL_ARROW:
+                return true;
+            default:
+                break;
+        }
+        return name.endsWith("_SWORD");
+    }
+
+    private static boolean isArmor(Material material, String name) {
+        if (material == Material.SHIELD || material == Material.ELYTRA || material == Material.TOTEM_OF_UNDYING)
+            return true;
+        if (name.endsWith("_HELMET") || name.endsWith("_CHESTPLATE") || name.endsWith("_LEGGINGS")
+                || name.endsWith("_BOOTS") || name.endsWith("_HORSE_ARMOR"))
+            return true;
+        EquipmentSlot slot = material.getEquipmentSlot();
+        return slot == EquipmentSlot.HEAD || slot == EquipmentSlot.CHEST || slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET;
+    }
+
+    private static boolean isPotion(Material material, String name) {
+        return material == Material.POTION || material == Material.SPLASH_POTION || material == Material.LINGERING_POTION
+                || material == Material.TIPPED_ARROW || material == Material.EXPERIENCE_BOTTLE
+                || material == Material.ENCHANTED_BOOK || name.equals("GLASS_BOTTLE") || name.equals("BREWING_STAND");
+    }
+
+    private static boolean isRedstone(Material material, String name) {
+        switch (material) {
+            case REDSTONE:
+            case REPEATER:
+            case COMPARATOR:
+            case REDSTONE_TORCH:
+            case LEVER:
+            case HOPPER:
+            case DROPPER:
+            case DISPENSER:
+            case OBSERVER:
+            case PISTON:
+            case STICKY_PISTON:
+            case SLIME_BLOCK:
+            case HONEY_BLOCK:
+            case TNT:
+            case NOTE_BLOCK:
+            case DAYLIGHT_DETECTOR:
+            case TARGET:
+            case TRIPWIRE_HOOK:
+            case REDSTONE_LAMP:
+                return true;
+            default:
+                break;
+        }
+        return name.endsWith("_RAIL") || name.equals("RAIL") || name.endsWith("_BUTTON") || name.endsWith("_PRESSURE_PLATE");
+    }
+
+    private static int enchantWeight(ItemStack item) {
+        int weight = item.getEnchantments().size();
+        if (item.getType() == Material.ENCHANTED_BOOK)
+            weight += 100;
+        return weight;
+    }
+
+    private static String displayNameOf(ItemStack item) {
+        if (!item.hasItemMeta())
+            return null;
+        ItemMeta meta = item.getItemMeta();
+        return meta != null && meta.hasDisplayName() ? meta.getDisplayName() : null;
+    }
+
+    private static String metaKey(ItemStack item) {
+        if (!item.hasItemMeta())
+            return "";
+        ItemMeta meta = item.getItemMeta();
+        return meta == null ? "" : String.valueOf(meta);
     }
 
     private static int damage(ItemStack item) {

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { ConsentModal, hasConsented } from './components/ConsentModal';
-import { pageKeyFromPath } from './app/navigation';
+import { pageKeyFromPath, wikiSlugFromPath } from './app/navigation';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { FeedPage } from './pages/FeedPage';
 import { HomePage } from './pages/HomePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RequestPage } from './pages/RequestPage';
+import { WikiPage } from './pages/wiki/WikiPage';
 import WebMapPage from './Page/WebMapPage';
 import { useWebService } from './features/webservice/useWebService';
 
@@ -61,6 +62,8 @@ export default function App() {
         return <FeedPage busy={service.busy} profile={service.profile} posts={service.feedPosts} onPost={service.postFeed} onLike={service.likePost} onRepost={service.repostPost} onNavigate={navigate} />;
       case 'features':
         return <FeaturesPage />;
+      case 'wiki':
+        return <WikiPage slug={wikiSlugFromPath(path)} onNavigate={navigate} />;
       case 'webmap':
         return <WebMapPage full={fullMap} />;
       case 'privacy':

@@ -28,6 +28,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -98,19 +99,19 @@ public class SharedStorageModule implements Listener {
     private static final String MAIN_PREFIX = "chest-";
     private static final String SUB_PREFIX = "chestsub-";
     private static final int MAX_SUB_DISTANCE_LIMIT = 50;
-    private static final int MENU_TOGGLE_SLOT = 10;
-    private static final int MENU_EXTRACT_SLOT = 11;
-    private static final int MENU_SUB_HOPPER_INSERT_SLOT = 12;
-    private static final int MENU_SUB_HOPPER_EXTRACT_SLOT = 13;
-    private static final int MENU_RESET_SLOT = 8;
-    private static final int MENU_MAIN_INSERT_SLOT = 19;
-    private static final int MENU_MAIN_EXTRACT_SLOT = 20;
-    private static final int MENU_CHEST_PAGE_SLOT = 22;
-    private static final int MENU_FRAME_FILTER_SLOT = 23;
-    private static final int MENU_FRAME_FILTER_MODE_SLOT = 24;
-    private static final int MENU_PARTICLE_SLOT = 29;
-    private static final int MENU_CLOSE_SLOT = 35;
-    private static final int MENU_RANGE_SLOT = 5;
+    private static final int MENU_TOGGLE_SLOT = SharedStorageSettingsUi.SLOT_SUB_INSERT;
+    private static final int MENU_EXTRACT_SLOT = SharedStorageSettingsUi.SLOT_SUB_EXTRACT;
+    private static final int MENU_SUB_HOPPER_INSERT_SLOT = SharedStorageSettingsUi.SLOT_SUB_HOPPER_INSERT;
+    private static final int MENU_SUB_HOPPER_EXTRACT_SLOT = SharedStorageSettingsUi.SLOT_SUB_HOPPER_EXTRACT;
+    private static final int MENU_RESET_SLOT = SharedStorageSettingsUi.SLOT_RESORT;
+    private static final int MENU_MAIN_INSERT_SLOT = SharedStorageSettingsUi.SLOT_MAIN_HOPPER_INSERT;
+    private static final int MENU_MAIN_EXTRACT_SLOT = SharedStorageSettingsUi.SLOT_MAIN_HOPPER_EXTRACT;
+    private static final int MENU_CHEST_PAGE_SLOT = SharedStorageSettingsUi.SLOT_CHEST_PAGE;
+    private static final int MENU_FRAME_FILTER_SLOT = SharedStorageSettingsUi.SLOT_FRAME_FILTER;
+    private static final int MENU_FRAME_FILTER_MODE_SLOT = SharedStorageSettingsUi.SLOT_FRAME_FILTER_MODE;
+    private static final int MENU_PARTICLE_SLOT = SharedStorageSettingsUi.SLOT_PARTICLE;
+    private static final int MENU_CLOSE_SLOT = SharedStorageSettingsUi.SLOT_CLOSE;
+    private static final int MENU_RANGE_SLOT = SharedStorageSettingsUi.SLOT_RANGE;
 
     private final Loader plugin;
     private final ToggleModule toggle;
@@ -320,6 +321,11 @@ public class SharedStorageModule implements Listener {
         int rawSlot = event.getRawSlot();
         if (rawSlot < 0)
             return;
+        // ダブルクリック回収はプレイヤーインベントリ側のクリックでも top からアイテムを集めるため個別に防ぐ
+        if (!access.allowExtract() && event.getAction() == InventoryAction.COLLECT_TO_CURSOR) {
+            event.setCancelled(true);
+            return;
+        }
         if (!access.allowExtract() && rawSlot < top.getSize()) {
             ItemStack current = event.getCurrentItem();
             if (current != null && current.getType() != Material.AIR) {
@@ -370,41 +376,8 @@ public class SharedStorageModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onInventoryMoveItem(InventoryMoveItemEvent event) {
-        Placement destinationPlacement = resolvePlacement(event.getDestination());
-        if (destinationPlacement != null) {
-            SharedNetwork network = networks.get(destinationPlacement.id());
-            if (network != null) {
-                if (destinationPlacement.isMain() && !network.allowMainInsert()) {
-                    event.setCancelled(true);
-                    return;
-                }
-                if (!destinationPlacement.isMain() && network.enableSubFrameFilter()) {
-                    List<ItemStack> filters = resolveSubFrameFilters(destinationPlacement);
-                    ItemStack moved = event.getItem();
-                    if (!filters.isEmpty() && moved != null && moved.getType() != Material.AIR && !matchesAnyFilter(moved, filters, network.subFrameFilterMode())) {
-                        event.setCancelled(true);
-                        return;
-                    }
-                }
-                if (!destinationPlacement.isMain() && !network.allowSubHopperInsert()) {
-                    event.setCancelled(true);
-                    return;
-                }
-                if (destinationPlacement.isMain()) {
-                    ItemStack moved = event.getItem() == null ? null : event.getItem().clone();
-                    if (moved != null && moved.getType() != Material.AIR) {
-                        if (canAcceptItem(event.getDestination(), moved)) {
-                            pendingMainContributions.computeIfAbsent(network.id(), id -> new ArrayList<>()).add(moved);
-                            scheduleRedistribution(network);
-                        } else if (canAcceptSubForHopper(network, moved) && removeFromInventory(event.getSource(), moved)) {
-                            event.setCancelled(true);
-                            pendingInjectedItems.computeIfAbsent(network.id(), id -> new ArrayList<>()).add(moved);
-                            scheduleRedistribution(network);
-                        }
-                    }
-                }
-            }
-        }
+        // source 側の禁止判定を先に行う。後段の contribution 記録より前にキャンセルを確定させないと、
+        // キャンセルされた搬送が pending として記録されてしまう
         Placement sourcePlacement = resolvePlacement(event.getSource());
         if (sourcePlacement != null) {
             SharedNetwork network = networks.get(sourcePlacement.id());
@@ -413,10 +386,67 @@ public class SharedStorageModule implements Listener {
                     event.setCancelled(true);
                     return;
                 }
-                if (!sourcePlacement.isMain() && !network.allowSubHopperExtract())
+                if (!sourcePlacement.isMain() && !network.allowSubHopperExtract()) {
                     event.setCancelled(true);
+                    return;
+                }
             }
         }
+
+        Placement destinationPlacement = resolvePlacement(event.getDestination());
+        if (destinationPlacement == null)
+            return;
+        SharedNetwork network = networks.get(destinationPlacement.id());
+        if (network == null)
+            return;
+
+        if (!destinationPlacement.isMain()) {
+            if (!network.allowSubHopperInsert()) {
+                event.setCancelled(true);
+                return;
+            }
+            if (network.enableSubFrameFilter()) {
+                List<ItemStack> filters = resolveSubFrameFilters(destinationPlacement);
+                ItemStack moved = event.getItem();
+                if (!filters.isEmpty() && moved != null && moved.getType() != Material.AIR && !matchesAnyFilter(moved, filters, network.subFrameFilterMode()))
+                    event.setCancelled(true);
+            }
+            return;
+        }
+
+        if (!network.allowMainInsert()) {
+            event.setCancelled(true);
+            return;
+        }
+        ItemStack moved = event.getItem() == null ? null : event.getItem().clone();
+        if (moved == null || moved.getType() == Material.AIR)
+            return;
+        if (canAcceptItem(event.getDestination(), moved)) {
+            pendingMainContributions.computeIfAbsent(network.id(), id -> new ArrayList<>()).add(moved);
+            scheduleRedistribution(network);
+            return;
+        }
+
+        // main が満杯。バニラの搬送は失敗するだけなので必ずキャンセルし、ホッパー内に留める。
+        // sub に空きがあれば次 tick に source から取り出して注入する。
+        // イベント中に source を操作すると、キャンセル時のバニラ側スロット復元と競合してアイテムが複製されるため、
+        // 取り出しは必ずイベントの外(次 tick)で行う
+        event.setCancelled(true);
+        if (!canAcceptSubForHopper(network, moved))
+            return;
+        Inventory source = event.getSource();
+        String networkId = network.id();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            SharedNetwork current = networks.get(networkId);
+            if (current == null)
+                return;
+            if (!canAcceptSubForHopper(current, moved))
+                return;
+            if (!removeFromInventory(source, moved))
+                return;
+            pendingInjectedItems.computeIfAbsent(networkId, id -> new ArrayList<>()).add(moved);
+            scheduleRedistribution(current);
+        });
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
@@ -1088,10 +1118,29 @@ public class SharedStorageModule implements Listener {
 
         if (!remainingItems.isEmpty()) {
             for (ResolvedInventory sub : subs) {
-                fillAnyIntoEmptySlots(sub.inventory(), remainingItems, transferredSubs, sub.anchor());
+                List<ItemStack> rawFilters = network.enableSubFrameFilter() ? resolveSubFrameFilters(sub) : List.of();
+                List<ItemStack> positiveFilters = new ArrayList<>();
+                for (ItemStack filter : rawFilters) {
+                    if (!isClearFrameFilter(filter))
+                        positiveFilters.add(filter);
+                }
+                // 処分フィルタしか付いていない sub に入れると次回の再仕分けで処分されてしまうため配置しない
+                if (!rawFilters.isEmpty() && positiveFilters.isEmpty())
+                    continue;
+                fillAnyIntoEmptySlots(sub.inventory(), remainingItems, positiveFilters, network.subFrameFilterMode(), transferredSubs, sub.anchor());
                 if (remainingItems.isEmpty())
                     break;
             }
+        }
+
+        // 全コンテナが満杯で置き場が無いアイテムは消滅させず main の上にドロップする
+        if (!remainingItems.isEmpty()) {
+            Location overflowDrop = main.anchor().clone().add(0.5D, 1.0D, 0.5D);
+            List<ItemStack> overflowStacks = new ArrayList<>();
+            for (TrackedItemStack tracked : remainingItems)
+                overflowStacks.add(tracked.stack());
+            dropItemStacks(overflowDrop, overflowStacks);
+            remainingItems.clear();
         }
 
         if (network.enableTransferParticles()) {
@@ -1358,13 +1407,15 @@ public class SharedStorageModule implements Listener {
         }
     }
 
-    private void fillAnyIntoEmptySlots(Inventory inventory, List<TrackedItemStack> items,
+    private void fillAnyIntoEmptySlots(Inventory inventory, List<TrackedItemStack> items, List<ItemStack> filters, SubFrameFilterMode mode,
                                        Set<Location> transferredSubs, Location subAnchor) {
         for (int slot = 0; slot < inventory.getSize() && !items.isEmpty(); slot++) {
             ItemStack existing = inventory.getItem(slot);
             if (existing != null && existing.getType() != Material.AIR)
                 continue;
-            TrackedItemStack tracked = items.remove(0);
+            TrackedItemStack tracked = filters.isEmpty() ? items.remove(0) : removeFirstMatching(items, filters, mode);
+            if (tracked == null)
+                return;
             inventory.setItem(slot, tracked.stack());
             if (tracked.mainContribution() > 0)
                 transferredSubs.add(subAnchor);
