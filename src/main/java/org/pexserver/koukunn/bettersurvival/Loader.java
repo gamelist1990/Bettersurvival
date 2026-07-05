@@ -165,7 +165,6 @@ public final class Loader extends JavaPlugin {
         // ChestSort モジュール登録
         chestSortModule = new ChestSortModule(this, toggleModule, chestLockModule, chestShopModule);
         getServer().getPluginManager().registerEvents(chestSortModule, this);
-        getServer().getPluginManager().registerEvents(new DeathChestModule(toggleModule), this);
         discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule, offlineAccessModule.getManager());
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
         getServer().getPluginManager().registerEvents(discordWebhookModule, this);
@@ -194,6 +193,7 @@ public final class Loader extends JavaPlugin {
         // LandProtection モジュール登録 (Rust 風の土地保護コア)
         landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule);
         getServer().getPluginManager().registerEvents(landProtectionModule, this);
+        getServer().getPluginManager().registerEvents(new DeathChestModule(this, toggleModule, landProtectionModule), this);
         // ParallelFurnace モジュール登録 (かまど×石炭ブロックで作る並列稼働かまど)
         parallelFurnaceModule = new ParallelFurnaceModule(this, toggleModule, itemCombineModule, chestLockModule, landProtectionModule);
         getServer().getPluginManager().registerEvents(parallelFurnaceModule, this);

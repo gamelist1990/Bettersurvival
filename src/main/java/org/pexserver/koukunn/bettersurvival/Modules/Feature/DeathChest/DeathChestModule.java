@@ -2,17 +2,26 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.Chest;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.util.ArrayList;
@@ -25,9 +34,13 @@ public class DeathChestModule implements Listener {
     private static final int[] Y_OFFSETS = {0, 1, -1, 2, -2, 3, -3};
 
     private final ToggleModule toggle;
+    private final LandProtectionModule landProtection;
+    private final NamespacedKey deathChestKey;
 
-    public DeathChestModule(ToggleModule toggle) {
+    public DeathChestModule(Loader plugin, ToggleModule toggle, LandProtectionModule landProtection) {
         this.toggle = toggle;
+        this.landProtection = landProtection;
+        this.deathChestKey = new NamespacedKey(plugin, "death_chest");
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -36,9 +49,11 @@ public class DeathChestModule implements Listener {
         if (!toggle.isEnabledFor(event.getPlayer().getUniqueId().toString(), FEATURE_KEY)) return;
 
         Location deathLocation = event.getPlayer().getLocation();
-        sendDeathLocation(event, deathLocation);
-
+        if (landProtection != null && landProtection.getActiveClaimAt(deathLocation) != null) return;
+        if (event.getEntity().getKiller() != null) return;
         if (event.getKeepInventory() || event.getDrops().isEmpty()) return;
+
+        sendDeathLocation(event, deathLocation);
 
         List<ItemStack> drops = copyDrops(event.getDrops());
         if (drops.isEmpty()) return;
@@ -165,7 +180,76 @@ public class DeathChestModule implements Listener {
             clearPlacement(placement);
             return null;
         }
+        markDeathChest(placement);
         return new ChestInventories(primary, secondary);
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        Inventory inventory = event.getInventory();
+        if (!isDeathChestInventory(inventory)) return;
+        if (!isInventoryEmpty(inventory)) return;
+        removeDeathChestInventory(inventory);
+    }
+
+    private boolean isInventoryEmpty(Inventory inventory) {
+        for (ItemStack item : inventory.getContents()) {
+            if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isDeathChestInventory(Inventory inventory) {
+        for (Block block : getDeathChestBlocks(inventory.getHolder())) {
+            if (isDeathChestBlock(block)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void removeDeathChestInventory(Inventory inventory) {
+        for (Block block : getDeathChestBlocks(inventory.getHolder())) {
+            removeDeathChestBlock(block);
+        }
+    }
+
+    private List<Block> getDeathChestBlocks(InventoryHolder holder) {
+        List<Block> blocks = new ArrayList<>();
+        if (holder instanceof Chest chest) {
+            blocks.add(chest.getBlock());
+        } else if (holder instanceof DoubleChest doubleChest) {
+            blocks.addAll(getDeathChestBlocks(doubleChest.getLeftSide()));
+            blocks.addAll(getDeathChestBlocks(doubleChest.getRightSide()));
+        }
+        return blocks;
+    }
+
+    private void removeDeathChestBlock(Block block) {
+        if (block.getType() != Material.CHEST) return;
+        block.setType(Material.AIR, false);
+    }
+
+    private void markDeathChest(ChestPlacement placement) {
+        markDeathChestBlock(placement.first);
+        markDeathChestBlock(placement.second);
+    }
+
+    private void markDeathChestBlock(Block block) {
+        if (block.getType() != Material.CHEST) return;
+        BlockState state = block.getState();
+        if (!(state instanceof Chest chest)) return;
+        PersistentDataContainer container = chest.getPersistentDataContainer();
+        container.set(deathChestKey, PersistentDataType.BYTE, (byte) 1);
+        chest.update(true);
+    }
+
+    private boolean isDeathChestBlock(Block block) {
+        if (block.getType() != Material.CHEST) return false;
+        BlockState state = block.getState(false);
+        if (!(state instanceof Chest chest)) return false;
+        return chest.getPersistentDataContainer().has(deathChestKey, PersistentDataType.BYTE);
     }
 
     private void applyChestData(Block block, Axis axis, org.bukkit.block.data.type.Chest.Type type) {
