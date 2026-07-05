@@ -34,6 +34,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.CopperGo
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.GeyserWorkbench.GeyserWorkbenchModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ParallelFurnace.ParallelFurnaceModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Recycler.RecyclerModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.AirDash.AirDashModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.CustomEnchantTableModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WarpStone.WarpStoneModule;
@@ -93,6 +94,7 @@ public final class Loader extends JavaPlugin {
     private PartyMenu partyMenu;
     private LandProtectionModule landProtectionModule;
     private ParallelFurnaceModule parallelFurnaceModule;
+    private RecyclerModule recyclerModule;
     private AirDashModule airDashModule;
     private CustomEnchantTableModule customEnchantTableModule;
     private WarpStoneModule warpStoneModule;
@@ -195,6 +197,9 @@ public final class Loader extends JavaPlugin {
         // ParallelFurnace モジュール登録 (かまど×石炭ブロックで作る並列稼働かまど)
         parallelFurnaceModule = new ParallelFurnaceModule(this, toggleModule, itemCombineModule, chestLockModule, landProtectionModule);
         getServer().getPluginManager().registerEvents(parallelFurnaceModule, this);
+        // Recycler モジュール登録 (砥石×鉄ブロックで作るRust風リサイクラー)
+        recyclerModule = new RecyclerModule(this, toggleModule, itemCombineModule);
+        getServer().getPluginManager().registerEvents(recyclerModule, this);
         // AirDash モジュール登録 (空中ジャンプ再入力でダッシュ / Apexのアッシュ風)
         airDashModule = new AirDashModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(airDashModule, this);
@@ -277,6 +282,8 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(
             new ToggleFeature("parallelfurnace", "ParallelFurnace", "かまど×石炭ブロックで作る並列かまどを有効/無効にします", Material.FURNACE, false));
         toggleModule.registerFeature(
+            new ToggleFeature("recycler", "Recycler", "砥石×鉄ブロックで作るリサイクラー(不要品を素材へ分解/処分)を有効/無効にします", Material.GRINDSTONE, false));
+        toggleModule.registerFeature(
             new ToggleFeature("airdash", "AirDash", "空中でジャンプキーを再入力するとエアダッシュします(クールダウンはActionBar表示)", Material.FEATHER));
         toggleModule.registerFeature(
             new ToggleFeature("customenchant", "CustomEnchant", "エンチャントテーブル×ラピスで作るカスタムエンチャント台を有効/無効にします", Material.ENCHANTING_TABLE, false));
@@ -357,6 +364,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("parallelfurnace")) {
             toggleModule.setGlobal("parallelfurnace", true);
+        }
+        if (!toggleModule.hasGlobal("recycler")) {
+            toggleModule.setGlobal("recycler", true);
         }
         if (!toggleModule.hasGlobal("airdash")) {
             toggleModule.setGlobal("airdash", true);
@@ -562,6 +572,9 @@ public final class Loader extends JavaPlugin {
         }
         if (airDashModule != null) {
             airDashModule.shutdown();
+        }
+        if (recyclerModule != null) {
+            recyclerModule.shutdown();
         }
         if (customEnchantTableModule != null) {
             customEnchantTableModule.shutdown();

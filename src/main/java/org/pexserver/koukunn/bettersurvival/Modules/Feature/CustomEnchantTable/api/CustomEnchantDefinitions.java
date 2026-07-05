@@ -36,7 +36,16 @@ public final class CustomEnchantDefinitions {
             new Definition("accelerategrowth", "成長加速", 3),
             new Definition("fireproofboots", "耐火のブーツ", 3),
             new Definition("handofthief", "泥棒の手", 1),
-            new Definition("voidprotection", "奈落の保護", 3));
+            new Definition("voidprotection", "奈落の保護", 3),
+            new Definition("volleyshot", "連射", 3),
+            new Definition("longshot", "狙撃", 3),
+            new Definition("voidrescue", "奈落救出", 3),
+            new Definition("chainresurrect", "連鎖蘇生", 3),
+            new Definition("sniper", "スナイパー", 3),
+            new Definition("aqualung", "水中呼吸", 1),
+            new Definition("hungersaver", "満腹維持", 3),
+            new Definition("thornless", "棘無効", 1),
+            new Definition("jumpboost", "跳躍", 3));
 
     private CustomEnchantDefinitions() {
     }

@@ -9,6 +9,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.Hopper;
 import org.bukkit.block.data.Openable;
 import org.bukkit.block.data.type.Switch;
 import org.bukkit.entity.ArmorStand;
@@ -830,6 +831,39 @@ public class LandProtectionModule implements Listener {
 
     // ================= 燃料 / レベルアップ =================
 
+    /** コアブロック直下のホッパーから燃料アイテムをすべて吸い込む。戻り値は加算されたユニット。 */
+    private double drainHopperFuel(ClaimRegion claim, Block coreBlock) {
+        Block below = coreBlock.getRelative(0, 1, 0);
+        if (below.getType() != Material.HOPPER) {
+            return 0;
+        }
+        if (!(below.getState() instanceof Hopper hopperState)) {
+            return 0;
+        }
+        org.bukkit.inventory.Inventory inv = hopperState.getInventory();
+        double added = 0;
+        for (int i = 0; i < inv.getSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack == null || stack.getType().isAir()) {
+                continue;
+            }
+            double value = FuelValues.valueOf(stack);
+            if (value <= 0) {
+                continue;
+            }
+            added += value;
+            inv.setItem(i, null);
+        }
+        if (added > 0) {
+            boolean wasActive = claim.isActive();
+            claim.addFuelUnits(added);
+            if (!wasActive && claim.isActive()) {
+                claim.setLastUpkeepMillis(System.currentTimeMillis());
+            }
+        }
+        return added;
+    }
+
     /** 燃料メニューの中身を燃料へ変換する。戻り値は加算されたユニット。 */
     public double depositFuel(Player player, ClaimRegion claim, org.bukkit.inventory.Inventory inventory) {
         double added = 0;
@@ -1125,6 +1159,10 @@ public class LandProtectionModule implements Listener {
                         world.dropItemNaturally(block.getLocation().add(0.5D, 0.1D, 0.5D), createCoreItem(claim));
                         changed = true;
                         continue;
+                    }
+                    double hopperFuel = drainHopperFuel(claim, block);
+                    if (hopperFuel > 0) {
+                        changed = true;
                     }
                 }
             }

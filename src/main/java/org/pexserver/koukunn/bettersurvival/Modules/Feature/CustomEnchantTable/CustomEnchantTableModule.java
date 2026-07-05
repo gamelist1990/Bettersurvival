@@ -53,6 +53,16 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.e
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.FireproofBootsEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.HandOfThiefEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.VoidProtectionEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.VolleyShotEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.LongShotEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.VoidRescueEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.ChainResurrectEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.EnderChestEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.SniperEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.AqualungEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.HungerSaverEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.ThornlessEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.enchants.JumpBoostBootsEnchant;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.ui.CustomEnchantTableUI;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -125,6 +135,16 @@ public class CustomEnchantTableModule implements Listener {
         registry.register(new FireproofBootsEnchant(plugin));
         registry.register(new HandOfThiefEnchant(plugin));
         registry.register(new VoidProtectionEnchant(plugin));
+        registry.register(new VolleyShotEnchant(plugin));
+        registry.register(new LongShotEnchant(plugin));
+        registry.register(new VoidRescueEnchant(plugin));
+        registry.register(new ChainResurrectEnchant(plugin, itemCombineModule));
+        registry.register(new SniperEnchant(plugin));
+        registry.register(new EnderChestEnchant(plugin));
+        registry.register(new AqualungEnchant(plugin));
+        registry.register(new HungerSaverEnchant(plugin));
+        registry.register(new ThornlessEnchant(plugin));
+        registry.register(new JumpBoostBootsEnchant(plugin));
 
         itemCombineModule.recipe("custom_enchant_table")
                 .first(this::isPlainEnchantTable)

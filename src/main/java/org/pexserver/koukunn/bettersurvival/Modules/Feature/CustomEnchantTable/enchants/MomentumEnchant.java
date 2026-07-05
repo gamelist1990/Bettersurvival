@@ -8,8 +8,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant;
@@ -40,9 +42,11 @@ public class MomentumEnchant extends CustomEnchant {
     private static final double MINING_EFFICIENCY_BONUS_PER_TIER = 3.0D;
 
     private final Map<UUID, State> states = new ConcurrentHashMap<>();
+    private BukkitTask tickTask;
 
     public MomentumEnchant(Loader plugin) {
         super(plugin);
+        tickTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
     }
 
     @Override
@@ -99,6 +103,12 @@ public class MomentumEnchant extends CustomEnchant {
         ItemStack tool = player.getInventory().getItemInMainHand();
         int level = levelOf(tool);
         if (level <= 0) {
+            State existingState = states.get(player.getUniqueId());
+            if (existingState != null && existingState.speedApplied) {
+                resetSpeed(player, existingState);
+                existingState.stacks = 0;
+                existingState.lastTier = 0;
+            }
             return;
         }
         long now = System.currentTimeMillis();
@@ -182,6 +192,36 @@ public class MomentumEnchant extends CustomEnchant {
         state.speedApplied = false;
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onItemSwitch(PlayerItemHeldEvent event) {
+        Player player = event.getPlayer();
+        State state = states.get(player.getUniqueId());
+        if (state == null || !state.speedApplied) {
+            return;
+        }
+        ItemStack newItem = player.getInventory().getItem(event.getNewSlot());
+        if (newItem == null || levelOf(newItem) <= 0) {
+            resetSpeed(player, state);
+            state.stacks = 0;
+            state.lastTier = 0;
+        }
+    }
+
+    private void tick() {
+        long now = System.currentTimeMillis();
+        for (Map.Entry<UUID, State> entry : states.entrySet()) {
+            State state = entry.getValue();
+            if (state.speedApplied && now - state.lastBreakMs > RESET_MS) {
+                Player player = plugin.getServer().getPlayer(entry.getKey());
+                if (player != null) {
+                    resetSpeed(player, state);
+                    state.stacks = 0;
+                    state.lastTier = 0;
+                }
+            }
+        }
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         State state = states.remove(event.getPlayer().getUniqueId());
@@ -192,6 +232,9 @@ public class MomentumEnchant extends CustomEnchant {
 
     @Override
     public void shutdown() {
+        if (tickTask != null) {
+            tickTask.cancel();
+        }
         for (Map.Entry<UUID, State> entry : states.entrySet()) {
             Player player = Bukkit.getPlayer(entry.getKey());
             if (player != null) {

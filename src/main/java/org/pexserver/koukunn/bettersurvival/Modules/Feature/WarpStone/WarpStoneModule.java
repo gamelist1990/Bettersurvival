@@ -30,6 +30,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
@@ -119,6 +120,7 @@ public class WarpStoneModule implements Listener {
     private final WarpStoneStore store;
     private final NamespacedKey itemKey;
     private final NamespacedKey displayKey;
+    private final NamespacedKey coordBookKey;
 
     /** locationKey → ワープストーン情報 */
     private final Map<String, WarpStoneStore.StoneData> stones = new LinkedHashMap<>();
@@ -140,6 +142,7 @@ public class WarpStoneModule implements Listener {
         this.store = new WarpStoneStore(plugin.getConfigManager());
         this.itemKey = new NamespacedKey(plugin, "warp_stone");
         this.displayKey = new NamespacedKey(plugin, "warp_stone_display");
+        this.coordBookKey = new NamespacedKey(plugin, "coord_book");
 
         itemCombineModule.recipe("warp_stone")
                 .first(stack -> stack != null && stack.getType() == Material.ENDER_PEARL)
@@ -340,7 +343,19 @@ public class WarpStoneModule implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND || event.getAction() != Action.RIGHT_CLICK_BLOCK) {
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Action action = event.getAction();
+        // 座標本の右クリック使用 (ブロック・空中問わず)
+        if ((action == Action.RIGHT_CLICK_BLOCK || action == Action.RIGHT_CLICK_AIR)
+                && isCoordBook(player.getInventory().getItemInMainHand())) {
+            event.setCancelled(true);
+            handleCoordBookUse(player, player.getInventory().getItemInMainHand());
+            return;
+        }
+        if (action != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
         Block block = event.getClickedBlock();
@@ -352,7 +367,6 @@ public class WarpStoneModule implements Listener {
         if (data == null) {
             return;
         }
-        Player player = event.getPlayer();
         event.setCancelled(true);
         if (!isFeatureEnabled()) {
             player.sendMessage(PREFIX + "§cワープストーン機能は現在無効です");
@@ -361,9 +375,15 @@ public class WarpStoneModule implements Listener {
         if (animations.containsKey(player.getUniqueId())) {
             return;
         }
+        // 本を持ってワープストーンを右クリック → 座標本を作成
+        ItemStack held = player.getInventory().getItemInMainHand();
+        if (held.getType() == Material.BOOK) {
+            giveCoordBook(player, key, data, block.getLocation());
+            return;
+        }
         // オーナーがスニーク+素手で右クリック → 名前変更
         if (player.isSneaking() && player.getUniqueId().equals(data.owner())
-                && player.getInventory().getItemInMainHand().getType().isAir()) {
+                && held.getType().isAir()) {
             promptRename(player, key);
             return;
         }
@@ -376,6 +396,128 @@ public class WarpStoneModule implements Listener {
                     block.getLocation().add(0.5D, 1.0D, 0.5D), 40, 0.4D, 0.5D, 0.4D, 0.5D);
         }
         new WarpStoneUI(this, player, key).open(player);
+    }
+
+    // ================= 座標本 =================
+
+    private boolean isCoordBook(ItemStack stack) {
+        if (stack == null || stack.getType() != Material.WRITTEN_BOOK || !stack.hasItemMeta()) {
+            return false;
+        }
+        return stack.getItemMeta().getPersistentDataContainer().has(coordBookKey, PersistentDataType.STRING);
+    }
+
+    private void giveCoordBook(Player player, String stoneKey, WarpStoneStore.StoneData data, Location stoneLoc) {
+        ItemStack held = player.getInventory().getItemInMainHand();
+        if (held.getAmount() > 1) {
+            held.setAmount(held.getAmount() - 1);
+        } else {
+            player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+        }
+        ItemStack coordBook = createCoordBook(stoneKey, data.name(), stoneLoc);
+        player.getInventory().addItem(coordBook).forEach((slot, overflow) -> {
+            if (stoneLoc.getWorld() != null) {
+                stoneLoc.getWorld().dropItemNaturally(player.getLocation(), overflow);
+            }
+        });
+        player.playSound(player.getLocation(), Sound.ITEM_BOOK_PUT, 1.0F, 1.0F);
+        player.sendMessage(PREFIX + "§a「§b" + data.name() + "§a」の座標本を作成しました");
+    }
+
+    private void handleCoordBookUse(Player player, ItemStack held) {
+        if (!isFeatureEnabled()) {
+            player.sendMessage(PREFIX + "§cワープストーン機能は現在無効です");
+            return;
+        }
+        if (animations.containsKey(player.getUniqueId())) {
+            return;
+        }
+        String stoneKey = held.getItemMeta().getPersistentDataContainer().get(coordBookKey, PersistentDataType.STRING);
+        if (stoneKey == null) {
+            return;
+        }
+        WarpStoneStore.StoneData data = stones.get(stoneKey);
+        Location stoneLoc = WarpStoneStore.fromKey(stoneKey);
+        if (data == null || stoneLoc == null || stoneLoc.getWorld() == null) {
+            player.sendMessage(PREFIX + "§cこの座標本に記録されたワープストーンは失われています");
+            return;
+        }
+        if (stoneLoc.getBlock().getType() != Material.LODESTONE) {
+            player.sendMessage(PREFIX + "§cワープストーンが破壊されています");
+            return;
+        }
+        boolean newlyDiscovered = discoveredSet(player.getUniqueId()).add(stoneKey);
+        if (newlyDiscovered) {
+            save();
+            player.sendMessage(PREFIX + "§a座標本から「§b" + data.name() + "§a」の位置を読み込みました！");
+            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.5F);
+        }
+        new WarpStoneUI(this, player, stoneKey).open(player);
+    }
+
+    private ItemStack createCoordBook(String stoneKey, String stoneName, Location loc) {
+        int x = loc.getBlockX(), y = loc.getBlockY(), z = loc.getBlockZ();
+        int cx = x >> 4, cz = z >> 4;
+        String hexX = String.format("%08X", x);
+        String hexY = String.format("%08X", y);
+        String hexZ = String.format("%08X", z);
+        String byteX = String.format("%02X %02X %02X %02X",
+                x & 0xFF, (x >> 8) & 0xFF, (x >> 16) & 0xFF, (x >> 24) & 0xFF);
+        String byteY = String.format("%02X %02X %02X %02X",
+                y & 0xFF, (y >> 8) & 0xFF, (y >> 16) & 0xFF, (y >> 24) & 0xFF);
+        String byteZ = String.format("%02X %02X %02X %02X",
+                z & 0xFF, (z >> 8) & 0xFF, (z >> 16) & 0xFF, (z >> 24) & 0xFF);
+        int checksum = (x * 31 + y * 17 + z * 53) & 0xFFFF;
+        long sectorId = Math.abs((long) cx * 1337L + (long) cz * 7331L) & 0xFFFFFFFFL;
+        String worldName = loc.getWorld() != null ? loc.getWorld().getName() : "unknown";
+        String seqId = String.format("%04X", Math.abs(stoneName.hashCode()) & 0xFFFF);
+
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta meta = (BookMeta) book.getItemMeta();
+        if (meta == null) {
+            return book;
+        }
+        meta.setTitle("座標記録: " + stoneName);
+        meta.setAuthor("WarpNet Sys v2.4");
+        meta.setGeneration(BookMeta.Generation.ORIGINAL);
+        meta.getPersistentDataContainer().set(coordBookKey, PersistentDataType.STRING, stoneKey);
+
+        String p1 = "§8[WarpNet Protocol]\n§0--------------\n"
+                + "§7STONE: §0" + stoneName + "\n"
+                + "§7WORLD: §0" + worldName + "\n"
+                + "§7SEQ:   §0" + seqId + "\n"
+                + "§7CRC16: §0" + String.format("%04X", checksum) + "\n"
+                + "§7VER:   §0WN/2.4.1\n"
+                + "§7STATUS: §2LOCKED\n"
+                + "§0--------------\n"
+                + "§8Read Only\n\n"
+                + "§7右クリックで\nワープUI起動";
+
+        String p2 = "§8[Coord Data]\n§0-----------\n"
+                + "§7X §0" + x + "\n"
+                + " §8" + hexX + "\n"
+                + " §8LE:" + byteX + "\n\n"
+                + "§7Y §0" + y + "\n"
+                + " §8" + hexY + "\n"
+                + " §8LE:" + byteY + "\n\n"
+                + "§7Z §0" + z + "\n"
+                + " §8" + hexZ + "\n"
+                + " §8LE:" + byteZ;
+
+        String p3 = "§8[Sector Info]\n§0-----------\n"
+                + "§7CHUNK: §0" + cx + "," + cz + "\n"
+                + "§7SECTOR:§0" + String.format("%08X", sectorId) + "\n"
+                + "§7REGION:§0r." + (cx >> 5) + "." + (cz >> 5) + "\n\n"
+                + "§8[Route Vector]\n"
+                + "§7DIR: §0" + String.format("%.4f", Math.atan2(z, x)) + "rad\n"
+                + "§7MAG: §0" + String.format("%.1f", Math.sqrt((double) x * x + (double) z * z)) + "blk\n"
+                + "§7ELV: §0" + String.format("%+d", y - 64) + "blk\n\n"
+                + "§8HASH:\n"
+                + String.format("%016X", (long) stoneKey.hashCode() << 32 | ((long) stoneKey.hashCode() & 0xFFFFFFFFL));
+
+        meta.addPages(ComponentUtils.legacy(p1), ComponentUtils.legacy(p2), ComponentUtils.legacy(p3));
+        book.setItemMeta(meta);
+        return book;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)

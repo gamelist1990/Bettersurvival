@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.
 
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
@@ -238,9 +239,10 @@ public class CustomEnchantTableUI implements InventoryHolder {
         lore.append("\n§7強化後: §d").append(CustomEnchant.roman(next));
         lore.append("\n§7必要素材:");
         boolean affordable = true;
+        boolean creative = viewer != null && viewer.getGameMode() == GameMode.CREATIVE;
         List<Component> loreLines = legacyLore(lore.toString());
         for (ItemStack cost : enchant.upgradeCost(next)) {
-            boolean has = viewer != null && viewer.getInventory().containsAtLeast(cost, cost.getAmount());
+            boolean has = creative || (viewer != null && viewer.getInventory().containsAtLeast(cost, cost.getAmount()));
             if (!has) {
                 affordable = false;
             }
@@ -300,17 +302,20 @@ public class CustomEnchantTableUI implements InventoryHolder {
         }
         int next = current + 1;
         List<ItemStack> costs = enchant.upgradeCost(next);
-        for (ItemStack cost : costs) {
-            if (!player.getInventory().containsAtLeast(cost, cost.getAmount())) {
-                player.sendMessage(ComponentUtils.legacy("§d[エンチャント]§r §c素材が足りません: ")
-                        .append(ItemNameUtil.localizedComponent(cost.getType()))
-                        .append(ComponentUtils.legacy(" ×" + cost.getAmount())));
-                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.6F, 0.7F);
-                return;
+        boolean isCreative = player.getGameMode() == GameMode.CREATIVE;
+        if (!isCreative) {
+            for (ItemStack cost : costs) {
+                if (!player.getInventory().containsAtLeast(cost, cost.getAmount())) {
+                    player.sendMessage(ComponentUtils.legacy("§d[エンチャント]§r §c素材が足りません: ")
+                            .append(ItemNameUtil.localizedComponent(cost.getType()))
+                            .append(ComponentUtils.legacy(" ×" + cost.getAmount())));
+                    player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.6F, 0.7F);
+                    return;
+                }
             }
-        }
-        for (ItemStack cost : costs) {
-            player.getInventory().removeItem(cost.clone());
+            for (ItemStack cost : costs) {
+                player.getInventory().removeItem(cost.clone());
+            }
         }
         enchant.applyLevel(tool, next);
         inventory.setItem(SLOT_TOOL, tool);
