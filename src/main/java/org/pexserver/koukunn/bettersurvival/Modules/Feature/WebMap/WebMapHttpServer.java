@@ -21,6 +21,7 @@ import java.io.OutputStream;
 import java.net.SocketException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Locale;
@@ -605,7 +606,11 @@ public class WebMapHttpServer {
             writePlain(exchange, 405, "Method Not Allowed");
             return;
         }
-        String path = exchange.getRequestURI().getPath();
+        String path = decodeRequestPath(exchange.getRequestURI().getRawPath());
+        if (path == null) {
+            writePlain(exchange, 404, "Not Found");
+            return;
+        }
         if (path == null || path.equals("/") || path.isBlank() || path.equals("/webmap") || path.startsWith("/webmap/")) {
             path = "/index.html";
         }
@@ -615,6 +620,10 @@ public class WebMapHttpServer {
         }
         byte[] body = staticResource(path);
         if (body == null) {
+            if (isStaticAssetPath(path)) {
+                writePlain(exchange, 404, "Not Found");
+                return;
+            }
             body = staticResource("/index.html");
             path = "/index.html";
         }
@@ -973,12 +982,44 @@ public class WebMapHttpServer {
 
     private byte[] staticResource(String path) throws IOException {
         String normalized = path.startsWith("/") ? path.substring(1) : path;
+        if (normalized.isBlank() || normalized.contains("..") || normalized.startsWith("/") || normalized.startsWith("\\")) {
+            return null;
+        }
         try (InputStream inputStream = module.getPlugin().getClass().getClassLoader().getResourceAsStream("website/" + normalized)) {
             if (inputStream == null) {
                 return null;
             }
             return inputStream.readAllBytes();
         }
+    }
+
+    private String decodeRequestPath(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return rawPath;
+        }
+        try {
+            return URLDecoder.decode(rawPath, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private boolean isStaticAssetPath(String path) {
+        String lower = path == null ? "" : path.toLowerCase(Locale.ROOT);
+        return lower.startsWith("/assets/")
+                || lower.startsWith("/images/")
+                || lower.startsWith("/pwa/")
+                || lower.equals("/manifest.webmanifest")
+                || lower.endsWith(".ico")
+                || lower.endsWith(".svg")
+                || lower.endsWith(".png")
+                || lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif")
+                || lower.endsWith(".webp")
+                || lower.endsWith(".css")
+                || lower.endsWith(".js")
+                || lower.endsWith(".map");
     }
 
     private void handleAuthRegister(HttpExchange exchange) throws IOException {

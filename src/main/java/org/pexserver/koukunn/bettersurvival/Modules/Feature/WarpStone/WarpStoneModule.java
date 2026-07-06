@@ -477,6 +477,22 @@ public class WarpStoneModule implements Listener {
             player.sendMessage(PREFIX + "§cワープストーンが破壊されています");
             return;
         }
+        if (player.isSneaking()) {
+            boolean newlyDiscovered = discoveredSet(player.getUniqueId()).add(stoneKey);
+            if (!newlyDiscovered) {
+                player.sendMessage(PREFIX + "§7「§b" + data.name() + "§7」は既に解放済みです");
+                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.6F, 0.8F);
+                return;
+            }
+            save();
+            consumeMainHandItem(player);
+            player.sendMessage(PREFIX + "§a座標本を消費して「§b" + data.name() + "§a」を解放しました！");
+            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.5F);
+            player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 0.9F, 1.4F);
+            stoneLoc.getWorld().spawnParticle(Particle.PORTAL,
+                    stoneLoc.clone().add(0.5D, 1.0D, 0.5D), 50, 0.4D, 0.5D, 0.4D, 0.5D);
+            return;
+        }
         boolean newlyDiscovered = discoveredSet(player.getUniqueId()).add(stoneKey);
         if (newlyDiscovered) {
             save();
@@ -484,6 +500,18 @@ public class WarpStoneModule implements Listener {
             player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.5F);
         }
         new WarpStoneUI(this, player, stoneKey).open(player);
+    }
+
+    private void consumeMainHandItem(Player player) {
+        ItemStack held = player.getInventory().getItemInMainHand();
+        if (held == null || held.getType().isAir()) {
+            return;
+        }
+        if (held.getAmount() > 1) {
+            held.setAmount(held.getAmount() - 1);
+        } else {
+            player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+        }
     }
 
     private ItemStack createCoordBook(String stoneKey, String stoneName, Location loc) {

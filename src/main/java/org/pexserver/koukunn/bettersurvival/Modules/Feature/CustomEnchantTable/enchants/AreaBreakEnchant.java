@@ -20,6 +20,7 @@ import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.settings.ToolSettingsStore;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimRegion;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 
@@ -60,15 +61,20 @@ public class AreaBreakEnchant extends CustomEnchant {
     /** 同時に走らせられる渦ジョブ数の安全弁 */
     private static final int MAX_PARALLEL_JOBS_PER_PLAYER = 8;
 
+    /** ツール設定の判定キー (ツール設定メニューの ON/OFF と対応) */
+    public static final String SETTING_ID = "areabreak";
+
     private static final AtomicInteger CRACK_SOURCE_IDS = new AtomicInteger(-77_000_000);
 
+    private final ToolSettingsStore settings;
     private final Map<UUID, Set<BukkitTask>> activeJobs = new ConcurrentHashMap<>();
     private final Map<UUID, BurstState> burstStates = new ConcurrentHashMap<>();
     /** 合成イベントの再帰発動を防ぐガード */
     private final Set<Block> processing = new HashSet<>();
 
-    public AreaBreakEnchant(Loader plugin) {
+    public AreaBreakEnchant(Loader plugin, ToolSettingsStore settings) {
         super(plugin);
+        this.settings = settings;
     }
 
     @Override
@@ -83,10 +89,10 @@ public class AreaBreakEnchant extends CustomEnchant {
 
     @Override
     public String description() {
-        return "§7スニークしながら掘ると周囲のブロックを"
-                + "\n§7中心から渦を巻くように破壊する"
+        return "§7掘ると周囲のブロックを中心から渦を巻くように破壊する"
                 + "\n§7Lv1: 3x3 / Lv2: 3x3 奥行き2 / Lv3: 7x7 奥行き2"
-                + "\n§7通常掘りでは発動しない";
+                + "\n§7水平に掘ると足元より上へ、真下を向くと従来通り真下を掘る"
+                + "\n§e左クリック→右クリック→左クリック のツール設定メニューで ON/OFF";
     }
 
     @Override
@@ -126,13 +132,13 @@ public class AreaBreakEnchant extends CustomEnchant {
             return; // 自分が発行した合成イベント
         }
         Player player = event.getPlayer();
-        if (!player.isSneaking()) {
-            return; // シフト+掘りでのみ発動
-        }
         ItemStack tool = player.getInventory().getItemInMainHand();
         int level = levelOf(tool);
         if (level <= 0) {
             return;
+        }
+        if (!settings.isEnabled(player.getUniqueId(), SETTING_ID)) {
+            return; // ツール設定 (左→右→左メニュー) で ON にした時のみ発動
         }
         if (!tryConsumeBurst(player, level)) {
             return;
@@ -159,10 +165,14 @@ public class AreaBreakEnchant extends CustomEnchant {
         Vector axisA;
         Vector axisB;
         Vector depthDir;
+        // 水平掘りのときは掘った地点を最下段にして上方向へ掘る (足元・床を掘らない)。
+        // 真下 (見下ろし) を向いているときは従来通り真下へ掘るのでバイアスなし。
+        int verticalBias;
         if (pitch > 45.0F || pitch < -45.0F) {
             axisA = new Vector(1, 0, 0);
             axisB = new Vector(0, 0, 1);
             depthDir = new Vector(0, pitch > 0 ? -1 : 1, 0);
+            verticalBias = 0;
         } else {
             boolean alongX = isFacingX(yaw);
             axisA = alongX ? new Vector(0, 0, 1) : new Vector(1, 0, 0);
@@ -171,6 +181,7 @@ public class AreaBreakEnchant extends CustomEnchant {
             depthDir = alongX
                     ? new Vector(look.getX() > 0 ? 1 : -1, 0, 0)
                     : new Vector(0, 0, look.getZ() > 0 ? 1 : -1);
+            verticalBias = radius;
         }
 
         LandProtectionModule landProtection = plugin.getLandProtectionModule();
@@ -183,13 +194,17 @@ public class AreaBreakEnchant extends CustomEnchant {
             for (Vector offset : spiralOffsets) {
                 int a = offset.getBlockX();
                 int b = offset.getBlockZ();
-                if (d == 0 && a == 0 && b == 0) {
-                    continue; // 中心は通常の破壊イベントが処理済み
-                }
                 Block block = origin.getRelative(
                         axisA.getBlockX() * a + axisB.getBlockX() * b + depthDir.getBlockX() * d,
-                        axisA.getBlockY() * a + axisB.getBlockY() * b + depthDir.getBlockY() * d,
+                        axisA.getBlockY() * a + axisB.getBlockY() * b + depthDir.getBlockY() * d + verticalBias,
                         axisA.getBlockZ() * a + axisB.getBlockZ() * b + depthDir.getBlockZ() * d);
+                if (block.equals(origin)) {
+                    continue; // 実際に掘ったブロックは通常の破壊イベントが処理済み
+                }
+                if (processing.contains(block)) {
+                    layerOrder++;
+                    continue; // 別ジョブが既に対象にしている (並列時の二重取り防止)
+                }
                 if (!isBreakable(block, tool)) {
                     layerOrder++;
                     continue;
@@ -270,10 +285,14 @@ public class AreaBreakEnchant extends CustomEnchant {
         UUID playerId = player.getUniqueId();
         final int[] tick = {0};
         final int[] brokenCount = {0};
-        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+        // 自ジョブのタスク参照を保持し、終了時に「自分だけ」を確実に止める。
+        // (以前は保留タスクの findFirst() を止めていたため、並列時に別ジョブを
+        //  巻き込んでキャンセルしてしまい "定期的に途切れる" 原因になっていた)
+        final BukkitTask[] self = new BukkitTask[1];
+        self[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             Player owner = Bukkit.getPlayer(playerId);
             if (owner == null || !owner.isOnline() || owner.getInventory().getItemInMainHand().getType() != toolSnapshot.getType()) {
-                finishJob(playerId, entries);
+                finishJob(playerId, entries, self[0]);
                 return;
             }
             boolean anyRemaining = false;
@@ -311,10 +330,10 @@ public class AreaBreakEnchant extends CustomEnchant {
             tick[0]++;
             if (!anyRemaining) {
                 applyToolDamage(owner, toolSnapshot.getType(), brokenCount[0]);
-                finishJob(playerId, entries);
+                finishJob(playerId, entries, self[0]);
             }
         }, 1L, 1L);
-        activeJobs.computeIfAbsent(playerId, ignored -> ConcurrentHashMap.newKeySet()).add(task);
+        activeJobs.computeIfAbsent(playerId, ignored -> ConcurrentHashMap.newKeySet()).add(self[0]);
     }
 
     /**
@@ -539,27 +558,23 @@ public class AreaBreakEnchant extends CustomEnchant {
         player.getInventory().setItemInMainHand(damaged);
     }
 
-    private void finishJob(UUID playerId, List<CrackEntry> entries) {
+    private void finishJob(UUID playerId, List<CrackEntry> entries, BukkitTask task) {
         for (CrackEntry entry : entries) {
             if (!entry.finished) {
+                entry.finished = true;
                 processing.remove(entry.block);
                 sendCrackClear(entry);
             }
         }
         Set<BukkitTask> jobs = activeJobs.get(playerId);
         if (jobs != null) {
-            BukkitTask current = Bukkit.getScheduler().getPendingTasks().stream()
-                    .filter(BukkitTask::isSync)
-                    .filter(task -> jobs.contains(task) && !task.isCancelled())
-                    .findFirst()
-                    .orElse(null);
-            if (current != null) {
-                jobs.remove(current);
-                current.cancel();
-            }
+            jobs.remove(task);
             if (jobs.isEmpty()) {
                 activeJobs.remove(playerId);
             }
+        }
+        if (task != null) {
+            task.cancel();
         }
     }
 
