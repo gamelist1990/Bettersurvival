@@ -14,6 +14,7 @@ import { PartySection } from './sections/PartySection';
 import { ChestShopSection } from './sections/ChestShopSection';
 import { WarpStoneSection } from './sections/WarpStoneSection';
 import { ParallelFurnaceSection } from './sections/ParallelFurnaceSection';
+import { RecyclerSection } from './sections/RecyclerSection';
 
 export type WikiScope = 'system' | 'admin' | 'player';
 
@@ -46,6 +47,7 @@ export const wikiEntries: WikiEntry[] = [
   { slug: 'chestshop',        title: 'チェストショップ',         summary: '看板でチェストをショップ化。通貨指定・26 スロット商品・収益回収 UI までの流れ。',           scope: 'player', category: '詳細ガイド', icon: '$', component: ChestShopSection },
   { slug: 'warp-stone',       title: 'ワープストーン',           summary: '設置 → 発見 → ワープ、GTA 風演出、座標本、他人からの発見メカニクスまで。',                    scope: 'player', category: '詳細ガイド', icon: '✦', component: WarpStoneSection },
   { slug: 'parallel-furnace', title: '並列かまど',                summary: '最大 200 ライン同時精錬、6 行 54 スロットの共有 UI、コア増設・搬出チェスト・共有運用まで解説。', scope: 'player', category: '詳細ガイド', icon: '⚒', component: ParallelFurnaceSection },
+  { slug: 'recycler',         title: 'リサイクラー',              summary: 'Rust 風の分解装置。50% 還元、耐久補正、ホッパー搬入出、共有 UI など全仕様を解説。',                  scope: 'player', category: '詳細ガイド', icon: '♻', component: RecyclerSection },
 
   // --- コマンド ---
   { slug: 'commands',         title: 'コマンド一覧',              summary: 'メンバーが使えるコマンドと OP 専用コマンドを、詳細モーダル付きで一覧表示。',            scope: 'player', category: 'コマンド', icon: '⌘', component: CommandsSection },
