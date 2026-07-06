@@ -750,7 +750,7 @@ public class WebMapHttpServer {
         String base = (serverName == null || serverName.isBlank()) ? "PEX Survival Server" : serverName.trim();
         String path = exchange.getRequestURI().getPath();
         String url = absoluteRequestUrl(exchange);
-        String fallbackImage = absoluteRequestBase(exchange) + "/images/og.png";
+        String fallbackImage = absoluteRequestBase(exchange) + "/images/wiki/pexserver-hero.png";
         if (path == null || path.isBlank() || path.equals("/")) {
             return new PageMeta(
                     trimToLength(base + " - Home", 80),
@@ -866,7 +866,7 @@ public class WebMapHttpServer {
 
     private String absoluteImageUrl(HttpExchange exchange, String image) {
         if (image == null || image.isBlank()) {
-            return absoluteRequestBase(exchange) + "/images/og.png";
+            return absoluteRequestBase(exchange) + "/images/wiki/pexserver-hero.png";
         }
         if (image.startsWith("http://") || image.startsWith("https://")) {
             return image;
