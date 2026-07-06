@@ -1,5 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -8,18 +9,26 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Chest;
-import org.bukkit.block.DoubleChest;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -32,6 +41,10 @@ public class DeathChestModule implements Listener {
     private static final String FEATURE_KEY = "deathchest";
     private static final int SEARCH_RADIUS = 4;
     private static final int[] Y_OFFSETS = {0, 1, -1, 2, -2, 3, -3};
+    private static final int GUI_SIZE = 27;
+    private static final BlockFace[] HORIZONTAL_FACES = {
+            BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST
+    };
 
     private final ToggleModule toggle;
     private final LandProtectionModule landProtection;
@@ -58,25 +71,137 @@ public class DeathChestModule implements Listener {
         List<ItemStack> drops = copyDrops(event.getDrops());
         if (drops.isEmpty()) return;
 
-        ChestPlacement placement = findPlacement(deathLocation);
+        Block placement = findPlacement(deathLocation);
         if (placement == null) {
             event.getPlayer().sendMessage("§cDeathChestを設置できませんでした。アイテムは通常通りドロップします。");
             return;
         }
 
-        ChestInventories inventories = createLargeChest(placement);
-        if (inventories == null) {
+        Inventory chestInventory = createSingleChest(placement);
+        if (chestInventory == null) {
             event.getPlayer().sendMessage("§cDeathChestを作成できませんでした。アイテムは通常通りドロップします。");
             return;
         }
 
         event.getDrops().clear();
-        int overflow = storeDrops(drops, inventories, placement.first.getLocation().add(0.5, 1.0, 0.5));
+        int overflow = storeDrops(drops, chestInventory, placement.getLocation().add(0.5, 1.0, 0.5));
 
-        Location chestLocation = placement.first.getLocation();
+        Location chestLocation = placement.getLocation();
         event.getPlayer().sendMessage("§aDeathChestを設置しました: §f" + formatLocation(chestLocation));
         if (overflow > 0) {
             event.getPlayer().sendMessage("§eチェストに入り切らなかったアイテム " + overflow + " 個はDeathChest付近にドロップしました。");
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Material type = event.getBlockPlaced().getType();
+        if (type != Material.CHEST && type != Material.TRAPPED_CHEST) return;
+        for (BlockFace face : HORIZONTAL_FACES) {
+            if (isDeathChestBlock(event.getBlockPlaced().getRelative(face))) {
+                event.setCancelled(true);
+                event.getPlayer().sendMessage("§cDeathChestの隣にチェストを設置することはできません。");
+                return;
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent event) {
+        Block block = event.getBlock();
+        if (!isDeathChestBlock(block)) return;
+        event.setDropItems(false);
+        event.setExpToDrop(0);
+        BlockState state = block.getState(false);
+        if (state instanceof Chest chest) {
+            Inventory inventory = chest.getInventory();
+            Location dropLocation = block.getLocation().add(0.5, 0.5, 0.5);
+            World world = block.getWorld();
+            for (ItemStack item : inventory.getContents()) {
+                if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
+                world.dropItemNaturally(dropLocation, item);
+            }
+            inventory.clear();
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        Block block = event.getClickedBlock();
+        if (block == null) return;
+        if (!isDeathChestBlock(block)) return;
+        event.setCancelled(true);
+        openDeathChestGui(event.getPlayer(), block);
+    }
+
+    private void openDeathChestGui(Player player, Block block) {
+        BlockState state = block.getState(false);
+        if (!(state instanceof Chest chest)) return;
+        Inventory source = chest.getInventory();
+        DeathChestHolder holder = new DeathChestHolder(block);
+        Inventory gui = Bukkit.createInventory(holder, GUI_SIZE, ComponentUtils.legacy("§8☠ §cDeathChest §8☠"));
+        int limit = Math.min(source.getSize(), GUI_SIZE);
+        for (int i = 0; i < limit; i++) {
+            ItemStack item = source.getItem(i);
+            if (item != null && !item.getType().isAir()) {
+                gui.setItem(i, item.clone());
+            }
+        }
+        holder.setInventory(gui);
+        player.openInventory(gui);
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryClick(InventoryClickEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (!(top.getHolder() instanceof DeathChestHolder)) return;
+        InventoryAction action = event.getAction();
+        if (event.getClickedInventory() == top) {
+            switch (action) {
+                case PLACE_ALL, PLACE_ONE, PLACE_SOME, SWAP_WITH_CURSOR,
+                     HOTBAR_SWAP, HOTBAR_MOVE_AND_READD -> event.setCancelled(true);
+                default -> {}
+            }
+            return;
+        }
+        if (action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryDrag(InventoryDragEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (!(top.getHolder() instanceof DeathChestHolder)) return;
+        int topSize = top.getSize();
+        for (int slot : event.getRawSlots()) {
+            if (slot < topSize) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        Inventory gui = event.getInventory();
+        if (!(gui.getHolder() instanceof DeathChestHolder holder)) return;
+        Block block = holder.block();
+        if (block.getType() != Material.CHEST) return;
+        BlockState state = block.getState(false);
+        if (!(state instanceof Chest chest)) return;
+        Inventory chestInventory = chest.getInventory();
+        chestInventory.clear();
+        int limit = Math.min(gui.getSize(), chestInventory.getSize());
+        for (int i = 0; i < limit; i++) {
+            ItemStack item = gui.getItem(i);
+            if (item != null && !item.getType().isAir()) {
+                chestInventory.setItem(i, item);
+            }
+        }
+        if (isInventoryEmpty(chestInventory)) {
+            block.setType(Material.AIR, false);
         }
     }
 
@@ -99,32 +224,20 @@ public class DeathChestModule implements Listener {
         return drops;
     }
 
-    private int storeDrops(List<ItemStack> drops, ChestInventories inventories, Location overflowLocation) {
+    private int storeDrops(List<ItemStack> drops, Inventory inventory, Location overflowLocation) {
         int overflow = 0;
+        World world = overflowLocation.getWorld();
         for (ItemStack item : drops) {
-            List<ItemStack> leftovers = addItem(inventories.primary, List.of(item));
-            if (inventories.secondary != null) {
-                leftovers = addItem(inventories.secondary, leftovers);
-            }
-            for (ItemStack leftover : leftovers) {
-                overflowLocation.getWorld().dropItemNaturally(overflowLocation, leftover);
+            Map<Integer, ItemStack> result = inventory.addItem(item);
+            for (ItemStack leftover : result.values()) {
+                world.dropItemNaturally(overflowLocation, leftover);
                 overflow += leftover.getAmount();
             }
         }
         return overflow;
     }
 
-    private List<ItemStack> addItem(Inventory inventory, List<ItemStack> items) {
-        if (items.isEmpty()) return items;
-        List<ItemStack> leftovers = new ArrayList<>();
-        for (ItemStack item : items) {
-            Map<Integer, ItemStack> result = inventory.addItem(item);
-            leftovers.addAll(result.values());
-        }
-        return leftovers;
-    }
-
-    private ChestPlacement findPlacement(Location location) {
+    private Block findPlacement(Location location) {
         World world = location.getWorld();
         if (world == null) return null;
 
@@ -138,22 +251,16 @@ public class DeathChestModule implements Listener {
                 for (int x = baseX - radius; x <= baseX + radius; x++) {
                     for (int z = baseZ - radius; z <= baseZ + radius; z++) {
                         if (Math.max(Math.abs(x - baseX), Math.abs(z - baseZ)) != radius) continue;
-                        ChestPlacement placement = checkPlacement(world.getBlockAt(x, y, z), Axis.X);
-                        if (placement != null) return placement;
-                        placement = checkPlacement(world.getBlockAt(x, y, z), Axis.Z);
-                        if (placement != null) return placement;
+                        Block candidate = world.getBlockAt(x, y, z);
+                        if (!canPlaceChest(candidate)) continue;
+                        if (!canPlaceAbove(candidate)) continue;
+                        if (hasAdjacentChest(candidate)) continue;
+                        return candidate;
                     }
                 }
             }
         }
         return null;
-    }
-
-    private ChestPlacement checkPlacement(Block first, Axis axis) {
-        Block second = axis == Axis.X ? first.getRelative(BlockFace.EAST) : first.getRelative(BlockFace.SOUTH);
-        if (!canPlaceChest(first) || !canPlaceChest(second)) return null;
-        if (!canPlaceAbove(first) || !canPlaceAbove(second)) return null;
-        return new ChestPlacement(first, second, axis);
     }
 
     private boolean canPlaceChest(Block block) {
@@ -164,32 +271,32 @@ public class DeathChestModule implements Listener {
         return block.getRelative(BlockFace.UP).getType().isAir();
     }
 
-    private ChestInventories createLargeChest(ChestPlacement placement) {
-        placement.first.setType(Material.CHEST, false);
-        placement.second.setType(Material.CHEST, false);
-        applyChestData(placement.first, placement.axis, org.bukkit.block.data.type.Chest.Type.LEFT);
-        applyChestData(placement.second, placement.axis, org.bukkit.block.data.type.Chest.Type.RIGHT);
-
-        Inventory primary = getChestInventory(placement.first);
-        if (primary == null) {
-            clearPlacement(placement);
-            return null;
+    private boolean hasAdjacentChest(Block block) {
+        for (BlockFace face : HORIZONTAL_FACES) {
+            Material type = block.getRelative(face).getType();
+            if (type == Material.CHEST || type == Material.TRAPPED_CHEST) {
+                return true;
+            }
         }
-        Inventory secondary = primary.getSize() >= 54 ? null : getChestInventory(placement.second);
-        if (primary.getSize() < 54 && secondary == null) {
-            clearPlacement(placement);
-            return null;
-        }
-        markDeathChest(placement);
-        return new ChestInventories(primary, secondary);
+        return false;
     }
 
-    @EventHandler(ignoreCancelled = true)
-    public void onInventoryClose(InventoryCloseEvent event) {
-        Inventory inventory = event.getInventory();
-        if (!isDeathChestInventory(inventory)) return;
-        if (!isInventoryEmpty(inventory)) return;
-        removeDeathChestInventory(inventory);
+    private Inventory createSingleChest(Block block) {
+        block.setType(Material.CHEST, false);
+        BlockData data = block.getBlockData();
+        if (data instanceof org.bukkit.block.data.type.Chest chestData) {
+            chestData.setType(org.bukkit.block.data.type.Chest.Type.SINGLE);
+            block.setBlockData(chestData, true);
+        }
+        BlockState state = block.getState(false);
+        if (!(state instanceof Chest chest)) {
+            block.setType(Material.AIR, false);
+            return null;
+        }
+        PersistentDataContainer container = chest.getPersistentDataContainer();
+        container.set(deathChestKey, PersistentDataType.BYTE, (byte) 1);
+        chest.update(true);
+        return chest.getInventory();
     }
 
     private boolean isInventoryEmpty(Inventory inventory) {
@@ -200,51 +307,6 @@ public class DeathChestModule implements Listener {
         return true;
     }
 
-    private boolean isDeathChestInventory(Inventory inventory) {
-        for (Block block : getDeathChestBlocks(inventory.getHolder())) {
-            if (isDeathChestBlock(block)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void removeDeathChestInventory(Inventory inventory) {
-        for (Block block : getDeathChestBlocks(inventory.getHolder())) {
-            removeDeathChestBlock(block);
-        }
-    }
-
-    private List<Block> getDeathChestBlocks(InventoryHolder holder) {
-        List<Block> blocks = new ArrayList<>();
-        if (holder instanceof Chest chest) {
-            blocks.add(chest.getBlock());
-        } else if (holder instanceof DoubleChest doubleChest) {
-            blocks.addAll(getDeathChestBlocks(doubleChest.getLeftSide()));
-            blocks.addAll(getDeathChestBlocks(doubleChest.getRightSide()));
-        }
-        return blocks;
-    }
-
-    private void removeDeathChestBlock(Block block) {
-        if (block.getType() != Material.CHEST) return;
-        block.setType(Material.AIR, false);
-    }
-
-    private void markDeathChest(ChestPlacement placement) {
-        markDeathChestBlock(placement.first);
-        markDeathChestBlock(placement.second);
-    }
-
-    private void markDeathChestBlock(Block block) {
-        if (block.getType() != Material.CHEST) return;
-        BlockState state = block.getState();
-        if (!(state instanceof Chest chest)) return;
-        PersistentDataContainer container = chest.getPersistentDataContainer();
-        container.set(deathChestKey, PersistentDataType.BYTE, (byte) 1);
-        chest.update(true);
-    }
-
     private boolean isDeathChestBlock(Block block) {
         if (block.getType() != Material.CHEST) return false;
         BlockState state = block.getState(false);
@@ -252,49 +314,25 @@ public class DeathChestModule implements Listener {
         return chest.getPersistentDataContainer().has(deathChestKey, PersistentDataType.BYTE);
     }
 
-    private void applyChestData(Block block, Axis axis, org.bukkit.block.data.type.Chest.Type type) {
-        BlockData data = Material.CHEST.createBlockData();
-        org.bukkit.block.data.type.Chest chestData = (org.bukkit.block.data.type.Chest) data;
-        chestData.setFacing(axis == Axis.X ? BlockFace.NORTH : BlockFace.EAST);
-        chestData.setType(type);
-        block.setBlockData(chestData, true);
-    }
+    private static final class DeathChestHolder implements InventoryHolder {
+        private final Block block;
+        private Inventory inventory;
 
-    private Inventory getChestInventory(Block block) {
-        BlockState state = block.getState(false);
-        if (!(state instanceof org.bukkit.block.Chest)) return null;
-        return ((org.bukkit.block.Chest) state).getInventory();
-    }
-
-    private void clearPlacement(ChestPlacement placement) {
-        placement.first.setType(Material.AIR, false);
-        placement.second.setType(Material.AIR, false);
-    }
-
-    private enum Axis {
-        X,
-        Z
-    }
-
-    private static class ChestPlacement {
-        private final Block first;
-        private final Block second;
-        private final Axis axis;
-
-        private ChestPlacement(Block first, Block second, Axis axis) {
-            this.first = first;
-            this.second = second;
-            this.axis = axis;
+        private DeathChestHolder(Block block) {
+            this.block = block;
         }
-    }
 
-    private static class ChestInventories {
-        private final Inventory primary;
-        private final Inventory secondary;
+        private Block block() {
+            return block;
+        }
 
-        private ChestInventories(Inventory primary, Inventory secondary) {
-            this.primary = primary;
-            this.secondary = secondary;
+        private void setInventory(Inventory inventory) {
+            this.inventory = inventory;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
         }
     }
 }

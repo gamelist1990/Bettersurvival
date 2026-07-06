@@ -31,16 +31,30 @@ import java.util.Map;
 public class BetterMenuModule implements Listener {
 
     public static final String FEATURE_KEY = "bettermenu";
-    private static final String MENU_TITLE = "§8BetterSurvival GUI";
-    private static final String MENU_TOGGLE_TITLE = "§8BetterSurvival Toggle";
-    private static final String MENU_SHORTCUT_TITLE = "§8有効機能ショートカット";
+    private static final String MENU_TITLE = "§8✦ §bBetterSurvival §8✦";
+    private static final String MENU_TOGGLE_TITLE = "§8✦ §6個別トグル設定 §8✦";
+    private static final String MENU_SHORTCUT_TITLE = "§8✦ §b有効機能ショートカット §8✦";
     private static final String ITEM_NAME = "§b§lBetterSurvival §aGUI";
     private static final int JAVA_MENU_SIZE = 54;
+    private static final Material BORDER_ICON = Material.GRAY_STAINED_GLASS_PANE;
+    private static final String BORDER_LABEL = "§7 ";
+
+    private static final int ROOT_TITLE_SLOT = 4;
+    private static final int ROOT_STATUS_SLOT = 13;
     private static final int ROOT_TOGGLE_SLOT = 20;
     private static final int ROOT_SHORTCUT_SLOT = 24;
     private static final int ROOT_CLOSE_SLOT = 49;
-    private static final int BACK_SLOT = 45;
-    private static final int CLOSE_SLOT = 53;
+
+    private static final int SUB_TITLE_SLOT = 4;
+    private static final int CONTENT_SLOT_START = 9;
+    private static final int CONTENT_SLOT_END = 44;
+    private static final int CONTENT_PAGE_SIZE = CONTENT_SLOT_END - CONTENT_SLOT_START + 1;
+    private static final int PREV_PAGE_SLOT = 45;
+    private static final int BACK_SLOT = 47;
+    private static final int PAGE_INFO_SLOT = 49;
+    private static final int CLOSE_SLOT = 51;
+    private static final int NEXT_PAGE_SLOT = 53;
+
     private static final long EXEC_DELAY_TICKS = 10L;
 
     private static final Map<String, String> FEATURE_SHORTCUT_COMMANDS = Map.of(
@@ -101,11 +115,13 @@ public class BetterMenuModule implements Listener {
         List<ToggleFeature> features = getVisibleUserFeatures();
         List<CommandShortcut> shortcuts = getEnabledShortcuts(player);
         List<FormsUtil.ButtonSpec> buttons = List.of(
-                FormsUtil.ButtonSpec.ofText("個別トグル設定"),
-                FormsUtil.ButtonSpec.ofText("有効機能UIショートカット"),
-                FormsUtil.ButtonSpec.ofText("閉じる")
+                FormsUtil.ButtonSpec.ofText("§6個別トグル設定"),
+                FormsUtil.ButtonSpec.ofText("§b有効機能UIショートカット"),
+                FormsUtil.ButtonSpec.ofText("§c閉じる")
         );
-        String content = "トグル機能: " + features.size() + "\nショートカット: " + shortcuts.size();
+        String content = "§b§lBetterSurvival GUI\n§7" + player.getName() + " さん、ようこそ\n\n"
+                + "§e有効なトグル機能: §f" + features.size() + "\n"
+                + "§e利用可能なショートカット: §f" + shortcuts.size();
         return FormsUtil.openSimpleForm(player, MENU_TITLE, content, buttons, index -> {
             if (index == 0) {
                 openBedrockToggleMenu(player);
@@ -122,11 +138,11 @@ public class BetterMenuModule implements Listener {
         List<FormsUtil.ButtonSpec> buttons = new ArrayList<>();
         for (ToggleFeature feature : features) {
             boolean enabled = toggle.isEnabledFor(player.getUniqueId().toString(), feature.getKey());
-            String state = enabled ? "§a[ON] " : "§c[OFF] ";
+            String state = enabled ? "§a§l[ON] §f" : "§c§l[OFF] §f";
             buttons.add(FormsUtil.ButtonSpec.ofText(state + feature.getDisplayName()));
         }
-        buttons.add(FormsUtil.ButtonSpec.ofText("戻る"));
-        FormsUtil.openSimpleForm(player, MENU_TOGGLE_TITLE, buttons, index -> {
+        buttons.add(FormsUtil.ButtonSpec.ofText("§e戻る"));
+        FormsUtil.openSimpleForm(player, MENU_TOGGLE_TITLE, "§7クリックで各機能の ON/OFF を切り替えます", buttons, index -> {
             if (index < 0)
                 return;
             if (index >= features.size()) {
@@ -142,10 +158,13 @@ public class BetterMenuModule implements Listener {
         List<CommandShortcut> shortcuts = getEnabledShortcuts(player);
         List<FormsUtil.ButtonSpec> buttons = new ArrayList<>();
         for (CommandShortcut shortcut : shortcuts) {
-            buttons.add(FormsUtil.ButtonSpec.ofText("§b▶ " + shortcut.label() + " を開く"));
+            buttons.add(FormsUtil.ButtonSpec.ofText("§b▶ §f" + shortcut.label() + " を開く"));
         }
-        buttons.add(FormsUtil.ButtonSpec.ofText("戻る"));
-        FormsUtil.openSimpleForm(player, MENU_SHORTCUT_TITLE, buttons, index -> {
+        buttons.add(FormsUtil.ButtonSpec.ofText("§e戻る"));
+        String content = shortcuts.isEmpty()
+                ? "§7有効状態かつUIコマンド対応の機能のみ表示されます"
+                : "§7押すと0.5秒後に対応UIコマンドを実行します";
+        FormsUtil.openSimpleForm(player, MENU_SHORTCUT_TITLE, content, buttons, index -> {
             if (index < 0)
                 return;
             if (index >= shortcuts.size()) {
@@ -163,12 +182,18 @@ public class BetterMenuModule implements Listener {
 
         ChestUI.Builder builder = ChestUI.builder()
                 .title(MENU_TITLE)
-                .size(JAVA_MENU_SIZE)
-                .addButtonAt(ROOT_TOGGLE_SLOT, "§6個別トグル設定", Material.LEVER, "§7各機能の ON/OFF を切り替える")
-                .addButtonAt(ROOT_SHORTCUT_SLOT, "§b有効機能UIショートカット", Material.BOOK, "§70.5秒後に対応UIコマンドを実行")
-                .addButtonAt(13, "§b状態サマリー", Material.PAPER,
-                        "§7ショートカット: " + shortcuts.size() + "\n§7トグル機能: " + features.size())
-                .addButtonAt(ROOT_CLOSE_SLOT, "§7閉じる", Material.BARRIER, "§7GUIを閉じます");
+                .size(JAVA_MENU_SIZE);
+        fillBorder(builder);
+        builder.addButtonAt(ROOT_TITLE_SLOT, "§b§l✦ BetterSurvival ✦", Material.NETHER_STAR,
+                "§7ようこそ、§f" + player.getName() + " §7さん\n§7右クリックでいつでも呼び出せます");
+        builder.addPlayerHeadAt(ROOT_STATUS_SLOT, "§e§l状態サマリー", player,
+                "§7有効なトグル機能: §a" + features.size()
+                        + "\n§7利用可能なショートカット: §b" + shortcuts.size());
+        builder.addButtonAt(ROOT_TOGGLE_SLOT, "§6§l個別トグル設定", Material.LEVER,
+                "§7各機能の ON/OFF を切り替える\n\n§e▶ クリックで開く");
+        builder.addButtonAt(ROOT_SHORTCUT_SLOT, "§b§l有効機能ショートカット", Material.BOOK,
+                "§70.5秒後に対応UIコマンドを実行\n\n§e▶ クリックで開く");
+        builder.addButtonAt(ROOT_CLOSE_SLOT, "§c§l閉じる", Material.BARRIER, "§7GUIを閉じます");
 
         actions.put(ROOT_TOGGLE_SLOT, MenuAction.openToggleMenu());
         actions.put(ROOT_SHORTCUT_SLOT, MenuAction.openShortcutMenu());
@@ -181,44 +206,63 @@ public class BetterMenuModule implements Listener {
             if (action == null)
                 return;
             if (action.type() == MenuActionType.CLOSE) {
+                playClick(p, 0.8F);
                 ChestUI.closeMenu(p);
                 return;
             }
             if (action.type() == MenuActionType.OPEN_TOGGLE_MENU) {
-                openJavaToggleMenu(p);
+                playClick(p, 1.0F);
+                openJavaToggleMenu(p, 0);
                 return;
             }
             if (action.type() == MenuActionType.OPEN_SHORTCUT_MENU) {
-                openJavaShortcutMenu(p);
+                playClick(p, 1.0F);
+                openJavaShortcutMenu(p, 0);
             }
         }).show(player);
     }
 
-    private void openJavaToggleMenu(Player player) {
+    private void openJavaToggleMenu(Player player, int page) {
         List<ToggleFeature> features = getVisibleUserFeatures();
+        int maxPage = features.isEmpty() ? 0 : (features.size() - 1) / CONTENT_PAGE_SIZE;
+        int currentPage = Math.max(0, Math.min(page, maxPage));
+
         Map<Integer, MenuAction> actions = new LinkedHashMap<>();
         ChestUI.Builder builder = ChestUI.builder()
                 .title(MENU_TOGGLE_TITLE)
-                .size(JAVA_MENU_SIZE)
-                .addButtonAt(0, "§6個別トグル設定", Material.LEVER, "§7クリックで ON/OFF 切替")
-                .addButtonAt(BACK_SLOT, "§e戻る", Material.ARROW, "§7トップへ戻る")
-                .addButtonAt(CLOSE_SLOT, "§7閉じる", Material.BARRIER, "§7GUIを閉じます");
+                .size(JAVA_MENU_SIZE);
+        fillBorder(builder);
+        builder.addButtonAt(SUB_TITLE_SLOT, "§6§l⚙ 個別トグル設定 ⚙", Material.LEVER,
+                "§7クリックで各機能の ON/OFF を切り替えます\n§7設定は自動的に保存されます");
+
+        int startIndex = currentPage * CONTENT_PAGE_SIZE;
+        for (int slot = CONTENT_SLOT_START; slot <= CONTENT_SLOT_END; slot++) {
+            int featureIndex = startIndex + (slot - CONTENT_SLOT_START);
+            if (featureIndex >= features.size())
+                break;
+            ToggleFeature feature = features.get(featureIndex);
+            boolean enabled = toggle.isEnabledFor(player.getUniqueId().toString(), feature.getKey());
+            String label = (enabled ? "§a§l[ON] §f" : "§c§l[OFF] §f") + feature.getDisplayName();
+            String description = toggle.getFeatureDescription(feature.getKey());
+            String lore = (enabled ? "§7状態: §a有効" : "§7状態: §c無効")
+                    + (description == null || description.isEmpty() ? "" : "\n§8" + description)
+                    + "\n\n§eクリックで切り替え";
+            builder.addButtonAt(slot, label, feature.getIcon(), lore);
+            actions.put(slot, MenuAction.toggleFeature(feature.getKey()));
+        }
+        if (features.isEmpty()) {
+            builder.addButtonAt((CONTENT_SLOT_START + CONTENT_SLOT_END) / 2, "§7切り替え可能な機能がありません",
+                    Material.BARRIER, "§7対象の機能が追加されるとここに表示されます");
+        }
+
+        builder.addButtonAt(BACK_SLOT, "§e§l戻る", Material.ARROW, "§7トップへ戻る");
+        builder.addButtonAt(CLOSE_SLOT, "§c§l閉じる", Material.BARRIER, "§7GUIを閉じます");
+        builder.addButtonAt(PAGE_INFO_SLOT, "§dページ §f" + (currentPage + 1) + "§7/§f" + (maxPage + 1), Material.PAPER,
+                "§7表示中の機能数: §f" + features.size());
+        addPageNavigation(builder, actions, currentPage, maxPage);
 
         actions.put(BACK_SLOT, MenuAction.backToRoot());
         actions.put(CLOSE_SLOT, MenuAction.close());
-
-        int slot = 9;
-        for (ToggleFeature feature : features) {
-            if (slot > 44)
-                break;
-            boolean enabled = toggle.isEnabledFor(player.getUniqueId().toString(), feature.getKey());
-            String label = (enabled ? "§a[ON] " : "§c[OFF] ") + feature.getDisplayName();
-            String description = toggle.getFeatureDescription(feature.getKey());
-            builder.addButtonAt(slot, label, feature.getIcon(),
-                    "§7クリックで切り替え\n" + (description == null ? "" : "§8" + description));
-            actions.put(slot, MenuAction.toggleFeature(feature.getKey()));
-            slot++;
-        }
 
         builder.then((result, p) -> {
             if (!result.success || result.slot == null)
@@ -227,11 +271,23 @@ public class BetterMenuModule implements Listener {
             if (action == null)
                 return;
             if (action.type() == MenuActionType.BACK_TO_ROOT) {
+                playClick(p, 1.0F);
                 openJavaRootMenu(p);
                 return;
             }
             if (action.type() == MenuActionType.CLOSE) {
+                playClick(p, 0.8F);
                 ChestUI.closeMenu(p);
+                return;
+            }
+            if (action.type() == MenuActionType.PREV_PAGE) {
+                playClick(p, 0.8F);
+                openJavaToggleMenu(p, currentPage - 1);
+                return;
+            }
+            if (action.type() == MenuActionType.NEXT_PAGE) {
+                playClick(p, 1.2F);
+                openJavaToggleMenu(p, currentPage + 1);
                 return;
             }
             if (action.type() != MenuActionType.TOGGLE_FEATURE)
@@ -240,37 +296,49 @@ public class BetterMenuModule implements Listener {
             if (feature == null)
                 return;
             togglePlayerFeature(p, feature);
-            openJavaToggleMenu(p);
+            boolean nowEnabled = toggle.isEnabledFor(p.getUniqueId().toString(), feature.getKey());
+            playClick(p, nowEnabled ? 1.2F : 0.8F);
+            openJavaToggleMenu(p, currentPage);
         }).show(player);
     }
 
-    private void openJavaShortcutMenu(Player player) {
+    private void openJavaShortcutMenu(Player player, int page) {
         List<CommandShortcut> shortcuts = getEnabledShortcuts(player);
+        int maxPage = shortcuts.isEmpty() ? 0 : (shortcuts.size() - 1) / CONTENT_PAGE_SIZE;
+        int currentPage = Math.max(0, Math.min(page, maxPage));
+
         Map<Integer, MenuAction> actions = new LinkedHashMap<>();
         ChestUI.Builder builder = ChestUI.builder()
                 .title(MENU_SHORTCUT_TITLE)
-                .size(JAVA_MENU_SIZE)
-                .addButtonAt(0, "§b有効機能UIショートカット", Material.BOOK, "§7押すとGUIを閉じて0.5秒後に実行")
-                .addButtonAt(BACK_SLOT, "§e戻る", Material.ARROW, "§7トップへ戻る")
-                .addButtonAt(CLOSE_SLOT, "§7閉じる", Material.BARRIER, "§7GUIを閉じます");
+                .size(JAVA_MENU_SIZE);
+        fillBorder(builder);
+        builder.addButtonAt(SUB_TITLE_SLOT, "§b§l有効機能ショートカット", Material.BOOK,
+                "§7押すとGUIを閉じて0.5秒後に対応UIコマンドを実行します");
+
+        if (shortcuts.isEmpty()) {
+            builder.addButtonAt((CONTENT_SLOT_START + CONTENT_SLOT_END) / 2, "§cショートカット対象がありません",
+                    Material.BARRIER, "§7有効状態かつUIコマンド対応の機能のみ表示されます");
+        } else {
+            int startIndex = currentPage * CONTENT_PAGE_SIZE;
+            for (int slot = CONTENT_SLOT_START; slot <= CONTENT_SLOT_END; slot++) {
+                int shortcutIndex = startIndex + (slot - CONTENT_SLOT_START);
+                if (shortcutIndex >= shortcuts.size())
+                    break;
+                CommandShortcut shortcut = shortcuts.get(shortcutIndex);
+                builder.addButtonAt(slot, "§b▶ §f" + shortcut.label() + " を開く", shortcut.icon(),
+                        "§7押すとGUIを閉じて0.5秒後に実行されます");
+                actions.put(slot, MenuAction.openCommand(shortcut.command()));
+            }
+        }
+
+        builder.addButtonAt(BACK_SLOT, "§e§l戻る", Material.ARROW, "§7トップへ戻る");
+        builder.addButtonAt(CLOSE_SLOT, "§c§l閉じる", Material.BARRIER, "§7GUIを閉じます");
+        builder.addButtonAt(PAGE_INFO_SLOT, "§dページ §f" + (currentPage + 1) + "§7/§f" + (maxPage + 1), Material.PAPER,
+                "§7表示中のショートカット数: §f" + shortcuts.size());
+        addPageNavigation(builder, actions, currentPage, maxPage);
 
         actions.put(BACK_SLOT, MenuAction.backToRoot());
         actions.put(CLOSE_SLOT, MenuAction.close());
-
-        if (shortcuts.isEmpty()) {
-            builder.addButtonAt(22, "§cショートカット対象がありません", Material.BARRIER,
-                    "§7有効状態かつUIコマンド対応の機能のみ表示されます");
-        } else {
-            int slot = 9;
-            for (CommandShortcut shortcut : shortcuts) {
-                if (slot > 44)
-                    break;
-                builder.addButtonAt(slot, "§b▶ " + shortcut.label() + " を開く", shortcut.icon(),
-                        "§7押すとGUIを閉じて0.5秒後に実行");
-                actions.put(slot, MenuAction.openCommand(shortcut.command()));
-                slot++;
-            }
-        }
 
         builder.then((result, p) -> {
             if (!result.success || result.slot == null)
@@ -279,18 +347,56 @@ public class BetterMenuModule implements Listener {
             if (action == null)
                 return;
             if (action.type() == MenuActionType.BACK_TO_ROOT) {
+                playClick(p, 1.0F);
                 openJavaRootMenu(p);
                 return;
             }
             if (action.type() == MenuActionType.CLOSE) {
+                playClick(p, 0.8F);
                 ChestUI.closeMenu(p);
+                return;
+            }
+            if (action.type() == MenuActionType.PREV_PAGE) {
+                playClick(p, 0.8F);
+                openJavaShortcutMenu(p, currentPage - 1);
+                return;
+            }
+            if (action.type() == MenuActionType.NEXT_PAGE) {
+                playClick(p, 1.2F);
+                openJavaShortcutMenu(p, currentPage + 1);
                 return;
             }
             if (action.type() != MenuActionType.OPEN_COMMAND)
                 return;
+            playClick(p, 1.0F);
             ChestUI.closeMenu(p);
             executeShortcutWithDelay(p, action.command(), EXEC_DELAY_TICKS);
         }).show(player);
+    }
+
+    private void fillBorder(ChestUI.Builder builder) {
+        for (int slot = 0; slot < JAVA_MENU_SIZE; slot++) {
+            builder.addButtonAt(slot, BORDER_LABEL, BORDER_ICON, "");
+        }
+    }
+
+    private void addPageNavigation(ChestUI.Builder builder, Map<Integer, MenuAction> actions, int currentPage, int maxPage) {
+        if (currentPage > 0) {
+            builder.addButtonAt(PREV_PAGE_SLOT, "§e← 前ページ", Material.ARROW, "§7前のページを表示します");
+            actions.put(PREV_PAGE_SLOT, MenuAction.prevPage());
+        } else {
+            builder.addButtonAt(PREV_PAGE_SLOT, "§8← 前ページ", BORDER_ICON, "§7これ以上前のページはありません");
+        }
+        if (currentPage < maxPage) {
+            builder.addButtonAt(NEXT_PAGE_SLOT, "§e次ページ →", Material.ARROW, "§7次のページを表示します");
+            actions.put(NEXT_PAGE_SLOT, MenuAction.nextPage());
+        } else {
+            builder.addButtonAt(NEXT_PAGE_SLOT, "§8次ページ →", BORDER_ICON, "§7これ以上次のページはありません");
+        }
+    }
+
+    private void playClick(Player player, float pitch) {
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.6F, pitch);
     }
 
     private ToggleFeature findFeatureByKey(List<ToggleFeature> features, String key) {
@@ -397,6 +503,8 @@ public class BetterMenuModule implements Listener {
         OPEN_SHORTCUT_MENU,
         TOGGLE_FEATURE,
         BACK_TO_ROOT,
+        PREV_PAGE,
+        NEXT_PAGE,
         CLOSE
     }
 
@@ -419,6 +527,14 @@ public class BetterMenuModule implements Listener {
 
         private static MenuAction backToRoot() {
             return new MenuAction(MenuActionType.BACK_TO_ROOT, null, null);
+        }
+
+        private static MenuAction prevPage() {
+            return new MenuAction(MenuActionType.PREV_PAGE, null, null);
+        }
+
+        private static MenuAction nextPage() {
+            return new MenuAction(MenuActionType.NEXT_PAGE, null, null);
         }
 
         private static MenuAction close() {

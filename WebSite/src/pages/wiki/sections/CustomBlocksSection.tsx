@@ -4,7 +4,7 @@ import { ImagePlaceholder } from '../components/ImagePlaceholder';
 const customBlocks = [
   {
     name: 'カスタムエンチャントテーブル',
-    imageId: 'custom-block-custom-enchant-table',
+    imageId: 'custom-enchants-ui',
     material: 'エンチャントテーブル + ラピスラズリ',
     kind: '装備強化用の専用設備',
     what: '通常の Minecraft エンチャントとは別に、BetterSurvival 独自のカスタムエンチャントを道具や装備へ付けるための専用テーブルです。採掘、戦闘、移動、生存を強化する特殊効果を選んで付与できます。',
@@ -25,7 +25,7 @@ const customBlocks = [
   },
   {
     name: 'ParallelFurnace / 並列かまど',
-    imageId: 'custom-block-parallel-furnace',
+    imageId: 'quarry-miner-work-core-menu',
     material: 'かまど + 石炭ブロック',
     kind: '精錬効率を上げる設備',
     what: '通常のかまどより効率よく精錬するための BetterSurvival 独自設備です。大量の鉱石や食料を処理したいときに役立ちます。',
@@ -45,7 +45,7 @@ const customBlocks = [
   },
   {
     name: 'Recycler / リサイクラー',
-    imageId: 'custom-block-recycler',
+    imageId: 'recycler-disassembler-menu',
     material: '砥石 + 鉄ブロック',
     kind: '不要品を処理する設備',
     what: '不要になったアイテムを素材へ戻したり、処分したりするための Rust 風リサイクラーです。倉庫整理や余った装備の処理に使います。',
@@ -65,7 +65,7 @@ const customBlocks = [
   },
   {
     name: 'ChunkLoader / チャンクローダー',
-    imageId: 'custom-block-chunkloader',
+    imageId: 'chance-logger-block',
     material: 'コンパス + 名札',
     kind: '離れていても周辺処理を維持する設備',
     what: 'プレイヤーが近くにいない場所でも、指定した周辺チャンクを維持するための設備です。農場、かまど設備、遠隔拠点などを動かし続けたいときに使います。',
@@ -85,7 +85,7 @@ const customBlocks = [
   },
   {
     name: 'WarpStone / ワープストーン',
-    imageId: 'custom-block-warpstone',
+    imageId: 'force-stone-menu',
     material: 'エンダーパール + 石レンガ',
     kind: '拠点間移動用の設備',
     what: 'Waystones 風に、登録した地点へ移動するためのワープ設備です。拠点、村、採掘場、共同施設などへの移動を楽にできます。',
@@ -105,7 +105,7 @@ const customBlocks = [
   },
   {
     name: 'LandProtect / 土地保護コア',
-    imageId: 'custom-block-landprotect-core',
+    imageId: 'land-protection-core-level1-menu',
     material: 'ロデストーン + ダイヤ',
     kind: '拠点や土地を守る中核ブロック',
     what: 'Rust 風に土地を保護し、チェスト・建築・破壊などのアクセスを管理するための中核ブロックです。拠点荒らしや誤操作から大事な場所を守る目的で使います。',
@@ -135,7 +135,7 @@ export function CustomBlocksSection() {
       scope="player"
     >
       <ImagePlaceholder
-        id="custom-blocks-hero"
+        id="wiki-home-hero"
         label="カスタムブロック設置例"
         hint="カスタムエンチャントテーブル、並列かまど、リサイクラー、ワープストーン、土地保護コアなどを並べたスクリーンショット"
         aspect="16/9"
