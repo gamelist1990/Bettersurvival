@@ -636,7 +636,7 @@ public class WebMapHttpServer {
         }
         securityHeaders(exchange);
         if (path.equals("/index.html")) {
-            exchange.getResponseHeaders().set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+            exchange.getResponseHeaders().set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob: http: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
         }
         exchange.getResponseHeaders().set("Content-Type", mimeType(path));
         if (path.startsWith("/assets/") || path.startsWith("/images/") || path.endsWith(".ico") || path.endsWith(".svg")) {
