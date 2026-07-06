@@ -7,51 +7,27 @@ type FetchedWikiImageProps = {
   className?: string;
 };
 
+/**
+ * Wiki 用の画像表示。
+ *
+ * 以前は fetch → Blob → object URL (blob:) を <img> に渡していたが、
+ * 本番の CSP が `img-src 'self' data: https:` (blob: を含まない) のため
+ * blob URL の画像がすべてブロックされ、画像が一切表示されなかった。
+ * 同一オリジンのアセットパスを直接 <img src> に渡す (= 'self' で許可される) ことで解決している。
+ */
 export function FetchedWikiImage({ src, alt, caption, className }: FetchedWikiImageProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-
-    setImageUrl(null);
     setFailed(false);
-
-    fetch(src)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch image: ${response.status}`);
-        }
-        return response.blob();
-      })
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setImageUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setFailed(true);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
   }, [src]);
 
   return (
     <figure className={`wiki-real-image${className ? ` ${className}` : ''}`}>
-      {imageUrl ? (
-        <img src={imageUrl} alt={alt} />
+      {failed ? (
+        <div className="wiki-image-fetch-state">画像を読み込めませんでした。</div>
       ) : (
-        <div className="wiki-image-fetch-state">
-          {failed ? '画像を読み込めませんでした。' : '画像を読み込み中...'}
-        </div>
+        <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />
       )}
       {caption ? <figcaption>{caption}</figcaption> : null}
     </figure>

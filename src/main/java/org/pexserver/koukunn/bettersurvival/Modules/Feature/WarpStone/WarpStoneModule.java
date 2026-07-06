@@ -477,29 +477,25 @@ public class WarpStoneModule implements Listener {
             player.sendMessage(PREFIX + "§cワープストーンが破壊されています");
             return;
         }
-        if (player.isSneaking()) {
-            boolean newlyDiscovered = discoveredSet(player.getUniqueId()).add(stoneKey);
-            if (!newlyDiscovered) {
-                player.sendMessage(PREFIX + "§7「§b" + data.name() + "§7」は既に解放済みです");
-                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.6F, 0.8F);
-                return;
-            }
-            save();
-            consumeMainHandItem(player);
-            player.sendMessage(PREFIX + "§a座標本を消費して「§b" + data.name() + "§a」を解放しました！");
-            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.5F);
-            player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 0.9F, 1.4F);
-            stoneLoc.getWorld().spawnParticle(Particle.PORTAL,
-                    stoneLoc.clone().add(0.5D, 1.0D, 0.5D), 50, 0.4D, 0.5D, 0.4D, 0.5D);
+        // シフト + 右クリック でのみ解放する (通常の右クリックでは何もしない = 誤爆防止)
+        if (!player.isSneaking()) {
+            player.sendMessage(PREFIX + "§7シフト+右クリックで「§b" + data.name() + "§7」を解放できます");
+            player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 0.7F, 1.2F);
             return;
         }
         boolean newlyDiscovered = discoveredSet(player.getUniqueId()).add(stoneKey);
-        if (newlyDiscovered) {
-            save();
-            player.sendMessage(PREFIX + "§a座標本から「§b" + data.name() + "§a」の位置を読み込みました！");
-            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.5F);
+        if (!newlyDiscovered) {
+            player.sendMessage(PREFIX + "§7「§b" + data.name() + "§7」は既に解放済みです");
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.6F, 0.8F);
+            return;
         }
-        new WarpStoneUI(this, player, stoneKey).open(player);
+        save();
+        consumeMainHandItem(player);
+        player.sendMessage(PREFIX + "§a座標本を消費して「§b" + data.name() + "§a」を解放しました！");
+        player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.5F);
+        player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 0.9F, 1.4F);
+        stoneLoc.getWorld().spawnParticle(Particle.PORTAL,
+                stoneLoc.clone().add(0.5D, 1.0D, 0.5D), 50, 0.4D, 0.5D, 0.4D, 0.5D);
     }
 
     private void consumeMainHandItem(Player player) {
@@ -550,7 +546,8 @@ public class WarpStoneModule implements Listener {
                 + "§7STATUS: §2LOCKED\n"
                 + "§0--------------\n"
                 + "§8Read Only\n\n"
-                + "§7右クリックで\nワープUI起動";
+                + "§7シフト+右クリックで\n§7この座標を解放\n"
+                + "§8(本を1冊消費)";
 
         String p2 = "§8[Coord Data]\n§0-----------\n"
                 + "§7X §0" + x + "\n"

@@ -71,6 +71,8 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.ui.Coppe
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.worker.CombatWorker;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.worker.CropHarvestWorker;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestLock.ChestLockModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimRegion;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage.SharedStorageModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -464,7 +466,7 @@ public class CopperGolemModule implements Listener {
         CopperGolem golem = spawnLocation.getWorld().spawn(spawnLocation, CopperGolem.class);
         golem.setPersistent(true);
 
-        GolemProfile profile = new GolemProfile(golemId, golem.getUniqueId(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, false, false, CropRouteMode.NEAR_ORIGIN, GolemMode.IDLE);
+        GolemProfile profile = new GolemProfile(golemId, golem.getUniqueId(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, false, false, true, CropRouteMode.NEAR_ORIGIN, GolemMode.IDLE);
         profiles.put(golemId, profile);
         applyProfileToEntity(golem, profile);
 
@@ -731,6 +733,17 @@ public class CopperGolemModule implements Listener {
                             profile.setAutoBoneMeal(!profile.autoBoneMeal());
                             saveProfiles();
                         }
+                        openMainMenu(p, profile);
+                    }
+
+                    @Override
+                    public void onToggleTill(Player p) {
+                        if (!profiles.containsKey(profile.id())) {
+                            return;
+                        }
+                        playUiClick(p);
+                        profile.setAutoTill(!profile.autoTill());
+                        saveProfiles();
                         openMainMenu(p, profile);
                     }
 
@@ -1723,6 +1736,7 @@ public class CopperGolemModule implements Listener {
                     Math.max(1, entry.getRange()),
                     entry.isAutoReplant(),
                     entry.isAutoBoneMeal(),
+                    entry.isAutoTill(),
                     CropRouteMode.from(entry.getCropRouteMode()),
                     mode);
             profile.setRange(Math.max(1, Math.min(profile.range(), maxRangeByPoints(profile))));
@@ -1827,6 +1841,7 @@ public class CopperGolemModule implements Listener {
                     profile.range(),
                     profile.autoReplant(),
                     profile.autoBoneMeal(),
+                    profile.autoTill(),
                     profile.cropRouteMode().name(),
                     profile.mode().name(),
                     containers,
@@ -1976,8 +1991,22 @@ public class CopperGolemModule implements Listener {
                 player.sendMessage("§cSharedStorage 管理チェストは登録できません");
                 return false;
             }
+            if (isProtectedByOthers(player, location)) {
+                player.sendMessage("§c他人の土地保護内のチェストは登録できません");
+                return false;
+            }
         }
         return true;
+    }
+
+    /** 他人の土地保護内 (バイパス不可) の位置なら true */
+    private boolean isProtectedByOthers(Player player, Location location) {
+        LandProtectionModule land = plugin.getLandProtectionModule();
+        if (land == null || !land.isFeatureEnabled()) {
+            return false;
+        }
+        ClaimRegion claim = land.getActiveClaimAt(location);
+        return claim != null && !land.canBypass(player, claim);
     }
 
     private boolean isChestLocked(Location location) {

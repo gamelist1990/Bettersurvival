@@ -22,6 +22,7 @@ public final class CopperGolemMainMenuUI {
         void onUnlockBoneMeal(Player player);
         void onToggleReplant(Player player);
         void onToggleBoneMeal(Player player);
+        void onToggleTill(Player player);
         void onOpenCropFilter(Player player);
         void onOpenTargets(Player player);
         void onOpenBoneMealSources(Player player);
@@ -131,7 +132,10 @@ public final class CopperGolemMainMenuUI {
                         "§7現在: " + profile.cropRouteMode().getDisplayName() + "\n§7密集地優先 + 行動モード切替")
                 .addButtonAt(50, "§6移動速度強化 +1", Material.SUGAR,
                         "§7必要ポイント: 1\n§7現在: " + profile.moveSpeedPoints() + "\n§7移動速度が上がります")
-                .addButtonAt(51, "§7機能スロット", Material.GRAY_STAINED_GLASS_PANE, "§7今後の拡張用")
+                .addButtonAt(51, "§a自動耕し", Material.FARMLAND,
+                        (profile.autoTill() ? "§aON" : "§cOFF")
+                                + "\n§7踏まれて土に戻った畑を自動で耕し直す"
+                                + "\n§7荒らされた箇所へ即座に向かいます")
                 .addButtonAt(53, "§c閉じる", Material.BARRIER, "")
                 .then((result, p) -> {
                     if (result.slot == null) {
@@ -151,6 +155,7 @@ public final class CopperGolemMainMenuUI {
                         case 48 -> handler.onUnlockBoneMeal(p);
                         case 49 -> handler.onToggleCropRouteMode(p);
                         case 50 -> handler.onUpgradeMoveSpeed(p);
+                        case 51 -> handler.onToggleTill(p);
                         case 53 -> handler.onClose(p);
                         default -> {
                         }

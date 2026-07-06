@@ -22,6 +22,7 @@ public class GolemProfile {
     private int range;
     private boolean autoReplant;
     private boolean autoBoneMeal;
+    private boolean autoTill;
     private CropRouteMode cropRouteMode;
     private GolemMode mode;
     private final List<ContainerTarget> targets = new ArrayList<>();
@@ -49,6 +50,7 @@ public class GolemProfile {
             int range,
             boolean autoReplant,
             boolean autoBoneMeal,
+            boolean autoTill,
             CropRouteMode cropRouteMode,
             GolemMode mode) {
         this.id = id;
@@ -65,6 +67,7 @@ public class GolemProfile {
         this.range = range;
         this.autoReplant = autoReplant;
         this.autoBoneMeal = autoBoneMeal;
+        this.autoTill = autoTill;
         this.cropRouteMode = cropRouteMode == null ? CropRouteMode.NEAR_ORIGIN : cropRouteMode;
         this.mode = mode;
     }
@@ -175,6 +178,14 @@ public class GolemProfile {
 
     public void setAutoBoneMeal(boolean autoBoneMeal) {
         this.autoBoneMeal = autoBoneMeal;
+    }
+
+    public boolean autoTill() {
+        return autoTill;
+    }
+
+    public void setAutoTill(boolean autoTill) {
+        this.autoTill = autoTill;
     }
 
     public CropRouteMode cropRouteMode() {

@@ -88,13 +88,15 @@ public class CropHarvestWorker {
             return 0;
         }
 
+        // 踏み荒らされて土に戻った畑を最優先で耕し直す (荒らされた箇所へ即座に向かう)。
+        // 収穫より前に処理することで「自律的にすぐ耕す」挙動になる。
+        if (profile.autoTill()
+                && handleTrampledFarmland(golem, searchCenter, range, maxHarvestBlocks, moveSpeed)) {
+            return 0;
+        }
+
         List<Block> ripeCrops = findRipeCrops(searchCenter, range, cropFilters);
         if (ripeCrops.isEmpty()) {
-            // 収穫対象が無いときに、踏み荒らされて土に戻った畑を耕し直す
-            if (allowReplant && profile.autoReplant()
-                    && handleTrampledFarmland(golem, searchCenter, range, maxHarvestBlocks, moveSpeed)) {
-                return 0;
-            }
             if (allowBoneMeal && profile.autoBoneMeal() && !profile.boneMealSources().isEmpty()) {
                 int fertilized = runBoneMealWorker(profile, golem, searchCenter, range, maxHarvestBlocks, moveSpeed);
                 if (fertilized > 0) {

@@ -83,6 +83,7 @@ public class CopperGolemStore {
         private final int range;
         private final boolean autoReplant;
         private final boolean autoBoneMeal;
+        private final boolean autoTill;
         private final String cropRouteMode;
         private final String mode;
         private final List<List<String>> targetContainers;
@@ -110,6 +111,7 @@ public class CopperGolemStore {
                 int range,
                 boolean autoReplant,
                 boolean autoBoneMeal,
+                boolean autoTill,
                 String cropRouteMode,
                 String mode,
                 List<List<String>> targetContainers,
@@ -135,6 +137,7 @@ public class CopperGolemStore {
             this.range = range;
             this.autoReplant = autoReplant;
             this.autoBoneMeal = autoBoneMeal;
+            this.autoTill = autoTill;
             this.cropRouteMode = cropRouteMode;
             this.mode = mode;
             this.targetContainers = targetContainers;
@@ -204,6 +207,10 @@ public class CopperGolemStore {
             return autoBoneMeal;
         }
 
+        public boolean isAutoTill() {
+            return autoTill;
+        }
+
         public String getCropRouteMode() {
             return cropRouteMode;
         }
@@ -263,6 +270,7 @@ public class CopperGolemStore {
             data.put("range", range);
             data.put("autoReplant", autoReplant);
             data.put("autoBoneMeal", autoBoneMeal);
+            data.put("autoTill", autoTill);
             data.put("cropRouteMode", cropRouteMode);
             data.put("mode", mode);
             data.put("targetContainers", targetContainers);
@@ -291,6 +299,8 @@ public class CopperGolemStore {
             int range = data.get("range") instanceof Number number ? number.intValue() : 1;
             boolean autoReplant = data.get("autoReplant") instanceof Boolean bool && bool;
             boolean autoBoneMeal = data.get("autoBoneMeal") instanceof Boolean bool && bool;
+            // 既存データにキーが無ければ既定 ON (自動耕しはデフォルトで動かす)
+            boolean autoTill = !data.containsKey("autoTill") || (data.get("autoTill") instanceof Boolean bool && bool);
             String cropRouteMode = data.get("cropRouteMode") instanceof String rawRouteMode ? rawRouteMode : "NEAR_ORIGIN";
             String mode = data.get("mode") instanceof String rawMode ? rawMode : "IDLE";
 
@@ -353,6 +363,7 @@ public class CopperGolemStore {
                     range,
                     autoReplant,
                     autoBoneMeal,
+                    autoTill,
                     cropRouteMode,
                     mode,
                     targetContainers,
