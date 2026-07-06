@@ -117,9 +117,11 @@ public class AutoReplaceEnchant extends CustomEnchant {
         if (!block.getType().isAir() && !block.isLiquid()) {
             return; // 既に何か置かれている
         }
-        // エンティティ (プレイヤー含む) の中に埋めない — 窒息・閉じ込め防止
+        // 他のエンティティの中には埋めない — 窒息・閉じ込め防止。
+        // ただし採掘者自身は「足元や目の前」を掘ると必ず重なるので除外する
         if (!world.getNearbyEntities(BoundingBox.of(block),
-                entity -> entity instanceof LivingEntity).isEmpty()) {
+                entity -> entity instanceof LivingEntity
+                        && !entity.getUniqueId().equals(player.getUniqueId())).isEmpty()) {
             return;
         }
         boolean creative = player.getGameMode() == GameMode.CREATIVE;
