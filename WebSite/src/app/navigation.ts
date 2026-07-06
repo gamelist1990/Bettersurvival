@@ -1,4 +1,4 @@
-export type PageKey = 'home' | 'profile' | 'feed' | 'features' | 'webmap' | 'wiki' | 'privacy' | 'request';
+export type PageKey = 'home' | 'profile' | 'feed' | 'features' | 'webmap' | 'wiki' | 'privacy' | 'request' | 'admin';
 
 export type NavigationItem = {
   key: PageKey;
@@ -26,6 +26,7 @@ export function pageKeyFromPath(pathname: string): PageKey {
   if (pathname.startsWith('/features')) return 'features';
   if (pathname.startsWith('/privacy/request')) return 'request';
   if (pathname.startsWith('/privacy')) return 'privacy';
+  if (pathname.startsWith('/admin')) return 'admin';
   return 'home';
 }
 

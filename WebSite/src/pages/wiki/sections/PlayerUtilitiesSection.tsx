@@ -73,7 +73,7 @@ export function PlayerUtilitiesSection() {
       <ImagePlaceholder
         id="player-utilities-hero"
         label="便利機能の利用シーン"
-        hint="TreeMine、ChestLock、Party、LandProtect、Home、TPA などが分かるスクリーンショット"
+        hint="Better Survival GUI"
         aspect="16/9"
       />
 
@@ -108,10 +108,13 @@ export function PlayerUtilitiesSection() {
       </div>
 
       <h3>よく使う入口</h3>
-      <CommandBox command="/toggle" description="利用できる機能の状態を確認します。" />
-      <CommandBox command="/home" description="Home 機能が有効な場合、登録済みの家へ移動します。" />
-      <CommandBox command="/tpa <player>" description="TPA 機能が有効な場合、対象プレイヤーへテレポート申請します。" />
-      <CommandBox command="/party" description="Party 機能が有効な場合、パーティー関連操作を行います。" />
+      <CommandBox command="/toggle" description="機能の有効/無効を切り替える UI を開きます。" />
+      <CommandBox command="/home" description="デフォルト Home へ移動します (登録済みの場合)。/home ui でメニューを開けます。" />
+      <CommandBox command="/home add <名前>" description="現在地を新しい Home として登録します。" />
+      <CommandBox command="/tpa -r <プレイヤー名>" description="指定プレイヤーにテレポートリクエストを送ります。/tpa <プレイヤー名> でも同じです。" />
+      <CommandBox command="/tpa ui" description="TPA 用の UI を開きます。" />
+      <CommandBox command="/party" description="パーティーメニューを開きます (/p も同じ)。" />
+      <CommandBox command="/list" description="オンラインプレイヤー一覧を表示します。" />
 
       <h3>注意点</h3>
       <ul className="wiki-bullets">

@@ -199,7 +199,7 @@ public class WebServiceModule implements Listener {
         return profileStore.findByUuid(session.uuid());
     }
 
-    public AuthResult register(String username, String code, String email, String password) {
+    public AuthResult register(String username, String code, String password) {
         String trimmedCode = code == null ? "" : code.trim();
         cleanupExpiredCodes();
         Map.Entry<String, PendingHotp> matchedEntry = pendingCodes.entrySet().stream()
@@ -234,7 +234,6 @@ public class WebServiceModule implements Listener {
         profile.setUsername(player.getName());
         profile.setDisplayName(player.getName());
         profile.setFaceUrl(McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil.isBedrock(player)));
-        profile.setEmail(email == null ? "" : email.trim());
         PasswordHash passwordHash = hashPassword(password);
         profile.setPasswordSalt(passwordHash.salt());
         profile.setPasswordHash(passwordHash.hash());
@@ -363,10 +362,13 @@ public class WebServiceModule implements Listener {
     // ================= 個人情報保護法対応 (本人請求) =================
 
     private static final java.util.Set<String> PRIVACY_REQUEST_TYPES =
-            java.util.Set.of("disclosure", "correction", "deletion", "suspension");
+            java.util.Set.of("correction", "deletion", "suspension");
+    private static final long PRIVACY_REQUEST_COOLDOWN_MS = 5 * 60 * 1000L;
+    private final Map<String, Long> lastPrivacyRequestAt = new ConcurrentHashMap<>();
 
     /**
-     * 開示・訂正・削除・利用停止の請求を受け付ける。
+     * 訂正・削除・利用停止の請求を受け付ける。
+     * 開示(自分の情報の確認)は {@link #buildDisclosurePayload(String)} による即時セルフサービスに置き換えたため対象外。
      * ログインセッションを本人確認として使用する。
      */
     public PrivacyRequestResult createPrivacyRequest(String token, String type, String detail) {
@@ -386,13 +388,19 @@ public class WebServiceModule implements Listener {
         if (privacyRequestStore.countOpenByUuid(profile.getUuid()) >= 5) {
             return PrivacyRequestResult.error("未対応の申請が上限(5件)に達しています。対応をお待ちください");
         }
+        Long lastAt = lastPrivacyRequestAt.get(profile.getUuid());
+        long now = System.currentTimeMillis();
+        if (lastAt != null && now - lastAt < PRIVACY_REQUEST_COOLDOWN_MS) {
+            return PrivacyRequestResult.error("申請の間隔が短すぎます。しばらく時間を空けてから再度お試しください");
+        }
+        lastPrivacyRequestAt.put(profile.getUuid(), now);
         PrivacyRequest request = new PrivacyRequest();
         request.setId(UUID.randomUUID().toString());
         request.setUuid(profile.getUuid());
         request.setUsername(profile.getUsername());
         request.setType(normalizedType);
         request.setDetail(normalizedDetail);
-        request.setCreatedAt(System.currentTimeMillis());
+        request.setCreatedAt(now);
         privacyRequestStore.add(request);
         notifyOpsOfPrivacyRequest(request);
         return PrivacyRequestResult.success(request);
@@ -432,6 +440,7 @@ public class WebServiceModule implements Listener {
     public Map<String, Object> privacyRequestPayload(PrivacyRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", request.getId());
+        payload.put("username", request.getUsername());
         payload.put("type", request.getType());
         payload.put("typeLabel", request.typeDisplayName());
         payload.put("detail", request.getDetail());
@@ -439,6 +448,40 @@ public class WebServiceModule implements Listener {
         payload.put("createdAt", request.getCreatedAt());
         payload.put("resolvedAt", request.getResolvedAt());
         return payload;
+    }
+
+    /** 連携しているMinecraftアカウントが現在OPかどうか(オフラインでも判定可能)。Web管理ページの認可に使う。 */
+    public boolean isSessionAdmin(String token) {
+        return sessionUuid(token)
+                .map(uuid -> {
+                    try {
+                        return plugin.getServer().getOfflinePlayer(UUID.fromString(uuid)).isOp();
+                    } catch (IllegalArgumentException error) {
+                        return false;
+                    }
+                })
+                .orElse(false);
+    }
+
+    /** 開示請求の即時セルフサービス応答: 保存されているプロフィール・投稿・請求履歴をまとめて返す。 */
+    public Optional<Map<String, Object>> buildDisclosurePayload(String token) {
+        Optional<WebProfile> optionalProfile = findProfileBySession(token);
+        if (optionalProfile.isEmpty()) {
+            return Optional.empty();
+        }
+        WebProfile profile = optionalProfile.get();
+        List<Map<String, Object>> posts = postStore.listByUuid(profile.getUuid()).stream()
+                .map(post -> postPayload(post, profile.getUuid()))
+                .toList();
+        List<Map<String, Object>> requests = privacyRequestStore.listByUuid(profile.getUuid()).stream()
+                .map(this::privacyRequestPayload)
+                .toList();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("generatedAt", System.currentTimeMillis());
+        payload.put("profile", profilePayload(profile));
+        payload.put("posts", posts);
+        payload.put("privacyRequests", requests);
+        return Optional.of(payload);
     }
 
     private void notifyOpsOfPrivacyRequest(PrivacyRequest request) {
@@ -534,7 +577,6 @@ public class WebServiceModule implements Listener {
         payload.put("displayName", profile.getDisplayName());
         payload.put("nickname", profile.getNickname());
         payload.put("faceUrl", profile.getFaceUrl());
-        payload.put("email", profile.getEmail());
         payload.put("bio", profile.getBio());
         payload.put("location", profile.getLocation());
         payload.put("country", profile.getCountry());

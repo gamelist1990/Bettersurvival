@@ -33,11 +33,11 @@ export function useWebService() {
     return true;
   };
 
-  const register = async (code: string, email: string, password: string) => {
+  const register = async (code: string, password: string) => {
     setBusy(true);
     setMessage('');
     try {
-      return applyAuth(await postJson('/api/v1/auth/register', { code, email, password }));
+      return applyAuth(await postJson('/api/v1/auth/register', { code, password }));
     } catch {
       setMessage('サービスに接続できません。しばらくしてからもう一度お試しください。');
       return false;

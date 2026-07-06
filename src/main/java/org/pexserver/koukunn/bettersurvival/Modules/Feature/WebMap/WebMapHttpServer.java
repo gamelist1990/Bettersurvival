@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 
 public class WebMapHttpServer {
@@ -89,6 +90,10 @@ public class WebMapHttpServer {
         server.createContext("/api/v1/feed/image", safe(this::handleFeedImage));
         server.createContext("/api/v1/privacy/request", safe(this::handlePrivacyRequest));
         server.createContext("/api/v1/privacy/requests", safe(this::handlePrivacyRequests));
+        server.createContext("/api/v1/privacy/disclosure", safe(this::handlePrivacyDisclosure));
+        server.createContext("/api/v1/admin/me", safe(this::handleAdminMe));
+        server.createContext("/api/v1/admin/privacy/requests", safe(this::handleAdminPrivacyRequests));
+        server.createContext("/api/v1/admin/privacy/requests/resolve", safe(this::handleAdminPrivacyResolve));
         server.createContext("/api/v1/worlds", safe(this::handleApiWorlds));
         server.createContext("/api/v1/players", safe(this::handleApiPlayers));
         server.createContext("/api/status", safe(this::handleStatus));
@@ -988,7 +993,6 @@ public class WebMapHttpServer {
         WebServiceModule.AuthResult result = service.register(
                 stringValue(request.get("username")),
                 stringValue(request.get("code")),
-                stringValue(request.get("email")),
                 stringValue(request.get("password"))
         );
         writeAuthResult(exchange, service, result);
@@ -1162,6 +1166,77 @@ public class WebMapHttpServer {
                 .map(service::privacyRequestPayload)
                 .toList();
         writeJson(exchange, Map.of("success", true, "requests", requests), 0);
+    }
+
+    /** 開示請求のセルフサービス即時応答: 自分のプロフィール・投稿・請求履歴をまとめて返す。 */
+    private void handlePrivacyDisclosure(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        Optional<Map<String, Object>> payload = service.buildDisclosurePayload(bearerToken(exchange));
+        if (payload.isEmpty()) {
+            writeJson(exchange, Map.of("success", false, "message", "ログインが必要です"), 0);
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>(payload.get());
+        body.put("success", true);
+        writeJson(exchange, body, 0);
+    }
+
+    /** 連携アカウントが現在OPかどうかを返すだけの軽量な認可チェック。Web管理ページのゲートに使う。 */
+    private void handleAdminMe(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!guardApi(exchange)) {
+            return;
+        }
+        writeJson(exchange, Map.of("isAdmin", service.isSessionAdmin(bearerToken(exchange))), 0);
+    }
+
+    /** 全申請一覧（Web管理ページ用、OPのみ）。 */
+    private void handleAdminPrivacyRequests(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        if (!service.isSessionAdmin(bearerToken(exchange))) {
+            writeJson(exchange, Map.of("success", false, "message", "権限がありません"), 0);
+            return;
+        }
+        List<Map<String, Object>> requests = service.listAllPrivacyRequests().stream()
+                .map(service::privacyRequestPayload)
+                .toList();
+        writeJson(exchange, Map.of("success", true, "requests", requests), 0);
+    }
+
+    /** 申請を対応済みにする（Web管理ページ用、OPのみ）。 */
+    private void handleAdminPrivacyResolve(HttpExchange exchange) throws IOException {
+        WebServiceModule service = webServiceOrReject(exchange);
+        if (service == null) {
+            return;
+        }
+        if (!guardAuthenticatedJsonPost(exchange, service)) {
+            return;
+        }
+        String token = bearerToken(exchange);
+        if (!service.isSessionAdmin(token)) {
+            writeJson(exchange, Map.of("success", false, "message", "権限がありません"), 0);
+            return;
+        }
+        Map<String, Object> request = readJsonObject(exchange);
+        boolean resolved = service.resolvePrivacyRequest(stringValue(request.get("id")));
+        writeJson(exchange, Map.of("success", resolved, "message", resolved ? "OK" : "対応できませんでした"), 0);
     }
 
     private void handleFeedPost(HttpExchange exchange) throws IOException {

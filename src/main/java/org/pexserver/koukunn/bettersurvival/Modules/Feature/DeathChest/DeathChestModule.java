@@ -26,6 +26,8 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
@@ -33,27 +35,75 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.util.Base64;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.logging.Level;
 
 public class DeathChestModule implements Listener {
     private static final String FEATURE_KEY = "deathchest";
     private static final int SEARCH_RADIUS = 4;
     private static final int[] Y_OFFSETS = {0, 1, -1, 2, -2, 3, -3};
-    private static final int GUI_SIZE = 27;
+    private static final int GUI_SIZE = 54; // ラージチェスト同サイズ
     private static final BlockFace[] HORIZONTAL_FACES = {
             BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST
     };
 
+    // プレイヤーインベントリスロット (Bukkit標準: 0-8 hotbar, 9-35 main, 36-39 armor, 40 offhand)
+    private static final int PLAYER_INV_SIZE = 41;
+    private static final int PLAYER_SLOT_BOOTS = 36;
+    private static final int PLAYER_SLOT_LEGGINGS = 37;
+    private static final int PLAYER_SLOT_CHESTPLATE = 38;
+    private static final int PLAYER_SLOT_HELMET = 39;
+    private static final int PLAYER_SLOT_OFFHAND = 40;
+
+    // GUIレイアウト (54スロット / 6行)
+    // Row 0 [ 0- 8] : ホットバー
+    // Row 1-3 [ 9-35] : メインインベントリ
+    // Row 4 [36-44] : 仕切り (ガラス)
+    // Row 5 [45-53] : 装備
+    private static final int GUI_HOTBAR_START = 0;
+    private static final int GUI_MAIN_START = 9;
+    private static final int GUI_SEPARATOR_START = 36;
+    private static final int GUI_EQUIP_LABEL_LEFT = 45;
+    private static final int GUI_EQUIP_HELMET = 46;
+    private static final int GUI_EQUIP_CHESTPLATE = 47;
+    private static final int GUI_EQUIP_LEGGINGS = 48;
+    private static final int GUI_EQUIP_BOOTS = 49;
+    private static final int GUI_EQUIP_MID_SEP = 50;
+    private static final int GUI_EQUIP_OFFHAND = 51;
+    private static final int GUI_EQUIP_FILL_1 = 52;
+    private static final int GUI_EQUIP_FILL_2 = 53;
+
+    // 飾りスロット (取り出し不可)
+    private static final Set<Integer> LOCKED_SLOTS = buildLockedSlots();
+
+    private static Set<Integer> buildLockedSlots() {
+        Set<Integer> s = new HashSet<>();
+        for (int i = 36; i <= 44; i++) s.add(i); // 仕切り行
+        s.add(GUI_EQUIP_LABEL_LEFT);
+        s.add(GUI_EQUIP_MID_SEP);
+        s.add(GUI_EQUIP_FILL_1);
+        s.add(GUI_EQUIP_FILL_2);
+        return s;
+    }
+
+    private final Loader plugin;
     private final ToggleModule toggle;
     private final LandProtectionModule landProtection;
     private final NamespacedKey deathChestKey;
+    private final NamespacedKey contentsKey;
 
     public DeathChestModule(Loader plugin, ToggleModule toggle, LandProtectionModule landProtection) {
+        this.plugin = plugin;
         this.toggle = toggle;
         this.landProtection = landProtection;
         this.deathChestKey = new NamespacedKey(plugin, "death_chest");
+        this.contentsKey = new NamespacedKey(plugin, "death_chest_contents");
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -61,36 +111,43 @@ public class DeathChestModule implements Listener {
         if (!toggle.getGlobal(FEATURE_KEY)) return;
         if (!toggle.isEnabledFor(event.getPlayer().getUniqueId().toString(), FEATURE_KEY)) return;
 
-        Location deathLocation = event.getPlayer().getLocation();
+        Player player = event.getPlayer();
+        Location deathLocation = player.getLocation();
         if (landProtection != null && landProtection.getActiveClaimAt(deathLocation) != null) return;
         if (event.getEntity().getKiller() != null) return;
         if (event.getKeepInventory() || event.getDrops().isEmpty()) return;
 
         sendDeathLocation(event, deathLocation);
 
-        List<ItemStack> drops = copyDrops(event.getDrops());
-        if (drops.isEmpty()) return;
+        // プレイヤーインベントリのスロット構造を保ってスナップショット
+        PlayerInventory playerInv = player.getInventory();
+        ItemStack[] snapshot = new ItemStack[PLAYER_INV_SIZE];
+        boolean anyCaptured = false;
+        for (int i = 0; i < PLAYER_INV_SIZE; i++) {
+            ItemStack item = playerInv.getItem(i);
+            if (item != null && !item.getType().isAir() && item.getAmount() > 0) {
+                snapshot[i] = item.clone();
+                anyCaptured = true;
+            }
+        }
+        if (!anyCaptured) return;
 
         Block placement = findPlacement(deathLocation);
         if (placement == null) {
-            event.getPlayer().sendMessage("§cDeathChestを設置できませんでした。アイテムは通常通りドロップします。");
+            player.sendMessage("§cDeathChestを設置できませんでした。アイテムは通常通りドロップします。");
             return;
         }
 
-        Inventory chestInventory = createSingleChest(placement);
-        if (chestInventory == null) {
-            event.getPlayer().sendMessage("§cDeathChestを作成できませんでした。アイテムは通常通りドロップします。");
+        if (!createDeathChest(placement, snapshot)) {
+            player.sendMessage("§cDeathChestを作成できませんでした。アイテムは通常通りドロップします。");
             return;
         }
 
+        // 全てスナップショットに退避したので元 drops は消す
         event.getDrops().clear();
-        int overflow = storeDrops(drops, chestInventory, placement.getLocation().add(0.5, 1.0, 0.5));
 
         Location chestLocation = placement.getLocation();
-        event.getPlayer().sendMessage("§aDeathChestを設置しました: §f" + formatLocation(chestLocation));
-        if (overflow > 0) {
-            event.getPlayer().sendMessage("§eチェストに入り切らなかったアイテム " + overflow + " 個はDeathChest付近にドロップしました。");
-        }
+        player.sendMessage("§aDeathChestを設置しました: §f" + formatLocation(chestLocation));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -114,14 +171,16 @@ public class DeathChestModule implements Listener {
         event.setExpToDrop(0);
         BlockState state = block.getState(false);
         if (state instanceof Chest chest) {
-            Inventory inventory = chest.getInventory();
+            // PDC から復元してドロップ
+            String encoded = chest.getPersistentDataContainer().get(contentsKey, PersistentDataType.STRING);
+            ItemStack[] items = decodeItems(encoded);
             Location dropLocation = block.getLocation().add(0.5, 0.5, 0.5);
             World world = block.getWorld();
-            for (ItemStack item : inventory.getContents()) {
+            for (ItemStack item : items) {
                 if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
                 world.dropItemNaturally(dropLocation, item);
             }
-            inventory.clear();
+            chest.getInventory().clear();
         }
     }
 
@@ -138,16 +197,38 @@ public class DeathChestModule implements Listener {
     private void openDeathChestGui(Player player, Block block) {
         BlockState state = block.getState(false);
         if (!(state instanceof Chest chest)) return;
-        Inventory source = chest.getInventory();
+
+        String encoded = chest.getPersistentDataContainer().get(contentsKey, PersistentDataType.STRING);
+        ItemStack[] items = decodeItems(encoded);
+
         DeathChestHolder holder = new DeathChestHolder(block);
         Inventory gui = Bukkit.createInventory(holder, GUI_SIZE, ComponentUtils.legacy("§8☠ §cDeathChest §8☠"));
-        int limit = Math.min(source.getSize(), GUI_SIZE);
-        for (int i = 0; i < limit; i++) {
-            ItemStack item = source.getItem(i);
-            if (item != null && !item.getType().isAir()) {
-                gui.setItem(i, item.clone());
-            }
+
+        // ホットバー (player 0..8 -> gui 0..8)
+        for (int i = 0; i < 9; i++) {
+            gui.setItem(GUI_HOTBAR_START + i, items[i]);
         }
+        // メイン (player 9..35 -> gui 9..35)
+        for (int i = 9; i < 36; i++) {
+            gui.setItem(GUI_MAIN_START + (i - 9), items[i]);
+        }
+        // 仕切り (36..44)
+        ItemStack separator = createGlass(Material.BLACK_STAINED_GLASS_PANE, "§8");
+        for (int i = 0; i < 9; i++) {
+            gui.setItem(GUI_SEPARATOR_START + i, separator);
+        }
+        // 装備行の飾り
+        gui.setItem(GUI_EQUIP_LABEL_LEFT, createGlass(Material.ORANGE_STAINED_GLASS_PANE, "§6装備"));
+        gui.setItem(GUI_EQUIP_MID_SEP,    createGlass(Material.BLACK_STAINED_GLASS_PANE, "§8"));
+        gui.setItem(GUI_EQUIP_FILL_1,     createGlass(Material.GRAY_STAINED_GLASS_PANE, "§7"));
+        gui.setItem(GUI_EQUIP_FILL_2,     createGlass(Material.GRAY_STAINED_GLASS_PANE, "§7"));
+        // 装備の実アイテム
+        gui.setItem(GUI_EQUIP_HELMET,     items[PLAYER_SLOT_HELMET]);
+        gui.setItem(GUI_EQUIP_CHESTPLATE, items[PLAYER_SLOT_CHESTPLATE]);
+        gui.setItem(GUI_EQUIP_LEGGINGS,   items[PLAYER_SLOT_LEGGINGS]);
+        gui.setItem(GUI_EQUIP_BOOTS,      items[PLAYER_SLOT_BOOTS]);
+        gui.setItem(GUI_EQUIP_OFFHAND,    items[PLAYER_SLOT_OFFHAND]);
+
         holder.setInventory(gui);
         player.openInventory(gui);
     }
@@ -157,14 +238,24 @@ public class DeathChestModule implements Listener {
         Inventory top = event.getView().getTopInventory();
         if (!(top.getHolder() instanceof DeathChestHolder)) return;
         InventoryAction action = event.getAction();
+
+        // 上インベントリのクリック
         if (event.getClickedInventory() == top) {
+            int slot = event.getSlot();
+            // 飾りスロットは完全ロック
+            if (LOCKED_SLOTS.contains(slot)) {
+                event.setCancelled(true);
+                return;
+            }
+            // 取り出しは許可、置き入れ系はキャンセル
             switch (action) {
                 case PLACE_ALL, PLACE_ONE, PLACE_SOME, SWAP_WITH_CURSOR,
-                     HOTBAR_SWAP, HOTBAR_MOVE_AND_READD -> event.setCancelled(true);
+                     HOTBAR_SWAP -> event.setCancelled(true);
                 default -> {}
             }
             return;
         }
+        // 下からの shift-click ブロック
         if (action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
             event.setCancelled(true);
         }
@@ -191,18 +282,46 @@ public class DeathChestModule implements Listener {
         if (block.getType() != Material.CHEST) return;
         BlockState state = block.getState(false);
         if (!(state instanceof Chest chest)) return;
-        Inventory chestInventory = chest.getInventory();
-        chestInventory.clear();
-        int limit = Math.min(gui.getSize(), chestInventory.getSize());
-        for (int i = 0; i < limit; i++) {
-            ItemStack item = gui.getItem(i);
-            if (item != null && !item.getType().isAir()) {
-                chestInventory.setItem(i, item);
-            }
+
+        // GUI -> プレイヤーインベントリ配置 (41 スロット) へ変換
+        ItemStack[] items = new ItemStack[PLAYER_INV_SIZE];
+        for (int i = 0; i < 9; i++) {
+            items[i] = cleanItem(gui.getItem(GUI_HOTBAR_START + i));
         }
-        if (isInventoryEmpty(chestInventory)) {
+        for (int i = 9; i < 36; i++) {
+            items[i] = cleanItem(gui.getItem(GUI_MAIN_START + (i - 9)));
+        }
+        items[PLAYER_SLOT_HELMET]     = cleanItem(gui.getItem(GUI_EQUIP_HELMET));
+        items[PLAYER_SLOT_CHESTPLATE] = cleanItem(gui.getItem(GUI_EQUIP_CHESTPLATE));
+        items[PLAYER_SLOT_LEGGINGS]   = cleanItem(gui.getItem(GUI_EQUIP_LEGGINGS));
+        items[PLAYER_SLOT_BOOTS]      = cleanItem(gui.getItem(GUI_EQUIP_BOOTS));
+        items[PLAYER_SLOT_OFFHAND]    = cleanItem(gui.getItem(GUI_EQUIP_OFFHAND));
+
+        boolean anyLeft = false;
+        for (ItemStack it : items) {
+            if (it != null) { anyLeft = true; break; }
+        }
+
+        if (!anyLeft) {
+            // 空 -> チェスト消滅
             block.setType(Material.AIR, false);
+            return;
         }
+
+        // PDC に再保存
+        String encoded = encodeItems(items);
+        PersistentDataContainer pdc = chest.getPersistentDataContainer();
+        if (encoded != null) {
+            pdc.set(contentsKey, PersistentDataType.STRING, encoded);
+        }
+        // 実チェストのインベントリは常に空 (単一チェストの見た目維持)
+        chest.getInventory().clear();
+        chest.update(true);
+    }
+
+    private ItemStack cleanItem(ItemStack item) {
+        if (item == null || item.getType().isAir() || item.getAmount() <= 0) return null;
+        return item.clone();
     }
 
     private void sendDeathLocation(PlayerDeathEvent event, Location location) {
@@ -213,28 +332,6 @@ public class DeathChestModule implements Listener {
         World world = location.getWorld();
         String worldName = world == null ? "unknown" : world.getName();
         return worldName + " X:" + location.getBlockX() + " Y:" + location.getBlockY() + " Z:" + location.getBlockZ();
-    }
-
-    private List<ItemStack> copyDrops(List<ItemStack> source) {
-        List<ItemStack> drops = new ArrayList<>();
-        for (ItemStack item : source) {
-            if (item == null || item.getType().isAir()) continue;
-            drops.add(item.clone());
-        }
-        return drops;
-    }
-
-    private int storeDrops(List<ItemStack> drops, Inventory inventory, Location overflowLocation) {
-        int overflow = 0;
-        World world = overflowLocation.getWorld();
-        for (ItemStack item : drops) {
-            Map<Integer, ItemStack> result = inventory.addItem(item);
-            for (ItemStack leftover : result.values()) {
-                world.dropItemNaturally(overflowLocation, leftover);
-                overflow += leftover.getAmount();
-            }
-        }
-        return overflow;
     }
 
     private Block findPlacement(Location location) {
@@ -281,7 +378,7 @@ public class DeathChestModule implements Listener {
         return false;
     }
 
-    private Inventory createSingleChest(Block block) {
+    private boolean createDeathChest(Block block, ItemStack[] snapshot) {
         block.setType(Material.CHEST, false);
         BlockData data = block.getBlockData();
         if (data instanceof org.bukkit.block.data.type.Chest chestData) {
@@ -291,20 +388,75 @@ public class DeathChestModule implements Listener {
         BlockState state = block.getState(false);
         if (!(state instanceof Chest chest)) {
             block.setType(Material.AIR, false);
-            return null;
+            return false;
+        }
+        String encoded = encodeItems(snapshot);
+        if (encoded == null) {
+            block.setType(Material.AIR, false);
+            return false;
         }
         PersistentDataContainer container = chest.getPersistentDataContainer();
         container.set(deathChestKey, PersistentDataType.BYTE, (byte) 1);
+        container.set(contentsKey, PersistentDataType.STRING, encoded);
         chest.update(true);
-        return chest.getInventory();
+        return true;
     }
 
-    private boolean isInventoryEmpty(Inventory inventory) {
-        for (ItemStack item : inventory.getContents()) {
-            if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
-            return false;
+    // 1.21+ 推奨: ItemStack.serializeAsBytes / deserializeBytes
+    // フォーマット: int length | 各要素 [int len (-1=null) | byte[len]]
+    private String encodeItems(ItemStack[] items) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             DataOutputStream dos = new DataOutputStream(baos)) {
+            dos.writeInt(items.length);
+            for (ItemStack item : items) {
+                if (item == null || item.getType().isAir() || item.getAmount() <= 0) {
+                    dos.writeInt(-1);
+                } else {
+                    byte[] bytes = item.serializeAsBytes();
+                    dos.writeInt(bytes.length);
+                    dos.write(bytes);
+                }
+            }
+            dos.flush();
+            return Base64.getEncoder().encodeToString(baos.toByteArray());
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to encode DeathChest contents", e);
+            return null;
         }
-        return true;
+    }
+
+    private ItemStack[] decodeItems(String encoded) {
+        if (encoded == null || encoded.isEmpty()) return new ItemStack[PLAYER_INV_SIZE];
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(Base64.getDecoder().decode(encoded));
+             DataInputStream dis = new DataInputStream(bais)) {
+            int length = dis.readInt();
+            int size = Math.max(length, PLAYER_INV_SIZE);
+            ItemStack[] items = new ItemStack[size];
+            for (int i = 0; i < length; i++) {
+                int len = dis.readInt();
+                if (len < 0) {
+                    items[i] = null;
+                } else {
+                    byte[] bytes = new byte[len];
+                    dis.readFully(bytes);
+                    items[i] = ItemStack.deserializeBytes(bytes);
+                }
+            }
+            return items;
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "Failed to decode DeathChest contents", e);
+            return new ItemStack[PLAYER_INV_SIZE];
+        }
+    }
+
+    private ItemStack createGlass(Material material, String name) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(ComponentUtils.legacy(name));
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     private boolean isDeathChestBlock(Block block) {

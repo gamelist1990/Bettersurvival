@@ -23,6 +23,7 @@ import java.util.UUID;
 public class WarpStoneUI implements InventoryHolder {
 
     public static final int SIZE = 54;
+    public static final int SLOT_RENAME = 0;
     public static final int SLOT_INFO = 4;
     public static final int SLOT_GTA_TOGGLE = 8;
     public static final int LIST_START = 9;
@@ -72,10 +73,24 @@ public class WarpStoneUI implements InventoryHolder {
         Player viewer = Bukkit.getPlayer(viewerId);
         inventory.clear();
         slotKeys.clear();
+        WarpStoneStore.StoneData currentData = module.getStoneData(currentKey);
+        boolean isOwner = currentData != null
+                && currentData.owner() != null
+                && currentData.owner().equals(viewerId);
         for (int slot = 0; slot < LIST_START; slot++) {
-            if (slot != SLOT_INFO && slot != SLOT_GTA_TOGGLE) {
-                setButton(slot, "§7 ", Material.LIGHT_BLUE_STAINED_GLASS_PANE, "");
+            if (slot == SLOT_INFO || slot == SLOT_GTA_TOGGLE) {
+                continue;
             }
+            if (slot == SLOT_RENAME && isOwner) {
+                continue;
+            }
+            setButton(slot, "§7 ", Material.LIGHT_BLUE_STAINED_GLASS_PANE, "");
+        }
+        if (isOwner) {
+            setButton(SLOT_RENAME, "§e✎ 名前を変更", Material.WRITABLE_BOOK,
+                    "§7このワープストーンの名前を変更します"
+                            + "\n§7現在: §b" + currentData.name()
+                            + "\n\n§eクリックで名前入力を開く");
         }
         List<WarpStoneModule.StoneView> stones = module.discoveredStones(viewerId, currentKey);
         setButton(SLOT_INFO, "§b◈ ワープストーン ◈", Material.LODESTONE,
@@ -115,6 +130,10 @@ public class WarpStoneUI implements InventoryHolder {
     }
 
     public void handleClick(Player player, int slot) {
+        if (slot == SLOT_RENAME) {
+            module.requestRename(player, currentKey);
+            return;
+        }
         if (slot == SLOT_GTA_TOGGLE) {
             boolean now = module.toggleGta(player.getUniqueId());
             player.sendMessage("§b[ワープストーン]§r GTA Animation: " + (now ? "§aON" : "§7OFF"));

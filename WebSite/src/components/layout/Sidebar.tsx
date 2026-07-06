@@ -33,7 +33,7 @@ export function Sidebar({ activePage, profile, onNavigate, onLogout }: SidebarPr
         <span />
         <span />
       </button>
-      <a className="sidebar-brand" href="/" onClick={(event) => { event.preventDefault(); onNavigate('/'); }}>
+      <a className="sidebar-brand" href="/" onClick={(event) => { event.preventDefault(); go('/'); }}>
         <span className="sidebar-logo" aria-hidden="true">
           <img src="/images/brand/bettersurvival-logo.svg" alt="" />
         </span>
@@ -48,7 +48,7 @@ export function Sidebar({ activePage, profile, onNavigate, onLogout }: SidebarPr
             className={`sidebar-link${activePage === item.key ? ' is-active' : ''}`}
             href={item.href}
             key={item.key}
-            onClick={(event) => { event.preventDefault(); onNavigate(item.href); }}
+            onClick={(event) => { event.preventDefault(); go(item.href); }}
           >
             <span className="sidebar-icon">{item.icon}</span>
             <span>

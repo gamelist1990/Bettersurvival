@@ -60,6 +60,18 @@ public class WebPostStore {
         return listSince(0L, limit, retentionDays);
     }
 
+    /** 個人情報開示用: 指定uuidの全投稿(保持期間内に残っているもの)を新しい順で返す。 */
+    public synchronized List<WebPost> listByUuid(String uuid) {
+        if (uuid == null || uuid.isBlank()) {
+            return List.of();
+        }
+        return posts.stream()
+                .filter(post -> !post.isDeleted())
+                .filter(post -> uuid.equals(post.getUuid()))
+                .sorted(Comparator.comparingLong(WebPost::getCreatedAt).reversed())
+                .toList();
+    }
+
     public synchronized Optional<WebPost> findById(String id) {
         if (id == null || id.isBlank()) {
             return Optional.empty();

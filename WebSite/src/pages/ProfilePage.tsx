@@ -13,7 +13,7 @@ type ProfilePageProps = {
   profile: AuthProfile | null;
   posts: WebPost[];
   onLogin: (username: string, password: string) => Promise<boolean>;
-  onRegister: (code: string, email: string, password: string) => Promise<boolean>;
+  onRegister: (code: string, password: string) => Promise<boolean>;
   onLogout: () => Promise<void>;
   onSave: (draft: ProfileDraft) => Promise<boolean>;
   onLike: (postId: string) => Promise<boolean>;

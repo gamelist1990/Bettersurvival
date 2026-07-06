@@ -5,7 +5,6 @@ public class WebProfile {
     private String username = "";
     private String displayName = "";
     private String faceUrl = "";
-    private String email = "";
     private String passwordSalt = "";
     private String passwordHash = "";
     private boolean passkeyEnabled = false;
@@ -53,14 +52,6 @@ public class WebProfile {
 
     public void setFaceUrl(String faceUrl) {
         this.faceUrl = faceUrl == null ? "" : faceUrl;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email == null ? "" : email;
     }
 
     public String getPasswordSalt() {

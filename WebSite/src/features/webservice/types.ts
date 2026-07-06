@@ -3,7 +3,6 @@ export type AuthProfile = {
   username: string;
   displayName: string;
   faceUrl: string;
-  email: string;
   bio: string;
   location: string;
   website: string;

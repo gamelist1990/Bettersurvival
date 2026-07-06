@@ -18,7 +18,6 @@ type RequestPageProps = {
 };
 
 const REQUEST_TYPES = [
-  { value: 'disclosure', label: '開示', description: '保存されている自分の情報を確認したい' },
   { value: 'correction', label: '訂正', description: '登録されている情報を修正してほしい' },
   { value: 'deletion', label: '削除', description: '投稿やアカウント情報を削除してほしい' },
   { value: 'suspension', label: '利用停止', description: '自分の情報の利用を停止してほしい' },
@@ -34,11 +33,13 @@ function dateLabel(value: number) {
  * ログイン (Minecraft アカウント連携) を本人確認として利用する。
  */
 export function RequestPage({ profile, onNavigate }: RequestPageProps) {
-  const [type, setType] = useState<string>('disclosure');
+  const [type, setType] = useState<string>('correction');
   const [detail, setDetail] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [requests, setRequests] = useState<PrivacyRequestItem[]>([]);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadMessage, setDownloadMessage] = useState('');
 
   const loadRequests = useCallback(async () => {
     const token = storedToken();
@@ -86,13 +87,44 @@ export function RequestPage({ profile, onNavigate }: RequestPageProps) {
     }
   };
 
+  const downloadDisclosure = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    setDownloadMessage('');
+    try {
+      const token = storedToken();
+      const response = await fetch('/api/v1/privacy/disclosure', {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        setDownloadMessage(payload.message ?? 'ダウンロードに失敗しました');
+        return;
+      }
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `bettersurvival-data-${profile?.username ?? 'me'}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setDownloadMessage('サービスに接続できません。しばらくしてからもう一度お試しください。');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="legal-page">
       <header className="legal-hero section-block">
         <p className="eyebrow">Privacy Request</p>
         <h1>開示・削除などの申請</h1>
         <p className="section-text">
-          ご自身の個人情報についての開示・訂正・削除・利用停止を申請できます。
+          開示(自分の情報の確認)はその場でダウンロードできます。訂正・削除・利用停止は内容の確認が必要なため、
+          申請フォームから管理者へ依頼してください。
           なりすまし防止のため、Minecraft アカウント連携によるログインを本人確認としています。
           詳しくは<button className="legal-inline-link" type="button" onClick={() => onNavigate('/privacy')}>プライバシーポリシー</button>をご覧ください。
         </p>
@@ -109,6 +141,18 @@ export function RequestPage({ profile, onNavigate }: RequestPageProps) {
         </section>
       ) : (
         <>
+          <section className="legal-section section-block">
+            <h2>開示 (自分の情報のダウンロード)</h2>
+            <p className="section-text">
+              保存されているプロフィール・投稿・過去の申請履歴をまとめてその場でダウンロードできます。
+              申請は不要で、管理者の対応を待つ必要もありません。
+            </p>
+            {downloadMessage ? <p className="request-message" role="status">{downloadMessage}</p> : null}
+            <button className="primary-button" type="button" disabled={downloading} onClick={() => void downloadDisclosure()}>
+              {downloading ? '準備中…' : '自分の情報をダウンロード'}
+            </button>
+          </section>
+
           <section className="legal-section section-block">
             <h2>申請フォーム</h2>
             <p className="request-form-user">申請者: <strong>{profile.username}</strong> (Minecraft アカウント連携済み)</p>
@@ -135,7 +179,7 @@ export function RequestPage({ profile, onNavigate }: RequestPageProps) {
                 rows={5}
                 placeholder={type === 'deletion'
                   ? '例: 2026年6月30日に投稿した「〜」という投稿を削除してください / アカウントごと削除してください'
-                  : '例: 保存されている自分の情報の内容を確認したいです'}
+                  : '例: プロフィールのニックネームが古いままなので修正してほしいです'}
                 onChange={(event) => setDetail(event.target.value)}
               />
               <small>{detail.length}/1000</small>

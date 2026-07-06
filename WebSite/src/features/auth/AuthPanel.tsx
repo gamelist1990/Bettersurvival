@@ -4,18 +4,17 @@ type AuthPanelProps = {
   busy: boolean;
   message: string;
   onLogin: (username: string, password: string) => Promise<boolean>;
-  onRegister: (code: string, email: string, password: string) => Promise<boolean>;
+  onRegister: (code: string, password: string) => Promise<boolean>;
 };
 
 export function AuthPanel({ busy, message, onLogin, onRegister }: AuthPanelProps) {
   const [mode, setMode] = useState<'login' | 'register'>('register');
   const [username, setUsername] = useState('');
   const [code, setCode] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const submit = async () => {
-    if (mode === 'register') await onRegister(code, email, password);
+    if (mode === 'register') await onRegister(code, password);
     else await onLogin(username, password);
   };
 
@@ -31,7 +30,6 @@ export function AuthPanel({ busy, message, onLogin, onRegister }: AuthPanelProps
       {mode === 'register' ? (
         <>
           <label>ワンタイムコード<input value={code} onChange={(event) => setCode(event.target.value)} placeholder="6桁コード" inputMode="numeric" /></label>
-          <label>Email 任意<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="mail@example.com" type="email" /></label>
         </>
       ) : (
         <label>Minecraft ユーザー名<input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="PlayerName" /></label>

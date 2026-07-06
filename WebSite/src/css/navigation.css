@@ -257,10 +257,6 @@
     box-shadow: 0 12px 28px rgba(31,24,18,.14);
     z-index: 40;
   }
-  .app-sidebar.is-open .sidebar-drawer-toggle {
-    left: auto;
-    right: 10px;
-  }
   .sidebar-drawer-toggle span {
     width: 19px;
     height: 2px;

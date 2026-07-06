@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { ConsentModal, hasConsented } from './components/ConsentModal';
 import { pageKeyFromPath, wikiSlugFromPath } from './app/navigation';
+import { AdminPage } from './pages/AdminPage';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { FeedPage } from './pages/FeedPage';
 import { HomePage } from './pages/HomePage';
@@ -16,7 +17,7 @@ export default function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [consented, setConsented] = useState(hasConsented);
   const [showConsent, setShowConsent] = useState(false);
-  const [pendingRegister, setPendingRegister] = useState<{ code: string; email: string; password: string } | null>(null);
+  const [pendingRegister, setPendingRegister] = useState<{ code: string; password: string } | null>(null);
   const service = useWebService();
   const activePage = pageKeyFromPath(path);
   const fullMap = path === '/webmap/full' || path.startsWith('/webmap/full/');
@@ -33,14 +34,14 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const registerWithConsent = async (code: string, email: string, password: string) => {
+  const registerWithConsent = async (code: string, password: string) => {
     if (!consented) {
-      setPendingRegister({ code, email, password });
+      setPendingRegister({ code, password });
       setShowConsent(true);
       return false;
     }
 
-    return service.register(code, email, password);
+    return service.register(code, password);
   };
 
   const agreeConsent = () => {
@@ -50,7 +51,7 @@ export default function App() {
     if (pendingRegister) {
       const registration = pendingRegister;
       setPendingRegister(null);
-      void service.register(registration.code, registration.email, registration.password);
+      void service.register(registration.code, registration.password);
     }
   };
 
@@ -70,6 +71,8 @@ export default function App() {
         return <PrivacyPage onNavigate={navigate} />;
       case 'request':
         return <RequestPage profile={service.profile} onNavigate={navigate} />;
+      case 'admin':
+        return <AdminPage profile={service.profile} onNavigate={navigate} />;
       default:
         return <HomePage profile={service.profile} posts={service.feedPosts} onNavigate={navigate} />;
     }

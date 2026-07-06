@@ -33,6 +33,7 @@ import org.bukkit.util.Transformation;
 import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
@@ -364,18 +365,18 @@ public class EnchantmentSplitModule implements Listener {
         if (!hasLevels) {
             inventory.setItem(CONFIRM_SLOT, createInfoItem(Material.BARRIER, "§c経験レベルが足りません",
                     "§7現在選択しているもの:",
-                    "§f- " + getEnchantDisplayText(selection.enchantment, selection.level),
+                    "§f- " + getEnchantDisplayText(player, selection.enchantment, selection.level),
                     "§7必要レベル: " + cost,
                     "§7分離後に残る本:",
-                    "§f- " + getRemainingEnchantSummary(source, selection.enchantment)));
+                    "§f- " + getRemainingEnchantSummary(player, source, selection.enchantment)));
             return;
         }
         inventory.setItem(CONFIRM_SLOT, createInfoItem(Material.LIME_WOOL, "§a分離する",
                 "§7現在選択しているもの:",
-                "§f- " + getEnchantDisplayText(selection.enchantment, selection.level),
+                "§f- " + getEnchantDisplayText(player, selection.enchantment, selection.level),
                 creative ? "§7Creativeではコスト消費なし" : "§7本 1 冊 と レベル " + cost + " を消費",
                 "§7分離後に残る本:",
-                "§f- " + getRemainingEnchantSummary(source, selection.enchantment)));
+                "§f- " + getRemainingEnchantSummary(player, source, selection.enchantment)));
     }
 
     private void fillBackground(Inventory inventory) {
@@ -417,22 +418,22 @@ public class EnchantmentSplitModule implements Listener {
         return stack;
     }
 
-    private String getRemainingEnchantSummary(ItemStack source, Enchantment removed) {
+    private String getRemainingEnchantSummary(Player player, ItemStack source, Enchantment removed) {
         if (!(source.getItemMeta() instanceof EnchantmentStorageMeta meta))
             return "なし";
         List<String> names = new ArrayList<>();
         for (Map.Entry<Enchantment, Integer> entry : meta.getStoredEnchants().entrySet()) {
             if (entry.getKey().equals(removed))
                 continue;
-            names.add(getEnchantDisplayText(entry.getKey(), entry.getValue()));
+            names.add(getEnchantDisplayText(player, entry.getKey(), entry.getValue()));
         }
         if (names.isEmpty())
             return "なし";
         return String.join(" / ", names);
     }
 
-    private String getEnchantDisplayText(Enchantment enchantment, int level) {
-        return ComponentUtils.legacyText(enchantment.displayName(level));
+    private String getEnchantDisplayText(Player player, Enchantment enchantment, int level) {
+        return ItemNameUtil.localizedPlainText(enchantment.displayName(level), player.locale());
     }
 
     private boolean canUseInputSlot(InventoryClickEvent event, SplitHolder holder, int rawSlot) {
@@ -501,7 +502,7 @@ public class EnchantmentSplitModule implements Listener {
             player.giveExpLevels(-cost);
         giveOrDrop(player, createSingleEnchantBook(selection.enchantment, selection.level));
         player.playSound(player.getLocation(), Sound.BLOCK_GRINDSTONE_USE, 1.0F, 1.2F);
-        player.sendMessage("§a" + getEnchantDisplayText(selection.enchantment, selection.level) + " を分離しました");
+        player.sendMessage("§a" + getEnchantDisplayText(player, selection.enchantment, selection.level) + " を分離しました");
 
         if (!(source.getItemMeta() instanceof EnchantmentStorageMeta afterMeta) || afterMeta.getStoredEnchants().size() <= 1)
             holder.selectedEnchantKey = null;

@@ -239,7 +239,38 @@ public class WarpStoneModule implements Listener {
         }, 3L);
     }
 
-    private void promptRename(Player player, String key) {
+    /** UI やコマンドからオーナーの改名要求を受け付ける。ダイアログを 3 tick 遅延で開く。 */
+    public void requestRename(Player player, String key) {
+        if (player == null || key == null) {
+            return;
+        }
+        if (!isFeatureEnabled()) {
+            player.sendMessage(PREFIX + "§cワープストーン機能は現在無効です");
+            return;
+        }
+        WarpStoneStore.StoneData data = stones.get(key);
+        if (data == null) {
+            player.sendMessage(PREFIX + "§cそのワープストーンは存在しません");
+            return;
+        }
+        if (data.owner() == null || !player.getUniqueId().equals(data.owner())) {
+            player.sendMessage(PREFIX + "§cオーナーのみ名前を変更できます");
+            return;
+        }
+        player.closeInventory();
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (player.isOnline() && stones.containsKey(key)) {
+                promptRename(player, key);
+            }
+        }, 3L);
+    }
+
+    /** UI から現在のワープストーンデータを参照するための取得メソッド (package-private)。 */
+    WarpStoneStore.StoneData getStoneData(String key) {
+        return stones.get(key);
+    }
+
+    void promptRename(Player player, String key) {
         WarpStoneStore.StoneData data = stones.get(key);
         if (data == null) {
             return;

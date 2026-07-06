@@ -19,17 +19,14 @@ export function PrivacyPage({ onNavigate }: PrivacyPageProps) {
         </p>
         <div className="legal-quick-points">
           <div className="legal-point">
-            <span className="legal-point-icon">🎯</span>
             <strong>利用目的を明示</strong>
             <p>集めた情報はサービス提供のためだけに使います</p>
           </div>
           <div className="legal-point">
-            <span className="legal-point-icon">🔒</span>
             <strong>第三者提供なし</strong>
             <p>法令に基づく場合を除き、外部へ提供しません</p>
           </div>
           <div className="legal-point">
-            <span className="legal-point-icon">🗑️</span>
             <strong>開示・削除に対応</strong>
             <p>本人からの請求は申請ページから受け付けます</p>
           </div>

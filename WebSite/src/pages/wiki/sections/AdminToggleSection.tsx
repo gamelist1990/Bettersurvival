@@ -12,9 +12,9 @@ export function AdminToggleSection() {
       scope="op"
     >
       <ImagePlaceholder
-        id="admin-toggle-command"
-        label="/toggle 機能一覧のスクショ"
-        hint="登録済み機能キーと ON/OFF 状態が分かる画面"
+        id="toggle-features-overview"
+        label="/toggle 機能一覧"
+        hint="登録済み機能キーと ON/OFF 状態"
       />
 
       <h3>管理対象のカテゴリ</h3>
@@ -29,25 +29,20 @@ export function AdminToggleSection() {
       <h3>使い方</h3>
       <StepList
         steps={[
-          'OP 権限を持ったアカウントでサーバーにログイン',
-          '/toggle を実行して登録済み機能と状態を確認',
-          '/toggle <機能キー> で該当機能を切り替え',
-          '必要に応じて /toggle customenchant や /toggle landprotect のように対象を指定',
+          'サーバーにログイン (通常プレイヤーでも UI は開けます)',
+          '/toggle を実行して個人用トグル UI を開き、状態を確認',
+          'OP の場合は /toggle op でグローバル (サーバー全体) 用の管理 UI を開く',
+          'UI 上でアイコンをクリックし、対象機能の ON / OFF を切り替える',
         ]}
       />
 
       <h3>代表的なコマンド</h3>
-      <CommandBox op command="/toggle" description="全機能の現在状態を一覧表示。" />
-      <CommandBox op command="/toggle customenchant" description="カスタムエンチャントテーブル機能を切り替え。" />
-      <CommandBox op command="/toggle landprotect" description="土地保護コア機能を切り替え。" />
-      <CommandBox op command="/toggle webmap" description="軽量 Web マップと ChunkGen を切り替え。" />
+      <CommandBox command="/toggle" description="個人用トグル UI (自分に対する ON/OFF) を開きます。" />
+      <CommandBox op command="/toggle op" description="OP 用のグローバル設定 UI を開きます。全プレイヤーに影響します。" />
+      <CommandBox op command="/toggle normal" description="OP が通常プレイヤー用のデフォルト設定 UI を開きます。"/>
+      <CommandBox op command="/chest op toggle" description="チェスト対象を見ながら ChestLock 機能のグローバル ON/OFF を切り替えます。" />
 
-      <ImagePlaceholder
-        id="admin-toggle-result"
-        label="toggle 実行後の反映結果"
-        hint="対象機能が ON/OFF されたことが分かるメッセージや GUI"
-        aspect="4/3"
-      />
+     
 
       <h3>注意点</h3>
       <ul className="wiki-bullets">
