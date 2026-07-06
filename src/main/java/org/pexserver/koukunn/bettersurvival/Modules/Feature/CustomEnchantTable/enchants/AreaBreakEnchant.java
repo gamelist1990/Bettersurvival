@@ -92,7 +92,7 @@ public class AreaBreakEnchant extends CustomEnchant {
         return "§7掘ると周囲のブロックを中心から渦を巻くように破壊する"
                 + "\n§7Lv1: 3x3 / Lv2: 3x3 奥行き2 / Lv3: 7x7 奥行き2"
                 + "\n§7水平に掘ると足元より上へ、真下を向くと従来通り真下を掘る"
-                + "\n§e左クリック→右クリック→左クリック のツール設定メニューで ON/OFF";
+                + "\n§e左→右→左→右→右→シフト のツール設定メニューで ON/OFF";
     }
 
     @Override
@@ -138,7 +138,7 @@ public class AreaBreakEnchant extends CustomEnchant {
             return;
         }
         if (!settings.isEnabled(player.getUniqueId(), SETTING_ID)) {
-            return; // ツール設定 (左→右→左メニュー) で ON にした時のみ発動
+            return; // ツール設定メニュー (左→右→左→右→右→シフト) で ON にした時のみ発動
         }
         if (!tryConsumeBurst(player, level)) {
             return;

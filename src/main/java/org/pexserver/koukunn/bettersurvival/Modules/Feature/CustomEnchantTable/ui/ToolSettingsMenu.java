@@ -9,6 +9,8 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchantRegistry;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.settings.ToolSetting;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.settings.ToolSettingsStore;
 
@@ -19,8 +21,9 @@ import java.util.UUID;
 /**
  * ツール設定メニュー (27スロット、プレイヤーごと)。
  *
- * 登録済みの {@link ToolSetting} を横一列のボタンとして並べ、
- * クリックで ON/OFF を切り替える。設定はプレイヤー単位で保持される。
+ * 開いた時点で手に持っていた道具に「実際に付いているエンチャント」に対応する
+ * {@link ToolSetting} だけをボタンとして並べ、クリックで ON/OFF を切り替える。
+ * エンチャントが付いていない項目は表示されない。設定はプレイヤー単位で保持される。
  */
 public class ToolSettingsMenu implements InventoryHolder {
 
@@ -29,16 +32,27 @@ public class ToolSettingsMenu implements InventoryHolder {
     private static final int[] BUTTON_SLOTS = {10, 11, 12, 13, 14, 15, 16};
 
     private final ToolSettingsStore store;
+    private final CustomEnchantRegistry registry;
+    /** メニューを開いた時点の道具 (この道具のエンチャントで項目を絞り込む) */
+    private final ItemStack tool;
     private final UUID viewerId;
     private final Inventory inventory;
     /** ボタンスロット → 設定ID */
     private final List<String> slotMapping = new ArrayList<>();
 
-    public ToolSettingsMenu(ToolSettingsStore store, Player viewer) {
+    public ToolSettingsMenu(ToolSettingsStore store, CustomEnchantRegistry registry, ItemStack tool, Player viewer) {
         this.store = store;
+        this.registry = registry;
+        this.tool = tool;
         this.viewerId = viewer.getUniqueId();
         this.inventory = Bukkit.createInventory(this, SIZE, ComponentUtils.legacy("§8⚙ §bツール設定 §8⚙"));
         render();
+    }
+
+    /** その設定に対応するエンチャントが、開いた道具に付いているか */
+    private boolean toolHasEnchant(ToolSetting setting) {
+        CustomEnchant enchant = registry.byId(setting.id());
+        return enchant != null && tool != null && enchant.levelOf(tool) > 0;
     }
 
     @Override
@@ -61,12 +75,20 @@ public class ToolSettingsMenu implements InventoryHolder {
         slotMapping.clear();
         int index = 0;
         for (ToolSetting setting : store.settings()) {
+            if (!toolHasEnchant(setting)) {
+                continue; // その道具に付いていないエンチャントの設定は出さない
+            }
             if (index >= BUTTON_SLOTS.length) {
                 break;
             }
             slotMapping.add(setting.id());
             renderSettingButton(BUTTON_SLOTS[index], setting);
             index++;
+        }
+        if (index == 0) {
+            setItem(13, "§7設定できる効果がありません", Material.BARRIER,
+                    List.of("§7この道具には ON/OFF できる",
+                            "§7カスタムエンチャントが付いていません"));
         }
     }
 

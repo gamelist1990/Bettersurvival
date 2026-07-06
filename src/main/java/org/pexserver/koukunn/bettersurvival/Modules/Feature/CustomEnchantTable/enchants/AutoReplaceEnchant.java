@@ -56,7 +56,7 @@ public class AutoReplaceEnchant extends CustomEnchant {
         return "§7オフハンドにブロックを持って掘ると"
                 + "\n§7掘った場所をそのブロックで即座に埋める"
                 + "\n§7ブロックは1個ずつ消費される"
-                + "\n§e左クリック→右クリック→左クリック の"
+                + "\n§e左→右→左→右→右→シフト の"
                 + "\n§eツール設定メニューで ON/OFF を切り替え";
     }
 

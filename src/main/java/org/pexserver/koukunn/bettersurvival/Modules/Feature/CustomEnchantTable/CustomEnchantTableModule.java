@@ -131,13 +131,13 @@ public class CustomEnchantTableModule implements Listener {
         this.displayKey = new NamespacedKey(plugin, "custom_enchant_table_display");
         this.registry = new CustomEnchantRegistry(plugin);
 
-        // ===== ツール設定 (左→右→左 メニューで ON/OFF できる効果) =====
+        // ===== ツール設定 (左→右→左→右→右→シフト メニューで ON/OFF できる効果) =====
         this.toolSettings = new ToolSettingsStore();
         toolSettings.register(new ToolSetting(AreaBreakEnchant.SETTING_ID, "範囲採掘", Material.TNT_MINECART,
                 "§7ONにすると掘ったとき周囲も渦状に破壊する", false));
         toolSettings.register(new ToolSetting(AutoReplaceEnchant.SETTING_ID, "採掘穴埋め", Material.DISPENSER,
                 "§7ONかつオフハンドにブロックを持っていると\n§7掘った場所をそのブロックで即座に埋める", false));
-        this.toolSettingsController = new ToolSettingsController(toolSettings);
+        this.toolSettingsController = new ToolSettingsController(toolSettings, registry);
         plugin.getServer().getPluginManager().registerEvents(toolSettingsController, plugin);
 
         // ===== エンチャント登録 (新規追加はここに1行足すだけ) =====

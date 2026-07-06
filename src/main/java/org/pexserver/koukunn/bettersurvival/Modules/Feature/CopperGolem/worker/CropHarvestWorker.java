@@ -90,6 +90,11 @@ public class CropHarvestWorker {
 
         List<Block> ripeCrops = findRipeCrops(searchCenter, range, cropFilters);
         if (ripeCrops.isEmpty()) {
+            // 収穫対象が無いときに、踏み荒らされて土に戻った畑を耕し直す
+            if (allowReplant && profile.autoReplant()
+                    && handleTrampledFarmland(golem, searchCenter, range, maxHarvestBlocks, moveSpeed)) {
+                return 0;
+            }
             if (allowBoneMeal && profile.autoBoneMeal() && !profile.boneMealSources().isEmpty()) {
                 int fertilized = runBoneMealWorker(profile, golem, searchCenter, range, maxHarvestBlocks, moveSpeed);
                 if (fertilized > 0) {
@@ -242,6 +247,100 @@ public class CropHarvestWorker {
         heldItemCycles.put(golem.getUniqueId(), HELD_ITEM_CYCLES_AFTER_ACTION);
         golem.setGolemState(CopperGolem.State.DROPPING_ITEM);
         return used;
+    }
+
+    /**
+     * 踏み荒らされて土に戻った畑 (耕地の隣にある、上が空いた土) を耕し直す。
+     *
+     * @return 耕したか、対象へ移動中で今サイクルを消費した場合は true
+     *         (耕す対象が無く、他の処理へ進んでよい場合は false)
+     */
+    private boolean handleTrampledFarmland(
+            CopperGolem golem,
+            Location searchCenter,
+            int range,
+            int maxActions,
+            double moveSpeed) {
+        List<Block> tillable = findTrampledFarmland(searchCenter, range);
+        if (tillable.isEmpty()) {
+            return false;
+        }
+
+        Block first = tillable.get(0);
+        Location firstPoint = first.getLocation().add(0.5D, 0.0D, 0.5D);
+        if (golem.getLocation().distanceSquared(firstPoint) > (HARVEST_REACH_DISTANCE * HARVEST_REACH_DISTANCE)) {
+            clearHeldItem(golem, CopperGolem.State.GETTING_ITEM);
+            golem.getPathfinder().moveTo(firstPoint, moveSpeed);
+            golem.setGolemState(CopperGolem.State.GETTING_ITEM);
+            return true;
+        }
+
+        int tilled = 0;
+        for (Block block : tillable) {
+            if (tilled >= maxActions) {
+                break;
+            }
+            Location point = block.getLocation().add(0.5D, 0.0D, 0.5D);
+            if (golem.getLocation().distanceSquared(point) > (HARVEST_REACH_DISTANCE * HARVEST_REACH_DISTANCE)) {
+                break;
+            }
+            if (!isTrampledFarmland(block)) {
+                continue; // 直前に状況が変わった
+            }
+            block.setType(Material.FARMLAND, false);
+            showTillAnimation(golem, block);
+            tilled++;
+        }
+
+        if (tilled <= 0) {
+            return false;
+        }
+        heldItemCycles.put(golem.getUniqueId(), HELD_ITEM_CYCLES_AFTER_ACTION);
+        golem.setGolemState(CopperGolem.State.DROPPING_ITEM);
+        return true;
+    }
+
+    private List<Block> findTrampledFarmland(Location center, int range) {
+        List<Block> result = new ArrayList<>();
+        Block base = center.getBlock();
+        for (int dx = -range; dx <= range; dx++) {
+            for (int dz = -range; dz <= range; dz++) {
+                for (int dy = -2; dy <= 2; dy++) {
+                    Block block = base.getRelative(dx, dy, dz);
+                    if (isTrampledFarmland(block)) {
+                        result.add(block);
+                    }
+                }
+            }
+        }
+        result.sort(Comparator.comparingDouble(block -> block.getLocation().distanceSquared(center)));
+        return result;
+    }
+
+    /**
+     * 「元は耕地だったが踏まれて土になった」ブロックかどうか。
+     * 誤って畑以外の土を耕さないよう、耕地に隣接し上が開いている土だけを対象にする。
+     */
+    private boolean isTrampledFarmland(Block block) {
+        if (block == null || block.getType() != Material.DIRT) {
+            return false;
+        }
+        if (!block.getRelative(0, 1, 0).getType().isAir()) {
+            return false; // 上が塞がっていたら耕せない
+        }
+        return block.getRelative(1, 0, 0).getType() == Material.FARMLAND
+                || block.getRelative(-1, 0, 0).getType() == Material.FARMLAND
+                || block.getRelative(0, 0, 1).getType() == Material.FARMLAND
+                || block.getRelative(0, 0, -1).getType() == Material.FARMLAND;
+    }
+
+    private void showTillAnimation(CopperGolem golem, Block block) {
+        golem.getEquipment().setItemInMainHand(new ItemStack(Material.IRON_HOE), true);
+        golem.setGolemState(CopperGolem.State.GETTING_ITEM);
+        golem.swingHand(org.bukkit.inventory.EquipmentSlot.HAND);
+        block.getWorld().playSound(block.getLocation().add(0.5D, 0.5D, 0.5D), Sound.ITEM_HOE_TILL, 0.8F, 1.0F);
+        block.getWorld().spawnParticle(org.bukkit.Particle.BLOCK, block.getLocation().add(0.5D, 0.9D, 0.5D),
+                12, 0.25D, 0.05D, 0.25D, block.getBlockData());
     }
 
     private int blocksPerCycleFromCapacity(int capacity, int harvestPoints) {
