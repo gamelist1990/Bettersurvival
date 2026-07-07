@@ -168,6 +168,11 @@ public class CustomEnchantTableUI implements InventoryHolder {
                 }
             }
         }
+        // 本の場合は supports() を無視して全エンチャント表示 (実際の適用可否は金床で判定)
+        if (tool != null && CustomEnchant.isBookMaterial(tool.getType())) {
+            enchants.clear();
+            enchants.addAll(registry.all());
+        }
         page = Math.max(0, Math.min(page, maxPage(enchants.size())));
         int start = page * BUTTON_SLOTS.length;
         int index = 0;
@@ -222,10 +227,16 @@ public class CustomEnchantTableUI implements InventoryHolder {
             setButton(slot, "§7" + enchant.displayName(), enchant.icon(), lore.toString());
             return;
         }
-        if (!enchant.supports(tool.getType())) {
+        boolean isBook = CustomEnchant.isBookMaterial(tool.getType());
+        if (!isBook && !enchant.supports(tool.getType())) {
             lore.append("\n\n§cこの道具には付けられません");
             setButton(slot, "§8" + enchant.displayName() + " §c✘", enchant.icon(), lore.toString());
             return;
+        }
+        if (isBook) {
+            lore.append("\n\n§b📖 本用エンチャント");
+            lore.append("\n§7金床で対応装備に付与されます");
+            lore.append("\n§7非対応の効果は自動で切り捨て");
         }
         int current = enchant.levelOf(tool);
         if (current >= enchant.maxLevel()) {
@@ -291,7 +302,8 @@ public class CustomEnchantTableUI implements InventoryHolder {
             player.sendMessage("§d[エンチャント]§r §c先に道具をスロットに入れてください");
             return;
         }
-        if (!enchant.supports(tool.getType())) {
+        boolean isBook = CustomEnchant.isBookMaterial(tool.getType());
+        if (!isBook && !enchant.supports(tool.getType())) {
             player.sendMessage("§d[エンチャント]§r §cこの道具には " + enchant.displayName() + " を付けられません");
             return;
         }
@@ -316,6 +328,11 @@ public class CustomEnchantTableUI implements InventoryHolder {
             for (ItemStack cost : costs) {
                 player.getInventory().removeItem(cost.clone());
             }
+        }
+        // 通常の本にエンチャントを付与するとき、エンチャント本へ変換 (プレーンな本は初回変換のみ)
+        if (tool.getType() == Material.BOOK) {
+            tool = new ItemStack(Material.ENCHANTED_BOOK);
+            inventory.setItem(SLOT_TOOL, tool);
         }
         enchant.applyLevel(tool, next);
         inventory.setItem(SLOT_TOOL, tool);

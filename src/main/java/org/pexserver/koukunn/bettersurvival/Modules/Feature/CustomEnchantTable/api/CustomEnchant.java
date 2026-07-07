@@ -11,6 +11,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
@@ -142,11 +143,20 @@ public abstract class CustomEnchant implements Listener {
         removeLoreLines(meta);
         Enchantment real = registryEnchantment();
         if (real != null) {
-            // 表示: 本物のエンチャントとして (Vanilla のエンチャント欄に並ぶ)
-            if (level <= 0) {
-                meta.removeEnchant(real);
+            // 本の場合は storedEnchant として付ける (エンチャント本の正しい表示のため)
+            if (meta instanceof EnchantmentStorageMeta storageMeta) {
+                if (level <= 0) {
+                    storageMeta.removeStoredEnchant(real);
+                } else {
+                    storageMeta.addStoredEnchant(real, level, true);
+                }
             } else {
-                meta.addEnchant(real, level, true);
+                // 表示: 本物のエンチャントとして (Vanilla のエンチャント欄に並ぶ)
+                if (level <= 0) {
+                    meta.removeEnchant(real);
+                } else {
+                    meta.addEnchant(real, level, true);
+                }
             }
         } else if (level > 0) {
             // フォールバック (bootstrap が動かない環境): Vanilla 風 lore 表示 + 光沢
@@ -197,5 +207,10 @@ public abstract class CustomEnchant implements Listener {
     protected static boolean isMiningTool(Material type) {
         String name = type.name();
         return name.endsWith("_PICKAXE") || name.endsWith("_AXE") || name.endsWith("_SHOVEL") || name.endsWith("_HOE");
+    }
+
+    /** 本 (BOOK / ENCHANTED_BOOK) 判定。本には全エンチャントを付与でき、金床で対象装備へ転写する。 */
+    public static boolean isBookMaterial(Material type) {
+        return type == Material.BOOK || type == Material.ENCHANTED_BOOK;
     }
 }

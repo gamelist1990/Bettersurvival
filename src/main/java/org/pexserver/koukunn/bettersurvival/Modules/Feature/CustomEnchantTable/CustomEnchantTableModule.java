@@ -178,6 +178,9 @@ public class CustomEnchantTableModule implements Listener {
         registry.register(new ArthropodBaneEnchant(plugin));
         registry.register(new IgnitionStrikeEnchant(plugin));
 
+        // 金床でカスタムエンチャント本→装備への転写 (非対応エンチャントは切り捨て)
+        plugin.getServer().getPluginManager().registerEvents(new CustomEnchantAnvilListener(registry), plugin);
+
         itemCombineModule.recipe("custom_enchant_table")
                 .first(this::isPlainEnchantTable)
                 .second(this::isLapis)
@@ -359,6 +362,10 @@ public class CustomEnchantTableModule implements Listener {
     }
 
     private boolean supportsAnyEnchant(Material type) {
+        // 本は無条件にエンチャント可能 (実際の適用可否は金床で判定)
+        if (org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant.isBookMaterial(type)) {
+            return true;
+        }
         for (org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchant enchant : registry.all()) {
             if (enchant.supports(type)) {
                 return true;

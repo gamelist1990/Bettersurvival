@@ -3,6 +3,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -64,7 +65,7 @@ public class EnderChestEnchant extends CustomEnchant {
                 new ItemStack(Material.OBSIDIAN, 4));
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) {
             return;
@@ -83,6 +84,9 @@ public class EnderChestEnchant extends CustomEnchant {
         if (levelOf(item) <= 0) {
             return;
         }
+        // エンダーアイのデフォルト使用（投げ動作）を確実に止める
+        event.setUseItemInHand(Event.Result.DENY);
+        event.setUseInteractedBlock(Event.Result.DENY);
         event.setCancelled(true);
         Player player = event.getPlayer();
         player.openInventory(player.getEnderChest());
