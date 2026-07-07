@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { ConsentModal, hasConsented } from './components/ConsentModal';
+import { ErrorModal } from './components/ErrorModal';
 import { pageKeyFromPath, wikiSlugFromPath } from './app/navigation';
 import { AdminPage } from './pages/AdminPage';
 import { FeaturesPage } from './pages/FeaturesPage';
@@ -79,13 +80,19 @@ export default function App() {
   })();
 
   if (fullMap) {
-    return <WebMapPage full />;
+    return (
+      <>
+        <WebMapPage full />
+        <ErrorModal />
+      </>
+    );
   }
 
   return (
     <AppLayout activePage={activePage} profile={service.profile} wide={activePage === 'webmap'} onNavigate={navigate} onLogout={service.logout}>
       {page}
       {showConsent ? <ConsentModal onAgree={agreeConsent} onNavigate={navigate} /> : null}
+      <ErrorModal />
     </AppLayout>
   );
 }

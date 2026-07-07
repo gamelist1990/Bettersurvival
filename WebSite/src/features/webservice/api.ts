@@ -1,6 +1,7 @@
 import type { AuthProfile, AuthResponse, ProfileDraft, WebPost, WebPostAttachment } from './types';
 import users from '../../../debug/users.json';
 import posts from '../../../debug/posts.json';
+import { maybeShowKnownApiError, showApiError } from './errorBus';
 
 export const MOCK_MODE = import.meta.env.VITE_USE_MOCK_DATA === 'true';
 
@@ -112,17 +113,49 @@ export async function postJson(path: string, body: Record<string, unknown>, toke
   }
 
   const csrfToken = token ? storedCsrfToken() : '';
-  const response = await fetch(path, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(csrfToken ? { 'X-BetterSurvival-CSRF': csrfToken } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  return (await response.json()) as AuthResponse;
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrfToken ? { 'X-BetterSurvival-CSRF': csrfToken } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (networkError) {
+    // ブラウザレベルで CORS プリフライトが弾かれた等、fetch 自体が失敗したケース。
+    showApiError({
+      title: 'サーバーに接続できません',
+      severity: 'error',
+      message:
+        'サーバーへ接続できませんでした。\n通信環境を確認して、少し時間をおいてからもう一度お試しください。',
+      detail: networkError instanceof Error ? networkError.message : String(networkError),
+    });
+    return { success: false, message: 'ネットワークエラー' } as AuthResponse;
+  }
+
+  let payload: AuthResponse;
+  try {
+    payload = (await response.json()) as AuthResponse;
+  } catch {
+    // JSON でない応答 (プロキシの HTML エラーページ等)
+    if (!response.ok) {
+      showApiError({
+        title: 'サーバーエラー',
+        severity: 'error',
+        message: '予期しないサーバー応答を受け取りました。時間をおいてから再度お試しください。',
+        status: response.status,
+      });
+    }
+    return { success: false, message: 'サーバー応答を解析できませんでした' } as AuthResponse;
+  }
+
+  // 既知のセキュリティ系エラー (CORS / CSRF / rate-limit …) はグローバルモーダルで通知
+  maybeShowKnownApiError(payload as { success?: boolean; message?: string }, response.status);
+  return payload;
 }
 
 export function mockFeedResponse(since = 0): AuthResponse {

@@ -1693,22 +1693,102 @@ public class WebMapHttpServer {
     private boolean guardSameOrigin(HttpExchange exchange) throws IOException {
         String origin = exchange.getRequestHeaders().getFirst("Origin");
         String referer = exchange.getRequestHeaders().getFirst("Referer");
-        String expected = absoluteRequestBase(exchange);
+        java.util.Set<String> allowed = allowedOriginBases(exchange);
+
         if (origin != null && !origin.isBlank()) {
-            if (!origin.equalsIgnoreCase(expected)) {
-                writeJson(exchange, Map.of("success", false, "message", "Cross-origin request blocked"), 403);
-                return false;
+            String normalizedOrigin = origin.trim();
+            for (String base : allowed) {
+                if (base.equalsIgnoreCase(normalizedOrigin)) {
+                    return true;
+                }
             }
-            return true;
+            rejectCrossOrigin(exchange, "origin", normalizedOrigin, allowed);
+            return false;
         }
         if (referer != null && !referer.isBlank()) {
-            if (!referer.startsWith(expected + "/")) {
-                writeJson(exchange, Map.of("success", false, "message", "Cross-origin request blocked"), 403);
-                return false;
+            String normalizedReferer = referer.trim();
+            for (String base : allowed) {
+                if (normalizedReferer.equalsIgnoreCase(base)
+                        || normalizedReferer.startsWith(base + "/")
+                        || normalizedReferer.startsWith(base + "?")
+                        || normalizedReferer.startsWith(base + "#")) {
+                    return true;
+                }
             }
-            return true;
+            rejectCrossOrigin(exchange, "referer", normalizedReferer, allowed);
+            return false;
         }
         return true;
+    }
+
+
+    private java.util.Set<String> allowedOriginBases(HttpExchange exchange) {
+        java.util.LinkedHashSet<String> set = new java.util.LinkedHashSet<>();
+
+        String fwdHost = firstHeaderValue(exchange, "X-Forwarded-Host");
+        String fwdProto = firstHeaderValue(exchange, "X-Forwarded-Proto");
+        String fwdPort = firstHeaderValue(exchange, "X-Forwarded-Port");
+        String hostHeader = exchange.getRequestHeaders().getFirst("Host");
+
+        if (fwdHost != null && !fwdHost.isBlank()) {
+            String hostWithPort = fwdHost;
+            if (fwdPort != null && !fwdPort.isBlank() && !fwdHost.contains(":")) {
+                if (!("80".equals(fwdPort) && "http".equalsIgnoreCase(fwdProto))
+                        && !("443".equals(fwdPort) && "https".equalsIgnoreCase(fwdProto))) {
+                    hostWithPort = fwdHost + ":" + fwdPort;
+                }
+            }
+            if (fwdProto != null && !fwdProto.isBlank()) {
+                set.add(fwdProto.toLowerCase(Locale.ROOT) + "://" + hostWithPort);
+            } else {
+                set.add("http://" + hostWithPort);
+                set.add("https://" + hostWithPort);
+            }
+            set.add("http://" + fwdHost);
+            set.add("https://" + fwdHost);
+        }
+
+        if (hostHeader != null && !hostHeader.isBlank()) {
+            set.add("http://" + hostHeader);
+            set.add("https://" + hostHeader);
+        }
+
+        InetSocketAddress local = exchange.getLocalAddress();
+        if (local != null) {
+            String localBase = local.getHostString() + ":" + local.getPort();
+            set.add("http://" + localBase);
+            set.add("https://" + localBase);
+        }
+
+        return set;
+    }
+
+    private String firstHeaderValue(HttpExchange exchange, String name) {
+        String raw = exchange.getRequestHeaders().getFirst(name);
+        if (raw == null || raw.isBlank()) return null;
+        int comma = raw.indexOf(',');
+        return (comma >= 0 ? raw.substring(0, comma) : raw).trim();
+    }
+
+    private void rejectCrossOrigin(HttpExchange exchange, String field, String actual,
+                                    java.util.Set<String> expected) throws IOException {
+        try {
+            module.getPlugin().getLogger().warning(
+                    "[WebMap] Cross-origin request blocked. " + field + "=\"" + actual
+                            + "\" expected one of " + expected
+                            + " path=" + exchange.getRequestURI());
+        } catch (Throwable ignored) {
+            // ignore
+        }
+        writeJson(exchange, Map.of(
+                "success", false,
+                "message", "Cross-origin request blocked",
+                "debug", Map.of(
+                        "field", field,
+                        "actual", actual,
+                        "expected", new java.util.ArrayList<>(expected)
+                )
+        ), 403);
     }
 
     private boolean guardApi(HttpExchange exchange) throws IOException {
@@ -1720,7 +1800,6 @@ public class WebMapHttpServer {
     }
 
     private boolean guard(HttpExchange exchange, WebMapRateLimiter limiter, String prefix) throws IOException {
-        // HAProxy PROXY protocol v2 有効時は実クライアント IP でレート制限する
         String key = prefix + ":" + clientIp(exchange);
         if (limiter.allow(key)) {
             return true;
