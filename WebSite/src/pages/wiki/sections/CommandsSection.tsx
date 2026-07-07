@@ -28,6 +28,21 @@ const commands: CommandDoc[] = [
     usage: '/list',
   },
   {
+    name: '/ping',
+    scope: 'ANY',
+    summary: 'サーバーとの通信にかかる時間 (RTT) を計測して表示します。判定ラベルと色で目安がひと目でわかります。',
+    usage: '/ping [プレイヤー名]',
+    subCommands: [
+      { name: '/ping', text: '自分の ping を表示します。プレイヤー専用。' },
+      { name: '/ping <名前>', text: '指定プレイヤーの ping を表示します。OP 専用。', scope: 'ADMIN' },
+    ],
+    notes: [
+      '通信遅延 (RTT): クライアント↔サーバー間のラウンドトリップ時間 (ms)。',
+      'サーバー応答: コマンド受信から次 tick 実行までの遅延の目安 (ms)。TPS が下がっていると増加します。',
+      '判定は 60ms 未満=非常に良好 / 120ms 未満=良好 / 200ms 未満=やや遅延 / それ以上=高遅延 の目安です。',
+    ],
+  },
+  {
     name: '/rename',
     scope: 'ANY',
     summary: '手に持っているアイテムの名前を変更します。金床を使わずに命名できます。',

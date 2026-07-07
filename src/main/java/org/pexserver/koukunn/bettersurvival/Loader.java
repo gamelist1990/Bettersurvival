@@ -51,6 +51,7 @@ import org.pexserver.koukunn.bettersurvival.Commands.rename.RenameCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.tpa.TpaCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.invsee.InvseeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.list.ListCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.ping.PingCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.hotp.HotpCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.webservice.WebServiceCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.offline.OfflineCommand;
@@ -406,6 +407,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new InvseeCommand(this));
         // List command: オンラインのプレイヤー一覧を表示
         commandManager.register(new ListCommand());
+        // Ping command: サーバーとの通信遅延を計測
+        commandManager.register(new PingCommand());
         // HOTP command: WebSite 登録用ワンタイムコード
         commandManager.register(new HotpCommand(this));
         // DiscordWebhook command: Discord通知設定UI（OP専用）
