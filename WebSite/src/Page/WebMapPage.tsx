@@ -501,6 +501,9 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressMovedRef = useRef(false);
   const lockedScrollYRef = useRef(0);
+  // status.running を interval クロージャから参照するための ref。
+  // useState の値だけだと effect の依存に載せない限り古い値を握ってしまうので併用する。
+  const statusRef = useRef<StatusResponse | null>(null);
 
   const [bootstrap, setBootstrap] = useState<BootstrapResponse>(DEFAULT_BOOTSTRAP);
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -731,13 +734,21 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
       try {
         const response = await fetch(bootstrap.server.statusUrl, { cache: "no-store" });
         if (response.ok) {
-          setStatus((await response.json()) as StatusResponse);
+          const next = (await response.json()) as StatusResponse;
+          statusRef.current = next;
+          setStatus(next);
         }
       } catch {
         // ignore transient network errors
       }
     };
     const refreshWorlds = async () => {
+      // WebMap 機能が OFF の間は worlds を叩かない (404 ノイズ抑止)。
+      // WebService は動いていても WebMap 側の guardWebMap で 404 になるため。
+      const currentStatus = statusRef.current;
+      if (currentStatus && !currentStatus.running) {
+        return;
+      }
       try {
         const response = await fetch(bootstrap.server.worldsUrl, { cache: "no-store" });
         if (!response.ok) {
@@ -755,6 +766,11 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
       }
     };
     const refreshPlayers = async () => {
+      // WebMap 機能が OFF の間は players も叩かない。
+      const currentStatus = statusRef.current;
+      if (currentStatus && !currentStatus.running) {
+        return;
+      }
       try {
         const response = await fetch(bootstrap.server.playersUrl, { cache: "no-store" });
         if (response.ok) {

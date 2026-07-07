@@ -1022,7 +1022,11 @@ public class WebMapModule implements Listener {
         if (shutdownRequested) {
             return;
         }
-        if (!isWebServiceEnabled() || !settings.isEnabled() || settings.isPaused()) {
+        // HTTP サーバー全体は WebService (Feed/Auth/Privacy 等) のためのゲート。
+        // WebMap の settings.isEnabled() / isPaused() は WebMap 機能 (worlds/players/tiles) だけを
+        // 個別に guardWebMap() で 404 にする役割にとどめ、サーバー本体の停止条件には含めない。
+        // これにより WebMap を OFF にしても Feed 投稿などの WebService API が生き続ける。
+        if (!isWebServiceEnabled()) {
             httpServer.stop();
             return;
         }
@@ -1030,7 +1034,7 @@ public class WebMapModule implements Listener {
             try {
                 httpServer.start(settings);
             } catch (IOException error) {
-                plugin.getLogger().log(Level.WARNING, "WebMap サーバー起動失敗: " + error.getMessage());
+                plugin.getLogger().log(Level.WARNING, "WebService HTTP サーバー起動失敗: " + error.getMessage());
             }
             return;
         }
@@ -1038,7 +1042,7 @@ public class WebMapModule implements Listener {
             try {
                 httpServer.start(settings);
             } catch (IOException error) {
-                plugin.getLogger().log(Level.WARNING, "WebMap サーバー再起動失敗: " + error.getMessage());
+                plugin.getLogger().log(Level.WARNING, "WebService HTTP サーバー再起動失敗: " + error.getMessage());
             }
         }
     }
