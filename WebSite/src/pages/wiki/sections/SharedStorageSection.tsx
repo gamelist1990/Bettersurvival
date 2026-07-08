@@ -33,6 +33,65 @@ const functionSettings = [
   },
 ];
 
+interface CategoryTag {
+  category: string;
+  desc: string;
+  keywords: string[];
+}
+
+const categoryTags: CategoryTag[] = [
+  {
+    category: '戦闘 (combat)',
+    desc: '剣・斧・弓・クロスボウ・トライデント・メイス・盾・矢・防具一式などをまとめて。',
+    keywords: ['combat', '戦闘'],
+  },
+  {
+    category: '道具と実用品 (tools / utilities)',
+    desc: 'ピッケル・斧・シャベル・クワ・ハサミ・釣り竿・火打石・時計・コンパス・望遠鏡・ブラシ・全種類のバケツ・名札・リード・エリトラ・鞍・にんじん棒・歪んだキノコ棒。',
+    keywords: ['tools', 'tool', 'utilities', 'utility', '道具', '実用品', '道具と実用品'],
+  },
+  {
+    category: '機能性ブロック (functional)',
+    desc: 'ドア/トラップドア/フェンスゲート/ボタン/レール/シュルカー/看板/バナー/ベッド、チェスト・樽・かまど・作業台系ブロックなど。',
+    keywords: ['functional', '機能性', '機能性ブロック'],
+  },
+  {
+    category: 'レッドストーン系ブロック (redstone)',
+    desc: 'RS 回路まわり (レッドストーン・反復・比較・観測・ピストン・粘着ピストン・ホッパー・ドロッパー・ディスペンサー・オブザーバーなど)。',
+    keywords: ['redstone', 'レッドストーン', 'レッドストーン系ブロック'],
+  },
+  {
+    category: '食料 (food)',
+    desc: '「食べられるアイテム」を判定してまとめて仕分け (毒のクモの目は除外)。',
+    keywords: ['food', 'edible', '食べ物', '食料'],
+  },
+  {
+    category: '防具全部 (armor)',
+    desc: 'ヘルメット/チェスト/レギンス/ブーツを種類問わずまとめて 1 つの sub に。',
+    keywords: ['armor', 'armour', '防具'],
+  },
+  { category: 'ヘルメットだけ', desc: 'カブトのみ。防具を種類ごとに分けたいときに。', keywords: ['helmet', 'ヘルメット'] },
+  { category: 'チェストプレートだけ', desc: '胸当てのみ。', keywords: ['chestplate', 'チェストプレート'] },
+  { category: 'レギンスだけ', desc: '脚防具のみ。', keywords: ['leggings', 'レギンス'] },
+  { category: 'ブーツだけ', desc: '足防具のみ。', keywords: ['boots', 'ブーツ'] },
+  { category: '剣 (sword)', desc: '全種類の剣。', keywords: ['sword', '剣'] },
+  { category: '斧 (axe)', desc: '全種類の斧。', keywords: ['axe', '斧'] },
+  {
+    category: 'ピッケル (pickaxe)',
+    desc: '全種類のツルハシ。表記ゆれ (ピッケル/つるはし/ツルハシ) 全部認識。',
+    keywords: ['pickaxe', 'ピッケル', 'つるはし', 'ツルハシ'],
+  },
+  { category: 'シャベル (shovel)', desc: '全種類のシャベル。', keywords: ['shovel', 'spade', 'シャベル'] },
+  { category: 'クワ (hoe)', desc: '全種類のクワ。', keywords: ['hoe', 'クワ', 'くわ'] },
+  { category: '作物 (crop)', desc: '農作物系 (小麦/にんじん/ジャガイモ 等)。', keywords: ['crop', 'farm', '作物', '農作物'] },
+  { category: '鉱石 (ore)', desc: '鉱石ブロック系全般。', keywords: ['ore', 'mineral', '鉱物', '鉱石'] },
+  {
+    category: '素材 (material)',
+    desc: 'クラフト素材系。',
+    keywords: ['ingredients', 'ingredient', 'materials', 'material', '材料', '素材'],
+  },
+];
+
 export function SharedStorageSection() {
   return (
     <SectionShell
@@ -110,7 +169,7 @@ export function SharedStorageSection() {
         <li><strong>閉じる</strong>: UI を閉じるだけ。</li>
       </ul>
 
-      <h3>額縁フィルタの使い方</h3>
+      <h3>額縁フィルタの使い方 (基本)</h3>
       <ol>
         <li>「機能設定」の <strong>額縁フィルタ</strong> を許可にします。</li>
         <li>sub チェストの正面のブロック面に <strong>額縁</strong> を貼ります。</li>
@@ -119,10 +178,95 @@ export function SharedStorageSection() {
         <li><strong>一致モード</strong>を変えると判定が変わります: EXACT は NBT まで完全一致 / MATERIAL は材料が同じなら OK / ENCHANT_STATE はエンチャの有無で判定。</li>
       </ol>
 
+      <h3>額縁フィルタの応用 ①: <strong>名札に名前をつけてカテゴリ指定</strong></h3>
+      <p>
+        額縁にアイテムを差す代わりに、<strong>金床で名前を付けた「名札 (Name Tag)」</strong>を額縁に差し込むと、
+        その名前に含まれるキーワードから<strong>アイテム種類のまとまり (カテゴリ)</strong>で仕分けができます。
+        「剣 sub」「防具 sub」「食料 sub」みたいなアバウトな倉庫を組みたいときに便利です。
+      </p>
+      <ul className="wiki-bullets">
+        <li>認識する対象は <strong>額縁に差した名札の表示名</strong>のみ (色コードは無視されます)。</li>
+        <li>大文字/小文字・日本語/英語の表記ゆれはある程度吸収されます。</li>
+        <li>1 枚の名札に複数キーワードは書けます。<strong>最初に一致したカテゴリ</strong>が採用されます (下の表の上から順に判定)。</li>
+        <li>名札のカテゴリ判定は、通常アイテム額縁より <strong>優先度が高く</strong>扱われます (詳細は下の「優先度」節)。</li>
+      </ul>
+
+      <h4>使えるカテゴリキーワード一覧</h4>
+      <div className="wiki-table-wrapper">
+        <table className="wiki-table">
+          <thead>
+            <tr>
+              <th>カテゴリ</th>
+              <th>名札に含める文字 (どれか)</th>
+              <th>仕分け対象</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categoryTags.map((tag) => (
+              <tr key={tag.category}>
+                <td>{tag.category}</td>
+                <td>
+                  {tag.keywords.map((k) => (
+                    <code key={k} style={{ marginRight: '0.4em' }}>{k}</code>
+                  ))}
+                </td>
+                <td>{tag.desc}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        たとえば額縁に「<code>剣</code>」という名札を差せばその sub は<strong>剣専用倉庫</strong>に、
+        「<code>防具</code>」なら<strong>ヘルメ〜ブーツ全部を集める倉庫</strong>になります。
+        「<code>ピッケル用</code>」のように余分な文字が付いていても、キーワード<code>ピッケル</code>が含まれていれば認識されます。
+      </p>
+
+      <h3>額縁フィルタの応用 ②: <strong>「all」修飾子で系統ごと拾う</strong></h3>
+      <p>
+        額縁に差したアイテムの表示名 (金床で付けたもの) に <code>all</code> という単語が含まれていると、
+        そのアイテムと<strong>同じ系統 (マテリアルファミリー) 全部</strong>を仕分け対象にします。
+      </p>
+      <ul className="wiki-bullets">
+        <li>例: 名前に <code>all</code> を含む <strong>オークの木材</strong> を額縁に差すと、
+            <strong>木材系ブロック全般</strong>がその sub にまとまります。</li>
+        <li>単語の切れ目で認識するので、<code>all wood</code> / <code>木材 all</code> のような書き方も OK。</li>
+        <li>優先度は「名札カテゴリ」より下、「通常のアイテム額縁」より上です。</li>
+      </ul>
+
+      <h3>額縁フィルタの応用 ③: <strong>「chest-clear」で"素の状態だけ"を拾う</strong></h3>
+      <p>
+        額縁に差したアイテムの表示名 (金床で付けたもの) が<strong>ちょうど </strong><code>chest-clear</code><strong> と一致</strong>していると、
+        「そのアイテムと同じ種類」で、かつ<strong>特別な状態のもの</strong>だけを sub に流します。
+      </p>
+      <ul className="wiki-bullets">
+        <li>マテリアル (=アイテムの種類) は額縁のアイテムと完全一致が必要。</li>
+        <li>一致モードが <strong>ENCHANT_STATE</strong> の場合はさらに<strong>エンチャの有無まで一致</strong>する物だけを取ります。
+            (例: エンチャ付きだけを別 sub に集める / エンチャ無しの素の物だけ集める、みたいな運用)</li>
+        <li>雑多に流れてきたアイテムから<strong>綺麗な状態のものだけを分別</strong>したいときに便利です。</li>
+      </ul>
+
+      <h3>フィルタの<strong>優先度</strong> (複数の sub が候補になったとき)</h3>
+      <p>
+        同じ ID の中に「剣が入る sub」が複数あった場合、以下の優先度でどこに入れるかが決まります。
+        <strong>数字が小さいほど優先</strong>されます。
+      </p>
+      <ol>
+        <li><strong>名札カテゴリ額縁</strong> (例: 名札「剣」を額縁) — もっとも具体的とみなされ最優先。</li>
+        <li><strong>all 修飾子額縁</strong> (例: 名前に <code>all</code> を含む木材) — 系統ごと拾う中間層。</li>
+        <li><strong>通常アイテム額縁</strong> (例: 素の鉄インゴットを額縁に差す) — 一番具体的だが優先度は最下位。</li>
+      </ol>
+      <p>
+        「大分類の sub と細かい sub を混在させたい」という運用でも、細かいほうに優先で流れないので、
+        意図した通りの倉庫構成になります。
+      </p>
+
       <h3>ChestPage (sub 一覧 UI) の使い方</h3>
       <ul className="wiki-bullets">
         <li>「機能設定」の <strong>ChestPage</strong> を許可にします。</li>
         <li>主チェストを <strong>スニーク + 左クリック</strong>すると、接続中の sub がカテゴリ別・チェスト別に一覧表示されます。</li>
+        <li>一覧では<strong>フィルタ内容 + #番号</strong>で並びます (例: <code>剣 #1</code> / <code>剣 #2</code>)。フィルタ未設定の sub は <code>sub #1</code> の形式で表示されます。</li>
         <li>そこから直接目的の sub の中身を開けるので、大量の sub を並べている拠点で便利です。</li>
       </ul>
 
@@ -137,6 +281,8 @@ export function SharedStorageSection() {
         <li><strong>ホッパーで搬入・搬出が動かない</strong>: 「ホッパー搬送」の該当項目が禁止になっていないか確認。</li>
         <li><strong>手で sub から取り出せない</strong>: 「手動操作」の設定が禁止になっていないか確認。</li>
         <li><strong>ChestLock / ChestShop と衝突</strong>: 主チェストの隣にチェストを置けないのは、ChestLock/ChestShop のラージチェスト化を避けるためです。</li>
+        <li><strong>カテゴリ名札が効かない</strong>: 額縁に差した<strong>名札</strong>に、上の表のキーワードが含まれているか確認 (色コードは無視されます)。名札以外のアイテムでは「名札カテゴリ」判定はされません。</li>
+        <li><strong><code>chest-clear</code> がただの空チェストを吸わない</strong>: <code>chest-clear</code> は「その額縁アイテムと同じ種類だけを拾う」機能です。全アイテムを吸うフィルタではありません。</li>
       </ul>
 
       <h3>関連ページ</h3>

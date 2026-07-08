@@ -39,6 +39,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.AirDash.AirDashModul
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.CustomEnchantTableModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WarpStone.WarpStoneModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.KeepAliveGuard.KeepAliveGuardModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.JpCh.JpChModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.ui.PartyMenu;
 import org.pexserver.koukunn.bettersurvival.Commands.help.HelpCommand;
@@ -212,6 +213,9 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(warpStoneModule, this);
         keepAliveGuardModule = new KeepAliveGuardModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(keepAliveGuardModule, this);
+        // JPCh モジュール登録 (ローマ字チャットを日本語へ自動変換)
+        JpChModule jpChModule = new JpChModule(this, toggleModule);
+        getServer().getPluginManager().registerEvents(jpChModule, this);
         // Ring モジュール登録 (土地保護内の闘技場リング / Duel / マッチング)
         ringModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule(this, landProtectionModule);
         landProtectionModule.setRingModule(ringModule);
@@ -292,6 +296,8 @@ public final class Loader extends JavaPlugin {
             new ToggleFeature("warpstone", "WarpStone", "エンダーパール×石レンガで作るワープストーンを有効/無効にします", Material.LODESTONE, false));
         toggleModule.registerFeature(
             new ToggleFeature("keepaliveguard", "KeepAliveGuard", "OPのkeepalive timeout kickを可能な範囲でキャンセルします", Material.REPEATER, false));
+        toggleModule.registerFeature(
+            new ToggleFeature(JpChModule.FEATURE_KEY, "JPCh", "チャットのローマ字を検出して日本語へ自動翻訳します", Material.WRITABLE_BOOK, false));
         toggleModule.registerFeature(
             new ToggleFeature("tournament", "Tournament", "リングを使った頂点決定戦(トーナメント大会)を有効/無効にします (/tournament)", Material.GOLDEN_SWORD, false));        toggleModule.registerFeature(
                 new ToggleFeature("offlineaccess", "OfflineAccess", "オフラインアカウントのログインを許可/拒否します", Material.COMPASS, false));        if (!toggleModule.hasGlobal("treemine")) {
@@ -380,6 +386,9 @@ public final class Loader extends JavaPlugin {
         }
         if (!toggleModule.hasGlobal("keepaliveguard")) {
             toggleModule.setGlobal("keepaliveguard", true);
+        }
+        if (!toggleModule.hasGlobal(JpChModule.FEATURE_KEY)) {
+            toggleModule.setGlobal(JpChModule.FEATURE_KEY, true);
         }
         if (!toggleModule.hasGlobal("tournament")) {
             toggleModule.setGlobal("tournament", true);
