@@ -1,6 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.JpCh;
 
-import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
@@ -13,9 +13,11 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -58,9 +60,15 @@ public class JpChModule implements Listener {
     /** ToggleModule に登録する機能キー。 */
     public static final String FEATURE_KEY = "jpch";
 
-    /** translate.rs の DEFAULT_GAS_URL と同一。 */
-    private static final String GAS_URL =
-            "https://script.google.com/macros/s/AKfycbxPh_IjkSYpkfxHoGXVzK4oNQ2Vy0uRByGeNGA6ti3M7flAMCYkeJKuoBrALNCMImEi_g/exec";
+    /**
+     * ローマ字→かな/漢字の音訳に用いる Google Input Tools (IME) エンドポイント。
+     *
+     * <p>ローマ字の日本語化は「翻訳」ではなく「音訳 (transliteration)」であり、Google 翻訳では実現できない
+     * (同一言語間 ja→ja は非対応)。IME 用の本エンドポイント ({@code itc=ja-t-i0-und}) が正しい変換元となる。
+     * API キー不要・GET で JSON を返す。</p>
+     */
+    private static final String TRANSLITERATE_URL =
+            "https://inputtools.google.com/request?itc=ja-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8&app=bettersurvival&text=";
 
     /** 変換対象の最小英字数 (これ未満の 1 単語チャットは英語誤爆を防ぐためスキップ)。 */
     private static final int MIN_LETTER_COUNT = 3;
@@ -163,6 +171,8 @@ public class JpChModule implements Listener {
         this.toggleModule = toggleModule;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
+                // 一部の Google エンドポイントは 302 リダイレクトで本体を返すため追従を有効化
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
@@ -220,9 +230,9 @@ public class JpChModule implements Listener {
             int start = run[0];
             int end = run[1];
             String runText = text.substring(start, end);
-            String tr = translateViaGas(runText);
+            String tr = transliterateRomaji(runText);
             if (tr == null) {
-                continue; // 翻訳失敗時はこのランを原文のまま残す
+                continue; // 音訳失敗時はこのランを原文のまま残す
             }
             tr = tr.trim();
             if (tr.isEmpty() || tr.equalsIgnoreCase(runText)) {
@@ -420,39 +430,54 @@ public class JpChModule implements Listener {
     }
 
     /**
-     * GAS 翻訳エンドポイントに同期リクエストを送り、翻訳結果を返します。
-     * AsyncChatEvent は非同期スレッドで発火するため、ここでの同期送信は許容されます。
+     * Google Input Tools (IME) にローマ字を送り、かな/漢字へ音訳した第 1 候補を返します。
+     *
+     * <p>AsyncChatEvent は非同期スレッドで発火するため、ここでの同期送信は許容されます。
+     * レスポンス形式:
+     * {@code ["SUCCESS",[["<入力>",["<候補1>", ...],[],{...}]]]}。失敗時は
+     * {@code ["FAILED_...", ...]} 等が返るため {@code "SUCCESS"} を確認する。</p>
+     *
+     * @param text 音訳対象のローマ字 (空白を含みうる)
+     * @return 変換後文字列、失敗時は null
      */
-    private String translateViaGas(String text) {
+    private String transliterateRomaji(String text) {
         try {
-            JsonObject payload = new JsonObject();
-            payload.addProperty("text", text);
-            // ローマ字は日本語入力の代替表記として扱う
-            payload.addProperty("from", "ja");
-            payload.addProperty("to", "ja");
-
-            HttpRequest request = HttpRequest.newBuilder(URI.create(GAS_URL))
+            String url = TRANSLITERATE_URL + URLEncoder.encode(text, StandardCharsets.UTF_8);
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .timeout(HTTP_TIMEOUT)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                    .GET()
                     .build();
 
             HttpResponse<String> resp = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-                plugin.getLogger().warning("JPCh 翻訳失敗: HTTP " + resp.statusCode());
+                plugin.getLogger().warning("JPCh 音訳失敗: HTTP " + resp.statusCode());
                 return null;
             }
             String body = resp.body();
             if (body == null || body.isBlank()) {
                 return null;
             }
-            JsonObject json = JsonParser.parseString(body).getAsJsonObject();
-            if (!json.has("translation") || json.get("translation").isJsonNull()) {
+
+            // ["SUCCESS",[["watashi",["私"],[],{...}]]] を分解して第 1 候補を取り出す
+            JsonArray root = JsonParser.parseString(body).getAsJsonArray();
+            if (root.size() < 2 || !"SUCCESS".equals(root.get(0).getAsString())) {
                 return null;
             }
-            return json.get("translation").getAsString();
+            JsonArray results = root.get(1).getAsJsonArray();
+            if (results.isEmpty()) {
+                return null;
+            }
+            JsonArray first = results.get(0).getAsJsonArray();
+            if (first.size() < 2) {
+                return null;
+            }
+            JsonArray candidates = first.get(1).getAsJsonArray();
+            if (candidates.isEmpty()) {
+                return null;
+            }
+            return candidates.get(0).getAsString();
         } catch (Exception e) {
-            plugin.getLogger().log(Level.WARNING, "JPCh 翻訳失敗: " + e.getMessage());
+            plugin.getLogger().log(Level.WARNING, "JPCh 音訳失敗: " + e.getMessage());
             return null;
         }
     }
