@@ -30,8 +30,8 @@ import java.util.regex.Pattern;
 /**
  * JPCh モジュール。
  *
- * <p>チャットに投稿されたローマ字メッセージを検出し、外部 GAS 翻訳 API 経由で
- * 日本語へ自動変換して置き換えます。英単語や既に日本語のメッセージは変換しません。</p>
+ * <p>チャットに投稿されたローマ字メッセージを検出し、Google Input Tools (IME) 音訳 API 経由で
+ * かな/漢字へ自動変換して置き換えます。英単語や既に日本語のメッセージは変換しません。</p>
  *
  * <p>ローマ字と英語が混在するメッセージ ("watashi wa happy desu" 等) では、<b>ローマ字部分だけ</b>を
  * 翻訳し英単語はそのまま残す (→ "私は happy です")。</p>
@@ -76,8 +76,11 @@ public class JpChModule implements Listener {
     /** GAS API のタイムアウト。AsyncChatEvent 上で同期送信するため短めに設定。 */
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(6);
 
-    /** 語トークンの抽出パターン ({@code n'} 表記に対応するためアポストロフィを含む)。 */
-    private static final Pattern WORD_PATTERN = Pattern.compile("[a-zA-Z']+");
+    /**
+     * 語トークンの抽出パターン。{@code n'} 表記のアポストロフィと、長音を表す {@code '-'}
+     * ({@code haro- → ハロー}) をトークンに含める。
+     */
+    private static final Pattern WORD_PATTERN = Pattern.compile("[a-zA-Z'-]+");
 
     /**
      * ヘボン式モーラ表として妥当に分解できてしまう典型的な英単語のブラックリスト。
@@ -105,10 +108,15 @@ public class JpChModule implements Listener {
     }
 
     /**
-     * 厳格なヘボン式モーラ表。{@code n} (撥音) と促音は {@link #matchMora} で個別に処理するため含めない。
+     * ワープロローマ字 (IME で実際に打鍵される綴り) のモーラ表。
+     * {@code n} (撥音)・促音・長音 {@code '-'} は {@link #matchMora} で個別に処理するため含めない。
      *
-     * <p>あえて {@code si/ti/tu/hu/zi/di/du/wi/we/wu/ye} 等の非ヘボン綴りを除外することで、
-     * 英単語 ("site", "time", "sink" 等) をモーラ分解の段階で弾く。</p>
+     * <p>ヘボン式 ({@code shi/chi/tsu/fu}) に加え、訓令式/日本式 ({@code si/ti/tu/hu/zi/di/du})、
+     * 拗音の {@code sy/ty/zy/dy} 綴り ({@code tya→ちゃ} 等)、外来音 ({@code fa/va/che/she/je/tsa} 等) を
+     * 網羅する。これらは Google IME が受理する綴りであり、除外すると "tyanto" や "hosii" が変換されず残る。</p>
+     *
+     * <p>一方で {@code l/q/x} や子音連結 ("site" の {@code te} は可だが "hello" の {@code ll}、"time" の
+     * 末尾 {@code me} 単体は不可) は依然として弾かれ、2 モーラ程度の短い英単語はスコアリング段階で除外される。</p>
      */
     private static final Set<String> VALID_MORA = new HashSet<>();
     static {
@@ -116,25 +124,31 @@ public class JpChModule implements Listener {
                 "a", "i", "u", "e", "o",
                 "ka", "ki", "ku", "ke", "ko",
                 "ga", "gi", "gu", "ge", "go",
-                "sa", "shi", "su", "se", "so",
-                "za", "ji", "zu", "ze", "zo",
-                "ta", "chi", "tsu", "te", "to",
-                "da", "de", "do",
+                "sa", "shi", "si", "su", "se", "so",
+                "za", "ji", "zi", "zu", "ze", "zo",
+                "ta", "chi", "ti", "tsu", "tu", "te", "to",
+                "da", "di", "du", "de", "do",
                 "na", "ni", "nu", "ne", "no",
-                "ha", "hi", "fu", "he", "ho",
+                "ha", "hi", "fu", "hu", "he", "ho",
                 "ba", "bi", "bu", "be", "bo",
                 "pa", "pi", "pu", "pe", "po",
                 "ma", "mi", "mu", "me", "mo",
-                "ya", "yu", "yo",
+                "ya", "yu", "yo", "ye",
                 "ra", "ri", "ru", "re", "ro",
-                "wa", "wo",
-                // 拗音
+                "wa", "wi", "we", "wo",
+                // 拗音 (ヘボン式 + 訓令/日本式の sy/ty/zy/dy 綴り)
                 "kya", "kyu", "kyo", "gya", "gyu", "gyo",
-                "sha", "shu", "sho", "ja", "ju", "jo", "jya", "jyu", "jyo",
-                "cha", "chu", "cho",
+                "sha", "shu", "sho", "sya", "syu", "syo", "she",
+                "cha", "chu", "cho", "tya", "tyu", "tyo", "che",
+                "ja", "ju", "jo", "je", "jya", "jyu", "jyo", "zya", "zyu", "zyo",
+                "dya", "dyu", "dyo",
                 "nya", "nyu", "nyo", "hya", "hyu", "hyo",
                 "bya", "byu", "byo", "pya", "pyu", "pyo",
-                "mya", "myu", "myo", "rya", "ryu", "ryo"
+                "mya", "myu", "myo", "rya", "ryu", "ryo",
+                // 外来音
+                "fa", "fi", "fe", "fo",
+                "va", "vi", "vu", "ve", "vo",
+                "tsa", "tsi", "tse", "tso"
         };
         for (String m : moras) {
             VALID_MORA.add(m);
@@ -300,7 +314,7 @@ public class JpChModule implements Listener {
                 if (mora <= 0) {
                     break;
                 }
-                letterCount += tok.length();
+                letterCount += countAsciiLetters(tok); // '-' や "'" は英字数に数えない
                 totalMora += mora;
                 if (containsDistinctiveRomaji(tok)) {
                     score += SCORE_DISTINCTIVE;
@@ -336,7 +350,9 @@ public class JpChModule implements Listener {
                 "nya", "nyu", "nyo", "hya", "hyu", "hyo",
                 "mya", "myu", "myo", "rya", "ryu", "ryo",
                 "bya", "byu", "byo", "pya", "pyu", "pyo",
-                "jya", "jyu", "jyo",
+                // 訓令/日本式の拗音綴り (英語には現れないため強いローマ字シグナル)
+                "sya", "syu", "syo", "tya", "tyu", "tyo",
+                "jya", "jyu", "jyo", "zya", "zyu", "zyo", "dya", "dyu", "dyo",
                 "desu", "masu", "watashi", "arigato", "konnichi", "konban",
                 "ohayo", "sayonara", "sumimasen", "gomen", "onegai",
                 "sensei", "yoroshiku", "hajime", "otsukare", "sugoi",
@@ -348,6 +364,18 @@ public class JpChModule implements Listener {
             }
         }
         return false;
+    }
+
+    /** トークン中の ASCII 英字数を返します ({@code '-'} や {@code '\''} は数えない)。 */
+    private static int countAsciiLetters(String s) {
+        int count = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 'a' && c <= 'z') {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
@@ -383,6 +411,11 @@ public class JpChModule implements Listener {
     private static int matchMora(String s, int i) {
         int n = s.length();
         char c = s.charAt(i);
+
+        // 長音 ('-'): 直前モーラを伸ばす記号として 1 文字消費 (haro- → ハロー)
+        if (c == '-') {
+            return 1;
+        }
 
         // 促音 (小さい っ): 同一子音の連続、または matcha の t+ch
         if (i + 1 < n && isSokuonConsonant(c)) {
