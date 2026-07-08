@@ -17,9 +17,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * JPCh モジュール。
@@ -27,12 +31,16 @@ import java.util.logging.Level;
  * <p>チャットに投稿されたローマ字メッセージを検出し、外部 GAS 翻訳 API 経由で
  * 日本語へ自動変換して置き換えます。英単語や既に日本語のメッセージは変換しません。</p>
  *
+ * <p>ローマ字と英語が混在するメッセージ ("watashi wa happy desu" 等) では、<b>ローマ字部分だけ</b>を
+ * 翻訳し英単語はそのまま残す (→ "私は happy です")。</p>
+ *
  * <p>検出ロジック (英語との誤爆を避けるため厳格化):</p>
  * <ul>
  *   <li>メッセージが ASCII 英字のみで構成されていること (非 ASCII があれば既に日本語と見なしスキップ)。</li>
- *   <li><b>全</b>トークンが厳格なヘボン式モーラ表で分解できること。1 語でも分解不能なら英語混在と判断し
- *       メッセージ全体をスキップする (例: {@code l/q/v/x}、{@code si/ti/tu/hu} 等の非ヘボン綴りや子音連結)。</li>
- *   <li>残った「ヘボン式として妥当」なトークン群をスコアリングし、しきい値を超えた場合のみ変換する。
+ *   <li>連続するトークンを厳格なヘボン式モーラ表で分解し、分解できるトークンの連なりを 1 つの
+ *       「ローマ字ラン」とみなす。分解不能なトークン ({@code l/q/v/x} や {@code si/ti/tu/hu} 等の
+ *       非ヘボン綴り、子音連結を含む語 = 英単語) はランの区切りとなり、そのまま原文で残す。</li>
+ *   <li>各ランをスコアリングし、しきい値を超えたランのみ翻訳して置き換える。
  *       スコアは以下を加味する:
  *       <ul>
  *         <li>{@code shi/chi/tsu}・拗音・{@code desu/masu} 等のローマ字特有パターン (強い加点)。</li>
@@ -42,8 +50,8 @@ import java.util.logging.Level;
  *   </li>
  * </ul>
  *
- * <p>この二段構え (厳格な音韻フィルタ → スコアリング) により、"hello world" や "make it" のような
- * 英語文はモーラ分解の段階で確実に除外され、"take/note" のような両義的な短英単語もスコア不足で除外される。</p>
+ * <p>この二段構え (厳格な音韻フィルタ → スコアリング) により、"make it" のような英語文はどのランも
+ * スコア不足/分解不能で翻訳されず、"take/note" のような両義的な短英単語もスコア不足で除外される。</p>
  */
 public class JpChModule implements Listener {
 
@@ -59,6 +67,9 @@ public class JpChModule implements Listener {
 
     /** GAS API のタイムアウト。AsyncChatEvent 上で同期送信するため短めに設定。 */
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(6);
+
+    /** 語トークンの抽出パターン ({@code n'} 表記に対応するためアポストロフィを含む)。 */
+    private static final Pattern WORD_PATTERN = Pattern.compile("[a-zA-Z']+");
 
     /**
      * ヘボン式モーラ表として妥当に分解できてしまう典型的な英単語のブラックリスト。
@@ -173,16 +184,9 @@ public class JpChModule implements Listener {
             return;
         }
 
-        if (!isLikelyRomaji(trimmed)) {
-            return;
-        }
-
-        String translated = translateViaGas(trimmed);
-        if (translated == null) {
-            return;
-        }
-        translated = translated.trim();
-        if (translated.isEmpty() || translated.equalsIgnoreCase(trimmed)) {
+        // ローマ字ランのみを翻訳し、英単語はそのまま残した文を組み立てる
+        String translated = translateMessage(trimmed);
+        if (translated == null || translated.equals(trimmed)) {
             return;
         }
 
@@ -195,69 +199,121 @@ public class JpChModule implements Listener {
     }
 
     /**
-     * 文字列がローマ字入力らしいかどうかを判定します。
+     * メッセージ内のローマ字ランだけを翻訳し、英単語や記号を原文のまま残した文字列を組み立てます。
      *
-     * <p>アルゴリズムは 2 段構え:
+     * <p>例: {@code "watashi wa happy desu"} → {@code "私は happy です"}。
+     * ローマ字ランが 1 つも無い、または翻訳で何も変化しなかった場合は {@code null} を返します。</p>
+     *
+     * @param text 判定・翻訳対象 (トリム済み推奨)
+     * @return 置き換え後の文字列、変換不要なら null
+     */
+    private String translateMessage(String text) {
+        List<int[]> runs = findRomajiRuns(text);
+        if (runs == null || runs.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder out = new StringBuilder(text.length());
+        int last = 0;
+        boolean changed = false;
+        for (int[] run : runs) {
+            int start = run[0];
+            int end = run[1];
+            String runText = text.substring(start, end);
+            String tr = translateViaGas(runText);
+            if (tr == null) {
+                continue; // 翻訳失敗時はこのランを原文のまま残す
+            }
+            tr = tr.trim();
+            if (tr.isEmpty() || tr.equalsIgnoreCase(runText)) {
+                continue;
+            }
+            out.append(text, last, start); // ラン間の英単語・区切りを原文コピー
+            out.append(tr);
+            last = end;
+            changed = true;
+        }
+        if (!changed) {
+            return null;
+        }
+        out.append(text, last, text.length());
+        return out.toString();
+    }
+
+    /**
+     * メッセージ中の「翻訳すべきローマ字ラン」を、原文文字列上のスパン {@code [start, end)} として抽出します。
+     *
+     * <p>アルゴリズム:
      * <ol>
-     *   <li><b>音韻フィルタ</b> — 全トークンを厳格なヘボン式モーラ表で分解する。1 語でも分解不能なら
-     *       英語混在と判断し即座に {@code false} を返す。</li>
-     *   <li><b>スコアリング</b> — 分解に成功したトークン群を重み付け加点し、
-     *       {@link #ACCEPT_SCORE} 以上なら {@code true}。</li>
+     *   <li>非 ASCII (=既に日本語や他言語) を含む場合は {@code null} を返す。</li>
+     *   <li>語トークンを順に走査し、厳格なヘボン式モーラ表で分解できるトークンの連なりを 1 ランとする。
+     *       分解不能なトークン (英単語) はランの区切りとなる。</li>
+     *   <li>各ランを重み付けスコアリングし、{@link #ACCEPT_SCORE} 以上かつ最小英字数を満たすランのみ返す。</li>
      * </ol>
      *
      * @param text 判定対象 (トリム済み推奨)
-     * @return ローマ字入力と推定される場合 true
+     * @return 翻訳対象ランのスパン一覧 (空可)、既に日本語等の場合は null
      */
-    static boolean isLikelyRomaji(String text) {
+    static List<int[]> findRomajiRuns(String text) {
         // 非 ASCII (=既に日本語や他言語) を含む場合はスキップ
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) > 0x7F) {
-                return false;
+                return null;
             }
         }
 
-        String lower = text.toLowerCase();
-        String[] tokens = lower.split("[^a-z]+");
+        // 語トークンの位置と小文字表記を収集
+        List<int[]> spans = new ArrayList<>();
+        List<String> lowers = new ArrayList<>();
+        Matcher m = WORD_PATTERN.matcher(text);
+        while (m.find()) {
+            spans.add(new int[]{m.start(), m.end()});
+            lowers.add(text.substring(m.start(), m.end()).toLowerCase());
+        }
 
-        int letterCount = 0;
-        int totalMora = 0;
-        int tokenCount = 0;
-        int score = 0;
-
-        for (String tok : tokens) {
-            if (tok.isEmpty()) {
+        List<int[]> runs = new ArrayList<>();
+        int n = spans.size();
+        int i = 0;
+        while (i < n) {
+            if (decomposeStrict(lowers.get(i)) <= 0) {
+                i++; // 分解不能トークン (英単語) はランの区切り
                 continue;
             }
-            tokenCount++;
-            letterCount += tok.length();
-
-            int mora = decomposeStrict(tok);
-            if (mora <= 0) {
-                // 1 語でも厳格モーラ分解に失敗 = 英語 (混在) とみなし全体をスキップ
-                return false;
+            // [i, j) を連続する分解可能トークンのランとして確定させつつスコアリング
+            int letterCount = 0;
+            int totalMora = 0;
+            int score = 0;
+            int j = i;
+            while (j < n) {
+                String tok = lowers.get(j);
+                int mora = decomposeStrict(tok);
+                if (mora <= 0) {
+                    break;
+                }
+                letterCount += tok.length();
+                totalMora += mora;
+                if (containsDistinctiveRomaji(tok)) {
+                    score += SCORE_DISTINCTIVE;
+                } else if (ENGLISH_BLACKLIST.contains(tok)) {
+                    score += SCORE_BLACKLIST;
+                } else if (mora >= 3) {
+                    score += SCORE_LONG_TOKEN;
+                } else if (mora == 1) {
+                    score += SCORE_SHORT_TOKEN;
+                }
+                // mora == 2 の非自明トークンは中立 (加減点なし)
+                j++;
             }
-            totalMora += mora;
-
-            if (containsDistinctiveRomaji(tok)) {
-                score += SCORE_DISTINCTIVE;
-            } else if (ENGLISH_BLACKLIST.contains(tok)) {
-                score += SCORE_BLACKLIST;
-            } else if (mora >= 3) {
-                score += SCORE_LONG_TOKEN;
-            } else if (mora == 1) {
-                score += SCORE_SHORT_TOKEN;
+            if (totalMora >= TOTAL_MORA_BONUS_THRESHOLD) {
+                score += SCORE_TOTAL_MORA_BONUS;
             }
-            // mora == 2 の非自明トークンは中立 (加減点なし)
+            if (letterCount >= MIN_LETTER_COUNT && score >= ACCEPT_SCORE) {
+                // ラン先頭トークンの開始 〜 末尾トークンの終端 (途中の空白を含む)
+                runs.add(new int[]{spans.get(i)[0], spans.get(j - 1)[1]});
+            }
+            i = j;
         }
-
-        if (tokenCount == 0 || letterCount < MIN_LETTER_COUNT) {
-            return false;
-        }
-        if (totalMora >= TOTAL_MORA_BONUS_THRESHOLD) {
-            score += SCORE_TOTAL_MORA_BONUS;
-        }
-
-        return score >= ACCEPT_SCORE;
+        return runs;
     }
 
     /**
