@@ -53,25 +53,62 @@ public class LoginInterceptor extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        try {
+            handleChannelRead(ctx, msg);
+        } catch (Throwable t) {
+            // インターセプト処理中に想定外の例外が発生しても、サーバー全体へ波及させない。
+            // この接続だけを通常のログイン処理へフォールバックさせ、それも失敗する場合は接続を閉じる。
+            manager.getPlugin().getLogger().log(Level.WARNING,
+                    "[OfflineAccess] ログイン処理中に想定外の例外が発生したため、この接続のみ通常処理へフォールバックします", t);
+            manager.debug("channelRead unexpected error; fallback to super.channelRead", t);
+            try {
+                super.channelRead(ctx, msg);
+            } catch (Throwable inner) {
+                manager.debug("fallback super.channelRead also failed; closing channel", inner);
+                ctx.close();
+            }
+        }
+    }
+
+    /**
+     * ログイン段階で発生した例外がサーバー全体へ波及するのを防ぐ。
+     * 例外はこの接続に限定し、該当チャンネルのみを閉じる。
+     */
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        manager.debug("exceptionCaught on login channel; closing connection only", cause);
+        try {
+            ctx.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void handleChannelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (relocateBeforePacketHandler(ctx)) {
             super.channelRead(ctx, msg);
             return;
         }
 
-        String packetName = msg != null ? msg.getClass().getName() : "null";
+        // msg が null の場合はそのまま通す（後続の getClass() での NPE を防ぐ）。
+        if (msg == null) {
+            super.channelRead(ctx, msg);
+            return;
+        }
+
+        String packetName = msg.getClass().getName();
         if (manager.isDebugEnabled() && tracePipeline()) {
             if (!loggedFirstRead) {
                 loggedFirstRead = true;
                 manager.debug("channelRead first packet=" + packetName
-                        + " simple=" + (msg != null ? msg.getClass().getSimpleName() : "null")
+                        + " simple=" + msg.getClass().getSimpleName()
                         + " pipeline=" + ctx.pipeline().names());
-            } else if (msg != null && shouldLogPacket(packetName)) {
+            } else if (shouldLogPacket(packetName)) {
                 manager.debug("channelRead packet=" + packetName + " pipeline=" + ctx.pipeline().names());
             }
         }
 
         if (!manager.isEnabled()) {
-            if (msg != null && "ServerboundHelloPacket".equals(msg.getClass().getSimpleName())) {
+            if ("ServerboundHelloPacket".equals(msg.getClass().getSimpleName())) {
                 manager.debug("HelloPacket ignored because OfflineAccess toggle is disabled");
             }
             super.channelRead(ctx, msg);
