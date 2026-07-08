@@ -602,7 +602,8 @@ public class WebMapHttpServer {
     }
 
     private void handleStatic(HttpExchange exchange) throws IOException {
-        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+        String requestMethod = exchange.getRequestMethod();
+        if (!"GET".equalsIgnoreCase(requestMethod) && !"HEAD".equalsIgnoreCase(requestMethod)) {
             writePlain(exchange, 405, "Method Not Allowed");
             return;
         }
@@ -644,7 +645,31 @@ public class WebMapHttpServer {
         } else {
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
         }
-        exchange.sendResponseHeaders(200, body.length);
+        writeBody(exchange, 200, body);
+    }
+
+    /**
+     * HEAD リクエストかどうかを判定します。HEAD の場合は body を送信してはいけません。
+     */
+    private boolean isHeadRequest(HttpExchange exchange) {
+        return "HEAD".equalsIgnoreCase(exchange.getRequestMethod());
+    }
+
+    /**
+     * ステータスと body を書き込みます。HEAD リクエストの場合は body を書かず、
+     * Content-Length のみを返します (sendResponseHeaders には -1 を渡す)。
+     */
+    private void writeBody(HttpExchange exchange, int status, byte[] body) throws IOException {
+        if (body == null) {
+            body = new byte[0];
+        }
+        if (isHeadRequest(exchange)) {
+            exchange.getResponseHeaders().set("Content-Length", Integer.toString(body.length));
+            exchange.sendResponseHeaders(status, -1);
+            exchange.close();
+            return;
+        }
+        exchange.sendResponseHeaders(status, body.length);
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(body);
         }
@@ -655,20 +680,14 @@ public class WebMapHttpServer {
         byte[] body = GSON.toJson(payload).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "public, max-age=" + Math.max(0, maxAgeSeconds));
-        exchange.sendResponseHeaders(200, body.length);
-        try (OutputStream outputStream = exchange.getResponseBody()) {
-            outputStream.write(body);
-        }
+        writeBody(exchange, 200, body);
     }
 
     private void writePlain(HttpExchange exchange, int status, String text) throws IOException {
         securityHeaders(exchange);
         byte[] body = text.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
-        exchange.sendResponseHeaders(status, body.length);
-        try (OutputStream outputStream = exchange.getResponseBody()) {
-            outputStream.write(body);
-        }
+        writeBody(exchange, status, body);
     }
 
     private void writePng(HttpExchange exchange, byte[] body, String etag, int maxAgeSeconds) throws IOException {
@@ -676,14 +695,12 @@ public class WebMapHttpServer {
         exchange.getResponseHeaders().set("Content-Type", "image/png");
         exchange.getResponseHeaders().set("Cache-Control", "public, max-age=" + Math.max(0, maxAgeSeconds));
         exchange.getResponseHeaders().set("ETag", etag);
-        exchange.sendResponseHeaders(200, body.length);
-        try (OutputStream outputStream = exchange.getResponseBody()) {
-            outputStream.write(body);
-        }
+        writeBody(exchange, 200, body);
     }
 
     private void handleUploads(HttpExchange exchange) throws IOException {
-        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+        String requestMethod = exchange.getRequestMethod();
+        if (!"GET".equalsIgnoreCase(requestMethod) && !"HEAD".equalsIgnoreCase(requestMethod)) {
             writePlain(exchange, 405, "Method Not Allowed");
             return;
         }
@@ -707,10 +724,7 @@ public class WebMapHttpServer {
         securityHeaders(exchange);
         exchange.getResponseHeaders().set("Content-Type", uploadMimeType(fileName));
         exchange.getResponseHeaders().set("Cache-Control", "public, max-age=31536000, immutable");
-        exchange.sendResponseHeaders(200, body.length);
-        try (OutputStream outputStream = exchange.getResponseBody()) {
-            outputStream.write(body);
-        }
+        writeBody(exchange, 200, body);
     }
 
     private String uploadMimeType(String fileName) {
