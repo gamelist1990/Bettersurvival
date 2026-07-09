@@ -97,6 +97,7 @@ public class WebMapModule implements Listener {
     private volatile boolean globalEnabled;
     private volatile boolean shutdownRequested;
     private volatile boolean shutdownComplete;
+    private volatile boolean backgroundSuspended;
     private WebMapSettings settings;
     private BukkitTask dirtyFlushTask;
     private BukkitTask featureSyncTask;
@@ -1026,6 +1027,67 @@ public class WebMapModule implements Listener {
         nearbySweepTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::sweepNearbyLoadedChunks, 2400L, 2400L);
         markerRefreshTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::refreshMarkerSnapshots, 40L, 40L);
         statusService.start();
+    }
+
+    /**
+     * 省電力モード用: バックグラウンドの定期更新スレッドをすべて停止する。
+     * HTTP サーバー自体は稼働したままなので、Web からのアクセスはキャッシュ済みデータで応答し続ける。
+     * 無人時に呼ばれることを想定しており、消費電力をほぼアイドルまで落とす。
+     */
+    public void suspendBackgroundWork() {
+        if (backgroundSuspended || shutdownRequested) {
+            return;
+        }
+        backgroundSuspended = true;
+        cancelPeriodicTasks();
+        statusService.stop();
+        // 停止前に未フラッシュのデータを一度だけ書き出しておく。
+        try {
+            dataStore.flushDirty();
+        } catch (Throwable ignored) {
+        }
+        plugin.getLogger().info("[WebMap] 省電力: バックグラウンド更新を停止しました");
+    }
+
+    /** 省電力モード解除: バックグラウンドの定期更新スレッドを再開する。 */
+    public void resumeBackgroundWork() {
+        if (!backgroundSuspended || shutdownRequested) {
+            return;
+        }
+        backgroundSuspended = false;
+        startTasks();
+        plugin.getLogger().info("[WebMap] 省電力解除: バックグラウンド更新を再開しました");
+    }
+
+    public boolean isBackgroundSuspended() {
+        return backgroundSuspended;
+    }
+
+    private void cancelPeriodicTasks() {
+        if (dirtyFlushTask != null) {
+            dirtyFlushTask.cancel();
+            dirtyFlushTask = null;
+        }
+        if (featureSyncTask != null) {
+            featureSyncTask.cancel();
+            featureSyncTask = null;
+        }
+        if (chunkGenTask != null) {
+            chunkGenTask.cancel();
+            chunkGenTask = null;
+        }
+        if (chunkCaptureTask != null) {
+            chunkCaptureTask.cancel();
+            chunkCaptureTask = null;
+        }
+        if (nearbySweepTask != null) {
+            nearbySweepTask.cancel();
+            nearbySweepTask = null;
+        }
+        if (markerRefreshTask != null) {
+            markerRefreshTask.cancel();
+            markerRefreshTask = null;
+        }
     }
 
     private void tickChunkGen() {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { navigationItems, type PageKey } from '../../app/navigation';
 import type { AuthProfile } from '../../features/webservice/types';
 import { displayName } from '../../features/webservice/useWebService';
@@ -19,6 +19,12 @@ export function Sidebar({ activePage, profile, onNavigate, onLogout }: SidebarPr
     setNavOpen(false);
     onNavigate(href);
   };
+
+  // ドロワーを開いている間は背面ページのスクロールを固定する (iOS のスクロール貫通対策)。
+  useEffect(() => {
+    document.body.classList.toggle('sidebar-drawer-open', navOpen);
+    return () => document.body.classList.remove('sidebar-drawer-open');
+  }, [navOpen]);
 
   return (
     <aside className={`app-sidebar${navOpen ? ' is-open' : ''}`} aria-label="BetterSurvival navigation">

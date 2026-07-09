@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SectionHeader } from '../components/common/SectionHeader';
 import { MOCK_MODE } from '../features/webservice/api';
 
 type StatusData = {
@@ -8,12 +7,14 @@ type StatusData = {
   resetAt: number;
   cpu: { process: number; system: number; processAvailable: boolean; systemAvailable: boolean; cores: number };
   memory: { usedBytes: number; allocatedBytes: number; committedBytes: number; usedPercent: number };
-  power: { watts: number; energyWh: number; estimate: boolean };
+  power: { watts: number; energyWh: number; estimate: boolean; real?: boolean; source?: string };
   stability: { tps: number; mspt: number; percent: number; avgTps: number; minTps: number };
   uptime: { millis: number; text: string };
   traffic: { bytesOut: number; bytesIn: number; bytesTotal: number; requests: number; sinceReset: number };
   server: { name: string; version: string; playersOnline: number; playersMax: number };
 };
+
+const HISTORY_CAP = 48;
 
 const MOCK_STATUS: StatusData = {
   updatedAt: Date.now(),
@@ -21,23 +22,30 @@ const MOCK_STATUS: StatusData = {
   resetAt: Date.now() - 3_600_000 * 6,
   cpu: { process: 0.23, system: 0.41, processAvailable: true, systemAvailable: true, cores: 8 },
   memory: { usedBytes: 3_650_000_000, allocatedBytes: 8_000_000_000, committedBytes: 5_100_000_000, usedPercent: 45.6 },
-  power: { watts: 38.4, energyWh: 214.7, estimate: true },
+  power: { watts: 38.4, energyWh: 214.7, estimate: false, real: true, source: 'rapl' },
   stability: { tps: 19.87, mspt: 12.4, percent: 99.35, avgTps: 19.72, minTps: 17.9 },
   uptime: { millis: 3_600_000 * 27 + 60_000 * 14, text: '1d 3h 14m 0s' },
   traffic: { bytesOut: 482_300_000, bytesIn: 12_400_000, bytesTotal: 494_700_000, requests: 18_204, sinceReset: Date.now() - 3_600_000 * 6 },
   server: { name: 'PEX Survival', version: 'git-Paper-1.21', playersOnline: 7, playersMax: 40 },
 };
 
+const MOCK_HISTORY = Array.from({ length: HISTORY_CAP }, (_, i) => {
+  const dip = i === 30 ? 17.9 : i === 31 ? 18.6 : i > 26 && i < 34 ? 19.1 : 19.9;
+  return Math.min(20, dip + Math.sin(i * 0.7) * 0.12);
+});
+
 export function StatusPage() {
   const [data, setData] = useState<StatusData | null>(MOCK_MODE ? MOCK_STATUS : null);
+  const [history, setHistory] = useState<number[]>(MOCK_MODE ? MOCK_HISTORY : []);
   const [error, setError] = useState(false);
   const [tick, setTick] = useState(0);
-  const intervalRef = useRef<number>(5);
+  const intervalRef = useRef(5);
 
   useEffect(() => {
     if (MOCK_MODE) return;
     let active = true;
     let timer: number | undefined;
+    let seeded = false;
 
     const load = async () => {
       try {
@@ -48,13 +56,18 @@ export function StatusPage() {
         setData(payload);
         setError(false);
         intervalRef.current = Math.max(2, payload.intervalSeconds || 5);
+        const tps = payload.stability.tps;
+        setHistory((prev) => {
+          // 初回だけ現在値で薄く埋めて、以降は実サンプルを右へ流していく。
+          const base = prev.length === 0 && !seeded ? Array.from({ length: 8 }, () => tps) : prev;
+          seeded = true;
+          return [...base, tps].slice(-HISTORY_CAP);
+        });
       } catch {
         if (!active) return;
         setError(true);
       } finally {
-        if (active) {
-          timer = window.setTimeout(load, intervalRef.current * 1000);
-        }
+        if (active) timer = window.setTimeout(load, intervalRef.current * 1000);
       }
     };
 
@@ -65,7 +78,6 @@ export function StatusPage() {
     };
   }, []);
 
-  // "n秒前" 表示を1秒ごとに更新するための再描画トリガー。
   useEffect(() => {
     const id = window.setInterval(() => setTick((value) => value + 1), 1000);
     return () => window.clearInterval(id);
@@ -81,192 +93,161 @@ export function StatusPage() {
 
   if (!data) {
     return (
-      <div className="section-block status-page">
-        <SectionHeader eyebrow="Status" title="サーバーステータス" text="サーバーの稼働状況をリアルタイムに確認できます。" />
-        {error ? (
-          <div className="status-empty">ステータスを取得できませんでした。サーバーが起動しているか確認してください。</div>
-        ) : (
-          <div className="status-empty status-empty--loading">ステータスを読み込んでいます…</div>
-        )}
+      <div className="vt-shell">
+        <div className="vt-console vt-console--empty">
+          <span className="vt-eyebrow">SERVER VITALS</span>
+          <p className={error ? 'vt-empty' : 'vt-empty vt-empty--loading'}>
+            {error ? 'ステータスを取得できませんでした。サーバーが起動しているか確認してください。' : '稼働状況を読み込んでいます…'}
+          </p>
+        </div>
       </div>
     );
   }
 
-  const cpuPct = data.cpu.process * 100;
-  const sysPct = data.cpu.system * 100;
+  const tps = data.stability.tps;
+  const health = tpsHealth(tps);
+  const cpuProc = data.cpu.process * 100;
   const memPct = data.memory.usedPercent;
-  const stabilityPct = data.stability.percent;
 
   return (
-    <div className="section-block status-page">
-      <SectionHeader
-        eyebrow="Status"
-        title="サーバーステータス"
-        text={`${data.server.name} の稼働状況。数値は約${data.intervalSeconds}秒ごとにキャッシュ更新され、Webにはキャッシュから配信されます。`}
-      />
+    <div className="vt-shell" style={{ ['--vt-health' as string]: health.color }}>
+      <div className="vt-console">
+        {/* masthead — instrument header */}
+        <header className="vt-masthead">
+          <div className="vt-ident">
+            <span className="vt-eyebrow">SERVER VITALS</span>
+            <h1 className="vt-name">{data.server.name}</h1>
+          </div>
+          <div className="vt-live">
+            <span className={`vt-live__row ${error ? 'is-stale' : ''}`}>
+              <span className="vt-live__dot" />
+              {error ? '更新停止中' : '稼働中'}
+              <span className="vt-live__muted">· {freshness}更新</span>
+            </span>
+            <span className="vt-live__players">
+              <b>{data.server.playersOnline}</b> / {data.server.playersMax} 人接続中
+            </span>
+          </div>
+        </header>
 
-      <div className="status-meta">
-        <span className={`status-dot ${error ? 'is-stale' : 'is-live'}`} />
-        <span className="status-meta__label">{error ? '更新停止中' : 'ライブ'}</span>
-        <span className="status-meta__sep">·</span>
-        <span>更新 {freshness}</span>
-        <span className="status-meta__sep">·</span>
-        <span>{data.server.playersOnline} / {data.server.playersMax} 人オンライン</span>
-        <span className="status-meta__spacer" />
-        <code className="status-reset-hint">/status reset でリセット</code>
-      </div>
-
-      <div className="status-grid">
-        <StatusCard title="CPU 使用率" eyebrow="Processor" accent={pickColor(cpuPct, false)}>
-          <div className="status-gauge-row">
-            <Gauge value={cpuPct} label="プロセス" color={pickColor(cpuPct, false)} />
-            <div className="status-substats">
-              <Stat label="システム全体" value={`${sysPct.toFixed(1)}%`} />
-              <MiniBar value={sysPct} color={pickColor(sysPct, false)} />
-              <Stat label="コア数" value={`${data.cpu.cores} スレッド`} />
-              {!data.cpu.processAvailable ? <p className="status-note">※ プロセス負荷はこの環境では取得できません</p> : null}
+        {/* signature — live tick-rate scope (the server's pulse) */}
+        <section className="vt-pulse" aria-label={`直近のTPS ${tps.toFixed(2)}`}>
+          <div className="vt-pulse__reading">
+            <div className="vt-pulse__now">
+              <span className="vt-pulse__value">{tps.toFixed(2)}</span>
+              <span className="vt-pulse__unit">TPS</span>
+              <span className="vt-pulse__tag" style={{ color: health.color }}>{health.label}</span>
             </div>
+            <dl className="vt-pulse__meta">
+              <div><dt>MSPT</dt><dd>{data.stability.mspt.toFixed(1)}<small>ms</small></dd></div>
+              <div><dt>平均</dt><dd>{data.stability.avgTps.toFixed(2)}</dd></div>
+              <div><dt>最低</dt><dd>{data.stability.minTps.toFixed(2)}</dd></div>
+            </dl>
           </div>
-        </StatusCard>
+          <Scope samples={history} color={health.color} />
+        </section>
 
-        <StatusCard title="メモリ" eyebrow="Heap memory" accent={pickColor(memPct, false)}>
-          <div className="status-gauge-row">
-            <Gauge value={memPct} label="使用率" color={pickColor(memPct, false)} />
-            <div className="status-substats">
-              <Stat label="使用中" value={formatBytes(data.memory.usedBytes)} />
-              <Stat label="割り当て (最大)" value={formatBytes(data.memory.allocatedBytes)} />
-              <Stat label="確保済み" value={formatBytes(data.memory.committedBytes)} />
-            </div>
-          </div>
-        </StatusCard>
+        {/* load — linear meters */}
+        <section className="vt-load">
+          <Meter label="CPU" latin sub={`${data.cpu.system >= 0 ? `system ${(data.cpu.system * 100).toFixed(0)}% · ` : ''}${data.cpu.cores} threads`} pct={cpuProc} warnAt={70} dangerAt={88} note={!data.cpu.processAvailable ? 'この環境ではプロセス負荷を取得できません' : undefined} />
+          <Meter label="RAM" latin sub={`${formatBytes(data.memory.usedBytes)} / ${formatBytes(data.memory.allocatedBytes)} 割り当て`} pct={memPct} warnAt={70} dangerAt={88} />
+        </section>
 
-        <StatusCard title="安定性" eyebrow="Performance" accent={pickColor(stabilityPct, true)}>
-          <div className="status-headline">
-            <span className="status-headline__value" style={{ color: pickColor(stabilityPct, true) }}>{data.stability.tps.toFixed(2)}</span>
-            <span className="status-headline__unit">TPS</span>
-          </div>
-          <Bar value={stabilityPct} color={pickColor(stabilityPct, true)} />
-          <div className="status-inline-stats">
-            <Stat label="MSPT" value={`${data.stability.mspt.toFixed(2)} ms`} compact />
-            <Stat label="平均TPS" value={data.stability.avgTps.toFixed(2)} compact />
-            <Stat label="最低TPS" value={data.stability.minTps.toFixed(2)} compact />
-          </div>
-        </StatusCard>
-
-        <StatusCard title="電力消費" eyebrow="Power (概算)" accent="var(--accent)">
-          <div className="status-headline">
-            <span className="status-headline__value" style={{ color: 'var(--accent)' }}>{data.power.watts.toFixed(1)}</span>
-            <span className="status-headline__unit">W</span>
-          </div>
-          <div className="status-inline-stats">
-            <Stat label="積算エネルギー" value={`${formatEnergy(data.power.energyWh)}`} compact />
-            <Stat label="推定コア電力" value={`${data.cpu.cores} コア`} compact />
-          </div>
-          {data.power.estimate ? <p className="status-note">※ CPU負荷から推定した概算値です</p> : null}
-        </StatusCard>
-
-        <StatusCard title="稼働時間" eyebrow="Uptime" accent="var(--green)">
-          <div className="status-uptime">{data.uptime.text}</div>
-          <div className="status-inline-stats">
-            <Stat label="オンライン" value={`${data.server.playersOnline} / ${data.server.playersMax}`} compact />
-            <Stat label="バージョン" value={shortVersion(data.server.version)} compact />
-          </div>
-        </StatusCard>
-
-        <StatusCard title="総通信量" eyebrow="Traffic" accent="var(--blue)">
-          <div className="status-headline">
-            <span className="status-headline__value" style={{ color: 'var(--blue)' }}>{formatBytes(data.traffic.bytesTotal)}</span>
-          </div>
-          <div className="status-inline-stats">
-            <Stat label="送信 ↑" value={formatBytes(data.traffic.bytesOut)} compact />
-            <Stat label="受信 ↓" value={formatBytes(data.traffic.bytesIn)} compact />
-            <Stat label="リクエスト" value={data.traffic.requests.toLocaleString()} compact />
-          </div>
-          <p className="status-note">リセットから {sinceText(data.traffic.sinceReset)} 計測</p>
-        </StatusCard>
+        {/* readout — honest definition grid */}
+        <section className="vt-readout">
+          <Readout k="稼働時間" v={data.uptime.text} />
+          {(() => {
+            const real = data.power.real ?? !data.power.estimate;
+            return (
+              <Readout
+                k="消費電力"
+                v={`${real ? '' : '≈ '}${data.power.watts.toFixed(1)} W`}
+                sub={`積算 ${formatEnergy(data.power.energyWh)} · ${real ? '実測 RAPL' : '概算'}`}
+              />
+            );
+          })()}
+          <Readout
+            k="総通信量"
+            v={formatBytes(data.traffic.bytesTotal)}
+            sub={`↑${formatBytes(data.traffic.bytesOut)} ↓${formatBytes(data.traffic.bytesIn)} · ${data.traffic.requests.toLocaleString()} req · ${sinceText(data.traffic.sinceReset)}計測`}
+          />
+          <Readout k="バージョン" v={shortVersion(data.server.version)} sub={`更新間隔 ${data.intervalSeconds}s · キャッシュ配信`} />
+        </section>
       </div>
     </div>
   );
 }
 
-function StatusCard({ title, eyebrow, accent, children }: { title: string; eyebrow: string; accent: string; children: React.ReactNode }) {
-  return (
-    <article className="status-card" style={{ ['--card-accent' as string]: accent }}>
-      <header className="status-card__head">
-        <p className="status-card__eyebrow">{eyebrow}</p>
-        <h3 className="status-card__title">{title}</h3>
-      </header>
-      <div className="status-card__body">{children}</div>
-    </article>
-  );
-}
+// TPS スコープは 12〜20 の帯で描く。健全時は上端付近に張り付き、低下 (dip) がはっきり見える。
+const SCOPE_FLOOR = 12;
+const SCOPE_RANGE = 20 - SCOPE_FLOOR;
 
-function Gauge({ value, label, color }: { value: number; label: string; color: string }) {
-  const clamped = Math.max(0, Math.min(100, value));
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - clamped / 100);
+function Scope({ samples, color }: { samples: number[]; color: string }) {
+  const W = 320;
+  const H = 72;
+  const n = samples.length;
+  const norm = (v: number) => (Math.max(SCOPE_FLOOR, Math.min(20, v)) - SCOPE_FLOOR) / SCOPE_RANGE;
+  const geom = useMemo(() => {
+    if (n === 0) return { line: '', area: '', dotY: 0 };
+    const xAt = (i: number) => (n === 1 ? W : (i / (n - 1)) * W);
+    const yAt = (v: number) => H - norm(v) * H;
+    let line = '';
+    samples.forEach((v, i) => {
+      line += `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)} ${yAt(v).toFixed(2)} `;
+    });
+    const area = `M0 ${H} ${samples.map((v, i) => `L${xAt(i).toFixed(1)} ${yAt(v).toFixed(2)}`).join(' ')} L${W} ${H} Z`;
+    return { line, area, dotY: (1 - norm(samples[n - 1])) * 100 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [samples, n]);
+
+  const y15 = H - ((15 - SCOPE_FLOOR) / SCOPE_RANGE) * H;
+
   return (
-    <div className="status-gauge">
-      <svg viewBox="0 0 130 130" className="status-gauge__svg" role="img" aria-label={`${label} ${clamped.toFixed(0)}%`}>
-        <circle cx="65" cy="65" r={radius} className="status-gauge__track" />
-        <circle
-          cx="65"
-          cy="65"
-          r={radius}
-          className="status-gauge__value"
-          style={{ stroke: color, strokeDasharray: circumference, strokeDashoffset: offset }}
-        />
+    <div className="vt-scope" role="img" aria-label="直近のティックレート推移">
+      <span className="vt-scope__baseline">20 tps</span>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="vt-scope__svg">
+        <line x1="0" y1="0.6" x2={W} y2="0.6" className="vt-scope__ref vt-scope__ref--ideal" />
+        <line x1="0" y1={y15} x2={W} y2={y15} className="vt-scope__ref" />
+        {geom.area ? <path d={geom.area} className="vt-scope__area" style={{ fill: color }} /> : null}
+        {geom.line ? <path d={geom.line} className="vt-scope__line" style={{ stroke: color }} vectorEffect="non-scaling-stroke" /> : null}
       </svg>
-      <div className="status-gauge__center">
-        <span className="status-gauge__number" style={{ color }}>{clamped.toFixed(clamped < 10 ? 1 : 0)}</span>
-        <span className="status-gauge__percent">%</span>
-        <span className="status-gauge__label">{label}</span>
+      {n > 0 ? <span className="vt-scope__head" style={{ top: `${geom.dotY}%`, background: color }} /> : null}
+    </div>
+  );
+}
+
+function Meter({ label, sub, pct, warnAt, dangerAt, latin, note }: { label: string; sub: string; pct: number; warnAt: number; dangerAt: number; latin?: boolean; note?: string }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const color = clamped >= dangerAt ? '#b23b2e' : clamped >= warnAt ? 'var(--accent)' : 'var(--green)';
+  return (
+    <div className="vt-meter">
+      <div className="vt-meter__head">
+        <span className={`vt-meter__label ${latin ? 'is-latin' : ''}`}>{label}</span>
+        <span className="vt-meter__pct" style={{ color }}>{clamped.toFixed(clamped < 10 ? 1 : 0)}<small>%</small></span>
       </div>
+      <div className="vt-meter__track" role="progressbar" aria-valuenow={Math.round(clamped)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+        <span className="vt-meter__fill" style={{ width: `${clamped}%`, background: color }} />
+        <span className="vt-meter__ticks" />
+      </div>
+      <span className="vt-meter__sub">{note ?? sub}</span>
     </div>
   );
 }
 
-function Bar({ value, color }: { value: number; color: string }) {
-  const clamped = Math.max(0, Math.min(100, value));
+function Readout({ k, v, sub }: { k: string; v: string; sub?: string }) {
   return (
-    <div className="status-bar" role="progressbar" aria-valuenow={Math.round(clamped)} aria-valuemin={0} aria-valuemax={100}>
-      <span className="status-bar__fill" style={{ width: `${clamped}%`, background: color }} />
+    <div className="vt-read">
+      <span className="vt-read__k">{k}</span>
+      <span className="vt-read__v">{v}</span>
+      {sub ? <span className="vt-read__sub">{sub}</span> : null}
     </div>
   );
 }
 
-function MiniBar({ value, color }: { value: number; color: string }) {
-  const clamped = Math.max(0, Math.min(100, value));
-  return (
-    <div className="status-minibar">
-      <span className="status-minibar__fill" style={{ width: `${clamped}%`, background: color }} />
-    </div>
-  );
-}
-
-function Stat({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
-  return (
-    <div className={`status-stat ${compact ? 'is-compact' : ''}`}>
-      <span className="status-stat__label">{label}</span>
-      <span className="status-stat__value">{value}</span>
-    </div>
-  );
-}
-
-// 使用率が高いほど危険 (invertGood=false)、または高いほど良い (invertGood=true) 場合で色を切り替える。
-function pickColor(percent: number, higherIsBetter: boolean): string {
-  const good = 'var(--green)';
-  const warn = 'var(--accent)';
-  const danger = '#c0392b';
-  if (higherIsBetter) {
-    if (percent >= 90) return good;
-    if (percent >= 70) return warn;
-    return danger;
-  }
-  if (percent >= 85) return danger;
-  if (percent >= 60) return warn;
-  return good;
+function tpsHealth(tps: number): { color: string; label: string } {
+  if (tps >= 19.5) return { color: 'var(--green)', label: '安定' };
+  if (tps >= 18) return { color: 'var(--accent)', label: 'やや低下' };
+  return { color: '#b23b2e', label: '不安定' };
 }
 
 function formatBytes(bytes: number): string {
@@ -289,7 +270,7 @@ function formatEnergy(wh: number): string {
 function shortVersion(version: string): string {
   if (!version) return '-';
   const match = version.match(/1\.\d+(\.\d+)?/);
-  return match ? match[0] : version.slice(0, 16);
+  return match ? match[0] : version.slice(0, 18);
 }
 
 function sinceText(resetAt: number): string {

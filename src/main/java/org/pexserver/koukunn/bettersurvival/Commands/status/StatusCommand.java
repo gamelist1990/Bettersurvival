@@ -70,7 +70,7 @@ public class StatusCommand extends BaseCommand {
         sendInfo(sender, "§eメモリ: §f" + formatBytes(snapshot.memUsed())
                 + " §7/ " + formatBytes(snapshot.memAllocated())
                 + " §7(" + oneDecimal(snapshot.memPercent()) + "%)");
-        sendInfo(sender, "§e電力 §7(概算): §f" + oneDecimal(snapshot.watts()) + " W"
+        sendInfo(sender, "§e電力 §7(" + (snapshot.powerReal() ? "実測RAPL" : "概算") + "): §f" + oneDecimal(snapshot.watts()) + " W"
                 + " §7/ 積算 " + oneDecimal(snapshot.energyWh()) + " Wh");
         sendInfo(sender, "§e安定性: §fTPS " + twoDecimal(snapshot.tps())
                 + " §7(" + oneDecimal(snapshot.stabilityPercent()) + "%)"

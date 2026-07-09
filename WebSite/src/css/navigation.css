@@ -416,9 +416,18 @@
   .app-sidebar.is-open {
     display: grid !important;
     grid-template-columns: 1fr !important;
-    grid-template-rows: auto 1fr auto !important;
+    /* minmax(0, 1fr) にしないと nav 行がコンテンツ高で固定され、
+       ログイン行 (3行目) を押し出して Features と被る。0 まで縮められるようにする。 */
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
     align-items: stretch !important;
     justify-items: stretch !important;
+    overscroll-behavior: contain;
+  }
+
+  /* ドロワーを開いている間は背面ページのスクロールを固定する。 */
+  body.sidebar-drawer-open {
+    overflow: hidden;
+    touch-action: none;
   }
 
   .app-sidebar.is-open .sidebar-brand {
@@ -435,12 +444,16 @@
     flex-direction: column !important;
     justify-content: flex-start !important;
     align-items: stretch !important;
-    align-self: start !important;
+    align-self: stretch !important;
     width: 100% !important;
+    min-height: 0 !important;
     margin: 28px 0 0 !important;
     gap: 10px !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
+    /* nav 内スクロールが背面ページへ伝播 (scroll chaining) しないようにする。 */
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch;
   }
 
   .app-sidebar.is-open .sidebar-link {

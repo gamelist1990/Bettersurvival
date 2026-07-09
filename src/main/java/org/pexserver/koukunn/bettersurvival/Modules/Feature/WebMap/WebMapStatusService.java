@@ -33,11 +33,16 @@ public final class WebMapStatusService {
     private static final int REFRESH_SECONDS = (int) (REFRESH_TICKS / 20L);
     private static final Gson GSON = new Gson();
 
-    // 電力推定に使う 1 コアあたりのワット数 (アイドル〜フルロード)。あくまで概算値。
+    // RAPL が使えない環境でのフォールバック概算に使う 1 コアあたりのワット数 (アイドル〜フルロード)。
     private static final double IDLE_WATTS_PER_CORE = 1.5D;
     private static final double MAX_WATTS_PER_CORE = 9.0D;
 
     private final Loader plugin;
+
+    // Linux の RAPL (powercap) からCPUパッケージの実消費電力を読む。使えなければモデル概算にフォールバック。
+    private final PowerMeter powerMeter = new PowerMeter();
+    private volatile double lastWatts = 0D;
+    private volatile boolean lastPowerReal = false;
 
     // --- 通信量カウンタ (reset 可能) ---
     private final AtomicLong trafficOut = new AtomicLong();
@@ -156,11 +161,33 @@ public final class WebMapStatusService {
         long allocated = (max == Long.MAX_VALUE) ? committed : max;
         double memPercent = allocated > 0 ? Math.min(100D, (used * 100D) / allocated) : 0D;
 
-        // --- 電力 (概算) ---
-        double watts = cores * (IDLE_WATTS_PER_CORE + (MAX_WATTS_PER_CORE - IDLE_WATTS_PER_CORE) * loadForPower);
-        // 前回計測からの経過時間で積算エネルギー (Wh) を足し込む。
+        // --- 電力 ---
+        // RAPL が使える環境では CPU パッケージの「実測」エネルギーカウンタから W を算出する。
+        // 使えない場合のみ CPU 負荷ベースの概算にフォールバックする。
         long dtMillis = Math.max(0L, now - lastRefreshAt);
-        energyWh += watts * (dtMillis / 3_600_000D);
+        double dtSeconds = dtMillis / 1000D;
+        double modelWatts = cores * (IDLE_WATTS_PER_CORE + (MAX_WATTS_PER_CORE - IDLE_WATTS_PER_CORE) * loadForPower);
+        double watts;
+        boolean powerReal;
+        if (powerMeter.isRapl()) {
+            double joules = powerMeter.sampleJoules(); // 毎回呼び、内部のエネルギーカウンタを進める
+            if (joules >= 0D && dtSeconds > 0.5D) {
+                watts = joules / dtSeconds;          // 実測: 消費エネルギー(J) ÷ 経過時間(s) = 電力(W)
+                energyWh += joules / 3_600D;          // 実測エネルギーをそのまま Wh へ積算
+                powerReal = true;
+            } else {
+                // 初回や差分が取れないときは直近値/モデルでつなぐ (積算はモデルで加算)。
+                watts = lastWatts > 0D ? lastWatts : modelWatts;
+                energyWh += watts * (dtMillis / 3_600_000D);
+                powerReal = lastPowerReal;
+            }
+        } else {
+            watts = modelWatts;
+            energyWh += modelWatts * (dtMillis / 3_600_000D);
+            powerReal = false;
+        }
+        lastWatts = watts;
+        lastPowerReal = powerReal;
         lastRefreshAt = now;
 
         // --- 安定性 (TPS / MSPT) ---
@@ -213,7 +240,9 @@ public final class WebMapStatusService {
         Map<String, Object> power = new LinkedHashMap<>();
         power.put("watts", round2(watts));
         power.put("energyWh", round4(energyWh));
-        power.put("estimate", true);
+        power.put("real", powerReal);
+        power.put("source", powerReal ? "rapl" : "estimate");
+        power.put("estimate", !powerReal);
         payload.put("power", power);
 
         Map<String, Object> stability = new LinkedHashMap<>();
@@ -250,7 +279,7 @@ public final class WebMapStatusService {
                 now, intervalSeconds(),
                 cpuProcessClamped, cpuSystemClamped, cores,
                 used, allocated, committed, memPercent,
-                watts, energyWh,
+                watts, energyWh, powerReal,
                 tps, mspt, stabilityPercent, avgTps, minTps,
                 uptimeMillis,
                 out, in, out + in, requests, resetAt,
@@ -326,6 +355,7 @@ public final class WebMapStatusService {
             double memPercent,
             double watts,
             double energyWh,
+            boolean powerReal,
             double tps,
             double mspt,
             double stabilityPercent,
@@ -342,5 +372,103 @@ public final class WebMapStatusService {
             int playersMax,
             byte[] jsonBytes
     ) {
+    }
+
+    /**
+     * Linux の RAPL (Running Average Power Limit) を powercap sysfs 経由で読み、
+     * CPU パッケージの<b>実消費電力</b>を算出するメーター。
+     * <p>
+     * {@code /sys/class/powercap/intel-rapl:N/energy_uj} はパッケージが消費した累積エネルギー
+     * (マイクロジュール) の実測カウンタで、Intel/AMD の両方でこのインターフェースが使える。
+     * 前回値との差分を経過時間で割ることで実際のワット数が得られる。
+     * 非 Linux 環境や、権限でカウンタが読めない環境では無効化され、呼び出し側はモデル概算へフォールバックする。
+     * </p>
+     */
+    private static final class PowerMeter {
+        private final java.util.List<java.nio.file.Path> energyPaths = new java.util.ArrayList<>();
+        private final long[] maxRange;
+        private final long[] lastUj;
+        private final boolean rapl;
+
+        PowerMeter() {
+            java.io.File base = new java.io.File("/sys/class/powercap");
+            java.util.List<java.io.File> packages = new java.util.ArrayList<>();
+            if (base.isDirectory()) {
+                java.io.File[] entries = base.listFiles();
+                if (entries != null) {
+                    java.util.Arrays.sort(entries, java.util.Comparator.comparing(java.io.File::getName));
+                    for (java.io.File entry : entries) {
+                        // トップレベルのパッケージドメインのみ (intel-rapl:0 など)。
+                        // サブドメイン (intel-rapl:0:0 = core/dram 等) はパッケージに含まれるため二重計上を避けて除外する。
+                        if (entry.getName().matches("intel-rapl:\\d+")) {
+                            java.io.File energy = new java.io.File(entry, "energy_uj");
+                            if (energy.canRead()) {
+                                packages.add(entry);
+                            }
+                        }
+                    }
+                }
+            }
+            if (packages.isEmpty()) {
+                this.rapl = false;
+                this.maxRange = new long[0];
+                this.lastUj = new long[0];
+                return;
+            }
+            this.maxRange = new long[packages.size()];
+            this.lastUj = new long[packages.size()];
+            for (int i = 0; i < packages.size(); i++) {
+                java.io.File pkg = packages.get(i);
+                energyPaths.add(new java.io.File(pkg, "energy_uj").toPath());
+                maxRange[i] = readLong(new java.io.File(pkg, "max_energy_range_uj").toPath(), 0L);
+                lastUj[i] = readLong(energyPaths.get(i), -1L);
+            }
+            this.rapl = true;
+        }
+
+        boolean isRapl() {
+            return rapl;
+        }
+
+        /** 前回サンプルからの消費エネルギー (ジュール) を返す。取得不可なら -1。内部カウンタは毎回更新する。 */
+        double sampleJoules() {
+            if (!rapl) {
+                return -1D;
+            }
+            double totalUj = 0D;
+            boolean any = false;
+            for (int i = 0; i < energyPaths.size(); i++) {
+                long current = readLong(energyPaths.get(i), -1L);
+                if (current < 0L) {
+                    continue;
+                }
+                long previous = lastUj[i];
+                lastUj[i] = current;
+                if (previous < 0L) {
+                    continue;
+                }
+                long delta = current - previous;
+                if (delta < 0L) {
+                    // カウンタが上限で折り返した場合の補正。
+                    long range = maxRange[i];
+                    delta = range > 0L ? delta + range : 0L;
+                    if (delta < 0L) {
+                        delta = 0L;
+                    }
+                }
+                totalUj += delta;
+                any = true;
+            }
+            return any ? totalUj / 1_000_000D : -1D;
+        }
+
+        private static long readLong(java.nio.file.Path path, long fallback) {
+            try {
+                String text = java.nio.file.Files.readString(path).trim();
+                return text.isEmpty() ? fallback : Long.parseLong(text);
+            } catch (Exception ignored) {
+                return fallback;
+            }
+        }
     }
 }

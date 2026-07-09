@@ -26,7 +26,7 @@ import java.util.UUID;
  */
 public class OfflineAccessModule implements Listener {
 
-    public static final boolean Debug = true;
+    public static final boolean Debug = false;
 
     private final Plugin plugin;
     private final OfflineAccessManager manager;

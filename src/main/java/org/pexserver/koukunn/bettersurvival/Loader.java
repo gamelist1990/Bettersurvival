@@ -91,6 +91,8 @@ public final class Loader extends JavaPlugin {
     private CopperGolemModule copperGolemModule;
     private WebServiceModule webServiceModule;
     private WebMapModule webMapModule;
+    private org.pexserver.koukunn.bettersurvival.Modules.Feature.Performance.PerformanceModule performanceModule;
+    private org.pexserver.koukunn.bettersurvival.Modules.Feature.Motd.MotdModule motdModule;
     private ChunkLoaderModule chunkLoaderModule;
     private PartyModule partyModule;
     private PartyMenu partyMenu;
@@ -227,6 +229,12 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(webServiceModule, this);
         webMapModule = new WebMapModule(this);
         getServer().getPluginManager().registerEvents(webMapModule, this);
+        // Performance モジュール登録 (省電力モード: 無人時に更新スレッドを停止)
+        performanceModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.Performance.PerformanceModule(this);
+        getServer().getPluginManager().registerEvents(performanceModule, this);
+        // Motd モジュール登録 (motd/ フォルダの icon.png と motd.json でサーバー表示をカスタマイズ)
+        motdModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.Motd.MotdModule(this);
+        getServer().getPluginManager().registerEvents(motdModule, this);
         // InvSee イベントリスナー登録 (プレイヤーインベントリ閲覧・編集)
         InvseeOfflineData.initialize(this);
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -428,6 +436,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new WebServiceCommand(this));
         // Status command: サーバー稼働状況の表示と統計リセット (/status reset)
         commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.status.StatusCommand(this));
+        // Performance command: 省電力モードの有効/無効 (OP専用)
+        commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.performance.PerformanceCommand(this));
         // Party command: パーティー(ギルド)管理 (/party と /p の両方で開ける)
         commandManager.register(new PartyCommand(this, "party"));
         commandManager.register(new PartyCommand(this, "p"));
@@ -533,6 +543,14 @@ public final class Loader extends JavaPlugin {
 
     public WebMapModule getWebMapModule() {
         return webMapModule;
+    }
+
+    public org.pexserver.koukunn.bettersurvival.Modules.Feature.Performance.PerformanceModule getPerformanceModule() {
+        return performanceModule;
+    }
+
+    public org.pexserver.koukunn.bettersurvival.Modules.Feature.Motd.MotdModule getMotdModule() {
+        return motdModule;
     }
 
     public WebServiceModule getWebServiceModule() {
