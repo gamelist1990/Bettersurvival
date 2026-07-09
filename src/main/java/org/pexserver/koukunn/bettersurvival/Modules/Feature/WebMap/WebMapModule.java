@@ -66,13 +66,25 @@ public class WebMapModule implements Listener {
     private final WebMapStore store;
     private final WebMapDataStore dataStore;
     private final WebMapHttpServer httpServer;
-    private final Map<UUID, String> lastPlayerChunk = new ConcurrentHashMap<>();
+    private final WebMapStatusService statusService;
+    /**
+     * プレイヤーが最後にいたチャンクを {@link PlayerLastChunk} レコードで持つ。
+     * String 連結によるアロケーションを避けるため、world UID と long-packed chunk key で識別する。
+     */
+    private final Map<UUID, PlayerLastChunk> lastPlayerChunk = new ConcurrentHashMap<>();
     private final Map<String, ChunkGenJob> chunkGenJobs = new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<QueuedChunkCapture> urgentChunkCaptures = new ConcurrentLinkedDeque<>();
     private final ConcurrentLinkedDeque<QueuedChunkCapture> normalChunkCaptures = new ConcurrentLinkedDeque<>();
-    private final java.util.Set<String> queuedChunkKeys = ConcurrentHashMap.newKeySet();
-    private final Map<String, Long> recentChunkCaptures = new ConcurrentHashMap<>();
-    private final Map<String, Long> changedTiles = new ConcurrentHashMap<>();
+    /** キューに積まれているチャンクを world → packed key set で管理する。string 連結を排除するため per-world 化。 */
+    private final Map<String, java.util.Set<Long>> queuedChunkKeysPerWorld = new ConcurrentHashMap<>();
+    /**
+     * 直近キャプチャ済みチャンクのローカルミラー: worldKey → (packedChunkKey → lastCapturedAt)。
+     * 元は recentChunkCaptures + dataStore.getChunk の 2 段で行っていた throttle 判定を、
+     * synchronized な dataStore アクセスを避けて完全に lock-free で行うためのマップ。
+     */
+    private final Map<String, Map<Long, Long>> capturedChunks = new ConcurrentHashMap<>();
+    /** 変更されたタイルを world → (packedTileKey → updatedAt) で持つ。string 連結を排除。 */
+    private final Map<String, Map<Long, Long>> changedTilesPerWorld = new ConcurrentHashMap<>();
     private final Map<String, BossBar> chunkGenBossBars = new ConcurrentHashMap<>();
     private final Map<String, List<WebMapMarkerRecord>> markerSnapshots = new ConcurrentHashMap<>();
     private final Map<String, Map<String, WebMapMarkerRecord>> waypointSnapshots = new ConcurrentHashMap<>();
@@ -99,6 +111,7 @@ public class WebMapModule implements Listener {
         this.store = new WebMapStore(plugin.getConfigManager());
         this.dataStore = new WebMapDataStore(store);
         this.httpServer = new WebMapHttpServer(this);
+        this.statusService = new WebMapStatusService(plugin);
         this.settings = store.loadSettings();
         syncKnownWorlds();
         store.saveSettings(settings);
@@ -108,6 +121,25 @@ public class WebMapModule implements Listener {
         startTasks();
         logMapColorProcessingMode();
         syncRuntimeState();
+    }
+
+    public WebMapStatusService getStatusService() {
+        return statusService;
+    }
+
+    /** Minecraft からの {@code /status reset} 用: 稼働統計をリセットする。 */
+    public void resetStatus() {
+        statusService.reset();
+    }
+
+    /** HTTP レスポンスの送信バイト数を通信量に加算する。 */
+    public void recordWebResponseBytes(long bytes) {
+        statusService.recordResponseBytes(bytes);
+    }
+
+    /** HTTP リクエストを 1 件記録する (リクエスト数 + 受信バイト数)。 */
+    public void recordWebRequest(long inboundBytes) {
+        statusService.recordRequest(inboundBytes);
     }
 
     public Loader getPlugin() {
@@ -155,7 +187,6 @@ public class WebMapModule implements Listener {
     }
 
     public WebMapDimensionSettings getDimensionSettings(World world) {
-        syncKnownWorlds();
         return store.ensureDimensionSettings(settings, world);
     }
 
@@ -316,10 +347,15 @@ public class WebMapModule implements Listener {
     }
 
     public List<Map<String, Object>> getChangedTilesSince(String worldKey, long since) {
+        // per-world Map を直接引くので、他ワールドのエントリを走査する無駄が完全になくなる。
+        Map<Long, Long> tilesMap = changedTilesPerWorld.get(worldKey);
+        if (tilesMap == null || tilesMap.isEmpty()) {
+            return List.of();
+        }
         long cutoff = System.currentTimeMillis() - 600_000L;
         List<Map<String, Object>> tiles = new ArrayList<>();
-        List<String> expired = new ArrayList<>();
-        for (Map.Entry<String, Long> entry : changedTiles.entrySet()) {
+        List<Long> expired = new ArrayList<>();
+        for (Map.Entry<Long, Long> entry : tilesMap.entrySet()) {
             long updatedAt = entry.getValue();
             if (updatedAt < cutoff) {
                 expired.add(entry.getKey());
@@ -328,21 +364,15 @@ public class WebMapModule implements Listener {
             if (updatedAt <= since) {
                 continue;
             }
-            String[] parts = entry.getKey().split(":");
-            if (parts.length != 3) {
-                continue;
-            }
-            if (!parts[0].equals(worldKey)) {
-                continue;
-            }
+            long packedKey = entry.getKey();
             Map<String, Object> row = new ConcurrentHashMap<>();
-            row.put("x", parseInt(parts[1]));
-            row.put("z", parseInt(parts[2]));
+            row.put("x", unpackChunkX(packedKey));
+            row.put("z", unpackChunkZ(packedKey));
             row.put("updatedAt", updatedAt);
             tiles.add(row);
         }
-        for (String key : expired) {
-            changedTiles.remove(key);
+        for (Long key : expired) {
+            tilesMap.remove(key);
         }
         tiles.sort(Comparator.comparingLong(row -> ((Number) row.get("updatedAt")).longValue()));
         return tiles;
@@ -389,6 +419,7 @@ public class WebMapModule implements Listener {
         if (markerRefreshTask != null) {
             markerRefreshTask.cancel();
         }
+        statusService.stop();
         stopAllChunkGen();
         hideAllChunkGenBossBars();
         if (globalTpsBar != null) {
@@ -424,11 +455,11 @@ public class WebMapModule implements Listener {
     }
 
     private boolean hasPendingShutdownWork() {
+        // per-world set を全部チェックする代わりに、キュー自体の非空判定で十分 (set と deque は同期して増減する)。
         return getActiveChunkGenCount() > 0
                 || pendingChunkWork.get() > 0
                 || !urgentChunkCaptures.isEmpty()
-                || !normalChunkCaptures.isEmpty()
-                || !queuedChunkKeys.isEmpty();
+                || !normalChunkCaptures.isEmpty();
     }
 
     @EventHandler
@@ -470,9 +501,12 @@ public class WebMapModule implements Listener {
         trackPlayerChunk(event.getPlayer(), event.getPlayer().getLocation());
     }
 
-    @EventHandler
+    @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
         if (!settings.getEvents().isPlayerMove()) {
+            return;
+        }
+        if (!isGloballyEnabled() || !settings.isEnabled() || settings.isPaused() || !settings.isAutoTrackPlayers()) {
             return;
         }
         Location to = event.getTo();
@@ -501,7 +535,6 @@ public class WebMapModule implements Listener {
             return;
         }
         enqueueChunkCapture(event.getWorld(), event.getChunk().getX(), event.getChunk().getZ(), false, false);
-        processPendingChunkCaptures(1);
     }
 
     @EventHandler
@@ -529,26 +562,34 @@ public class WebMapModule implements Listener {
     }
 
     private void trackPlayerChunk(Player player, Location location) {
-        if (location == null || !isGloballyEnabled() || !settings.isEnabled() || settings.isPaused() || !settings.isAutoTrackPlayers()) {
+        if (location == null) {
+            return;
+        }
+        if (!isGloballyEnabled() || !settings.isEnabled() || settings.isPaused() || !settings.isAutoTrackPlayers()) {
             return;
         }
         World world = location.getWorld();
         if (world == null) {
             return;
         }
+        int centerChunkX = location.getBlockX() >> 4;
+        int centerChunkZ = location.getBlockZ() >> 4;
+        // 高速な比較を先に行って、同じチャンクなら重い処理 (getDimensionSettings, enqueue) を全部スキップする。
+        // String 連結を廃止し、world UID + long-packed chunk key で識別する。
+        long packedChunk = packChunkKey(centerChunkX, centerChunkZ);
+        UUID worldUid = world.getUID();
+        PlayerLastChunk current = new PlayerLastChunk(worldUid, packedChunk);
+        PlayerLastChunk previous = lastPlayerChunk.put(player.getUniqueId(), current);
+        if (current.equals(previous)) {
+            return;
+        }
+        // ここに来るのはチャンク境界を跨いだ1回分のみ。プレイヤーが多くても頻度が低いので重い処理を許容する。
         WebMapDimensionSettings dimension = getDimensionSettings(world);
         if (!dimension.isVisible() || !dimension.isAutoTrack()) {
             return;
         }
-        String chunkId = world.getKey() + ":" + (location.getBlockX() >> 4) + ":" + (location.getBlockZ() >> 4);
-        String previous = lastPlayerChunk.put(player.getUniqueId(), chunkId);
-        if (chunkId.equals(previous)) {
-            return;
-        }
-        int centerChunkX = location.getBlockX() >> 4;
-        int centerChunkZ = location.getBlockZ() >> 4;
         enqueueNearbyChunkCaptures(world, centerChunkX, centerChunkZ, PLAYER_CAPTURE_RADIUS, true);
-        processPendingChunkCaptures(3);
+        // processPendingChunkCaptures は chunkCaptureTask (2 tick 間隔) に任せる。ここでは呼ばない。
     }
 
     private void markBlockChunkUrgent(Location location) {
@@ -556,8 +597,8 @@ public class WebMapModule implements Listener {
         if (world == null) {
             return;
         }
+        // urgent キューに積むだけ。定期タスクが 2 tick 間隔で拾ってくれる。
         enqueueChunkCapture(world, location.getBlockX() >> 4, location.getBlockZ() >> 4, true, true);
-        processPendingChunkCaptures(1);
     }
 
     private void captureChunk(World world, int chunkX, int chunkZ) {
@@ -979,9 +1020,12 @@ public class WebMapModule implements Listener {
             updateGlobalTpsBar();
         }, 40L, 40L);
         chunkGenTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> tickChunkGen(), 20L, 1L);
-        chunkCaptureTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> processPendingChunkCaptures(4), 2L, 2L);
-        nearbySweepTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::sweepNearbyLoadedChunks, 1200L, 1200L);
+      
+        chunkCaptureTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> processPendingChunkCaptures(8), 2L, 2L);
+      
+        nearbySweepTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::sweepNearbyLoadedChunks, 2400L, 2400L);
         markerRefreshTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::refreshMarkerSnapshots, 40L, 40L);
+        statusService.start();
     }
 
     private void tickChunkGen() {
@@ -1022,10 +1066,7 @@ public class WebMapModule implements Listener {
         if (shutdownRequested) {
             return;
         }
-        // HTTP サーバー全体は WebService (Feed/Auth/Privacy 等) のためのゲート。
-        // WebMap の settings.isEnabled() / isPaused() は WebMap 機能 (worlds/players/tiles) だけを
-        // 個別に guardWebMap() で 404 にする役割にとどめ、サーバー本体の停止条件には含めない。
-        // これにより WebMap を OFF にしても Feed 投稿などの WebService API が生き続ける。
+      
         if (!isWebServiceEnabled()) {
             httpServer.stop();
             return;
@@ -1451,7 +1492,9 @@ public class WebMapModule implements Listener {
     }
 
     private void markTileChanged(String worldKey, int tileX, int tileZ, long updatedAt) {
-        changedTiles.put(worldKey + ":" + tileX + ":" + tileZ, updatedAt);
+        // per-world の long キー Map に格納。String 連結が完全になくなる。
+        Map<Long, Long> tilesMap = changedTilesPerWorld.computeIfAbsent(worldKey, k -> new ConcurrentHashMap<>());
+        tilesMap.put(packChunkKey(tileX, tileZ), updatedAt);
     }
 
     private void sweepNearbyLoadedChunks() {
@@ -1484,14 +1527,6 @@ public class WebMapModule implements Listener {
         processPendingChunkCaptures(2);
     }
 
-    private int parseInt(String value) {
-        try {
-            return Integer.parseInt(value);
-        } catch (NumberFormatException ignored) {
-            return 0;
-        }
-    }
-
     private void enqueueChunkCapture(World world, int chunkX, int chunkZ, boolean force, boolean urgent) {
         if (shutdownRequested || !isGloballyEnabled() || !settings.isEnabled() || settings.isPaused()) {
             return;
@@ -1505,20 +1540,26 @@ public class WebMapModule implements Listener {
             return;
         }
         String worldKey = world.getKey().toString();
-        String chunkKey = worldKey + ":" + chunkX + ":" + chunkZ;
+        long packedKey = packChunkKey(chunkX, chunkZ);
         long now = System.currentTimeMillis();
-        Long lastCapture = recentChunkCaptures.get(chunkKey);
+        // ローカルミラー (capturedChunks) だけで throttle 判定する。synchronized な dataStore.getChunk を呼ばない。
+        Map<Long, Long> worldCaptured = capturedChunks.computeIfAbsent(worldKey, k -> new ConcurrentHashMap<>());
+        Long lastCapture = worldCaptured.get(packedKey);
         long throttleMillis = urgent ? 1_000L : 15_000L;
         if (!force && lastCapture != null && (now - lastCapture) < throttleMillis) {
             return;
         }
-        if (!force && dataStore.getChunk(worldKey, chunkX, chunkZ) != null && lastCapture != null && (now - lastCapture) < 120_000L) {
+        // 「dataStore に既にあるチャンク」かどうかは、ローカルミラーに一度でも記録されているかで代替する。
+        // モジュール起動後にキャプチャしたチャンクは必ず capturedChunks に載っているため、
+        // 実運用上 dataStore.getChunk と同じ挙動 (2 分間の再キャプチャ抑制) になる。
+        if (!force && lastCapture != null && (now - lastCapture) < 120_000L) {
             return;
         }
-        if (!queuedChunkKeys.add(chunkKey)) {
+        java.util.Set<Long> worldQueue = queuedChunkKeysPerWorld.computeIfAbsent(worldKey, k -> ConcurrentHashMap.newKeySet());
+        if (!worldQueue.add(packedKey)) {
             return;
         }
-        QueuedChunkCapture capture = new QueuedChunkCapture(worldKey, chunkX, chunkZ, chunkKey);
+        QueuedChunkCapture capture = new QueuedChunkCapture(worldKey, chunkX, chunkZ, packedKey);
         if (urgent) {
             urgentChunkCaptures.addLast(capture);
         } else {
@@ -1536,10 +1577,13 @@ public class WebMapModule implements Listener {
             return;
         }
         long cutoff = now - 1_800_000L;
-        for (Map.Entry<String, Long> entry : recentChunkCaptures.entrySet()) {
-            Long updatedAt = entry.getValue();
-            if (updatedAt != null && updatedAt < cutoff) {
-                recentChunkCaptures.remove(entry.getKey(), updatedAt);
+        // per-world Map をそれぞれ掃除する。
+        for (Map<Long, Long> worldMap : capturedChunks.values()) {
+            for (Map.Entry<Long, Long> entry : worldMap.entrySet()) {
+                Long updatedAt = entry.getValue();
+                if (updatedAt != null && updatedAt < cutoff) {
+                    worldMap.remove(entry.getKey(), updatedAt);
+                }
             }
         }
     }
@@ -1586,12 +1630,18 @@ public class WebMapModule implements Listener {
             if (queued == null) {
                 return;
             }
-            queuedChunkKeys.remove(queued.chunkKey());
+            // 対応する per-world queue set からも取り除く。null チェックは念のため。
+            java.util.Set<Long> worldQueue = queuedChunkKeysPerWorld.get(queued.worldKey());
+            if (worldQueue != null) {
+                worldQueue.remove(queued.packedKey());
+            }
             World world = resolveWorld(queued.worldKey());
             if (world == null) {
                 continue;
             }
-            recentChunkCaptures.put(queued.chunkKey(), System.currentTimeMillis());
+            // ローカルミラーに直近キャプチャ時刻を記録し、次回の throttle 判定に使う。
+            Map<Long, Long> worldCaptured = capturedChunks.computeIfAbsent(queued.worldKey(), k -> new ConcurrentHashMap<>());
+            worldCaptured.put(queued.packedKey(), System.currentTimeMillis());
             captureChunk(world, queued.chunkX(), queued.chunkZ());
         }
     }
@@ -1599,7 +1649,32 @@ public class WebMapModule implements Listener {
     private record ChunkCoordinate(int x, int z) {
     }
 
-    private record QueuedChunkCapture(String worldKey, int chunkX, int chunkZ, String chunkKey) {
+    private record QueuedChunkCapture(String worldKey, int chunkX, int chunkZ, long packedKey) {
+    }
+
+    /**
+     * プレイヤーの直近チャンクを world UID + long-packed chunk key で識別する record。
+     * String {@code "worldKey:X:Z"} 連結に比べて GC 圧が低い。
+     */
+    private record PlayerLastChunk(UUID worldUid, long packedChunk) {
+    }
+
+    /**
+     * (x, z) 2つの int を 1つの long に圧縮する。
+     * 上位 32bit に x、下位 32bit に z をパックする。
+     */
+    private static long packChunkKey(int x, int z) {
+        return ((long) x << 32) | (z & 0xFFFFFFFFL);
+    }
+
+    /** {@link #packChunkKey(int, int)} でパックされた long から x を取り出す。 */
+    private static int unpackChunkX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    /** {@link #packChunkKey(int, int)} でパックされた long から z を取り出す。 */
+    private static int unpackChunkZ(long packed) {
+        return (int) packed;
     }
 
     private static final class ChunkGenJob {

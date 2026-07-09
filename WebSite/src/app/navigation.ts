@@ -1,4 +1,4 @@
-export type PageKey = 'home' | 'profile' | 'feed' | 'features' | 'webmap' | 'wiki' | 'privacy' | 'request' | 'admin';
+export type PageKey = 'home' | 'profile' | 'feed' | 'features' | 'webmap' | 'status' | 'wiki' | 'privacy' | 'request' | 'admin';
 
 export type NavigationItem = {
   key: PageKey;
@@ -13,12 +13,14 @@ export const navigationItems: NavigationItem[] = [
   { key: 'profile', label: 'Profile', subtitle: 'Custom page', href: '/profile', icon: '▣' },
   { key: 'feed', label: 'Feed', subtitle: 'MC Twitter', href: '/feed', icon: '✦' },
   { key: 'webmap', label: 'WebMap', subtitle: 'Live map', href: '/webmap/', icon: '◇' },
+  { key: 'status', label: 'Status', subtitle: 'Server health', href: '/status', icon: '❤' },
   { key: 'wiki', label: 'Wiki', subtitle: 'Toggle guide', href: '/wiki', icon: '❦' },
   { key: 'features', label: 'Features', subtitle: 'Guide', href: '/features', icon: '✧' },
 ];
 
 export function pageKeyFromPath(pathname: string): PageKey {
   if (pathname === '/webmap' || pathname.startsWith('/webmap/')) return 'webmap';
+  if (pathname.startsWith('/status')) return 'status';
   if (pathname.startsWith('/account')) return 'profile';
   if (pathname.startsWith('/profile')) return 'profile';
   if (pathname.startsWith('/feed')) return 'feed';

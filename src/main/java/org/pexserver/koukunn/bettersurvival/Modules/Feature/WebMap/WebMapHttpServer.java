@@ -77,6 +77,7 @@ public class WebMapHttpServer {
         }
         server.createContext("/api/v1/bootstrap", safe(this::handleBootstrap));
         server.createContext("/api/v1/status", safe(this::handleStatus));
+        server.createContext("/api/v1/serverstatus", safe(this::handleServerStatus));
         server.createContext("/api/v1/auth/register", safe(this::handleAuthRegister));
         server.createContext("/api/v1/auth/login", safe(this::handleAuthLogin));
         server.createContext("/api/v1/auth/logout", safe(this::handleAuthLogout));
@@ -117,6 +118,7 @@ public class WebMapHttpServer {
     private HttpHandler safe(ExchangeHandler delegate) {
         return exchange -> {
             try {
+                recordInboundTraffic(exchange);
                 delegate.handle(exchange);
             } catch (Throwable throwable) {
                 if (isClientDisconnect(throwable)) {
@@ -218,6 +220,27 @@ public class WebMapHttpServer {
                 "playerTracking", module.getSettings().isAutoTrackPlayers(),
                 "chunkGenActive", module.getActiveChunkGenCount()
         ), 2);
+    }
+
+    /**
+     * サーバー稼働状況を返す。実際の計測は {@link WebMapStatusService} が定期的に行い、
+     * ここでは <b>キャッシュ済みのバイト列をそのまま書き出すだけ</b>なので、
+     * 大量アクセスを受けてもサーバー本体への負荷が増えない。
+     */
+    private void handleServerStatus(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) && !"HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
+            writePlain(exchange, 405, "Method Not Allowed");
+            return;
+        }
+        if (!guardApi(exchange)) {
+            return;
+        }
+        byte[] body = module.getStatusService().cachedJsonBytes();
+        securityHeaders(exchange);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        // クライアント側で数秒ごとにポーリングするので、キャッシュ更新間隔と同程度に許可しておく。
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=" + module.getStatusService().intervalSeconds());
+        writeBody(exchange, 200, body);
     }
 
     private void handleApiWorlds(HttpExchange exchange) throws IOException {
@@ -672,6 +695,34 @@ public class WebMapHttpServer {
         exchange.sendResponseHeaders(status, body.length);
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(body);
+        }
+        recordOutboundTraffic(body.length);
+    }
+
+    /** リクエスト 1 件を通信量統計に記録する (受信バイト数は Content-Length から概算)。 */
+    private void recordInboundTraffic(HttpExchange exchange) {
+        long inbound = 0L;
+        String contentLength = exchange.getRequestHeaders().getFirst("Content-Length");
+        if (contentLength != null) {
+            try {
+                inbound = Math.max(0L, Long.parseLong(contentLength.trim()));
+            } catch (NumberFormatException ignored) {
+                inbound = 0L;
+            }
+        }
+        try {
+            module.recordWebRequest(inbound);
+        } catch (Throwable ignored) {
+            // 統計記録の失敗はリクエスト処理に影響させない。
+        }
+    }
+
+    /** レスポンス送信バイト数を通信量統計に記録する。 */
+    private void recordOutboundTraffic(long bytes) {
+        try {
+            module.recordWebResponseBytes(bytes);
+        } catch (Throwable ignored) {
+            // 統計記録の失敗はレスポンスに影響させない。
         }
     }
 
@@ -1180,6 +1231,7 @@ public class WebMapHttpServer {
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(bytes);
         }
+        recordOutboundTraffic(bytes.length);
     }
 
     /** 個人情報の開示・訂正・削除・利用停止の申請を受け付ける。 */

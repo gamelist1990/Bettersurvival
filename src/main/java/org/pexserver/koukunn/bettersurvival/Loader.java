@@ -426,6 +426,8 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new WhitelistCommand(this));
         // WebService command: OP専用の WebService / WebMap 統合管理
         commandManager.register(new WebServiceCommand(this));
+        // Status command: サーバー稼働状況の表示と統計リセット (/status reset)
+        commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.status.StatusCommand(this));
         // Party command: パーティー(ギルド)管理 (/party と /p の両方で開ける)
         commandManager.register(new PartyCommand(this, "party"));
         commandManager.register(new PartyCommand(this, "p"));

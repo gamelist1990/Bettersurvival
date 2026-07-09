@@ -10,6 +10,7 @@ import { HomePage } from './pages/HomePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { RequestPage } from './pages/RequestPage';
+import { StatusPage } from './pages/StatusPage';
 import { WikiPage } from './pages/wiki/WikiPage';
 import WebMapPage from './Page/WebMapPage';
 import { useWebService } from './features/webservice/useWebService';
@@ -68,6 +69,8 @@ export default function App() {
         return <WikiPage slug={wikiSlugFromPath(path)} onNavigate={navigate} />;
       case 'webmap':
         return <WebMapPage full={fullMap} />;
+      case 'status':
+        return <StatusPage />;
       case 'privacy':
         return <PrivacyPage onNavigate={navigate} />;
       case 'request':
