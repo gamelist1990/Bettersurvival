@@ -119,8 +119,8 @@
 
 .status-gauge {
   position: relative;
-  width: 128px;
-  height: 128px;
+  width: 116px;
+  height: 116px;
   flex: 0 0 auto;
 }
 .status-gauge__svg {
@@ -239,9 +239,10 @@
   gap: 10px;
 }
 .status-stat__label {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--muted);
+  min-width: 0;
 }
 .status-stat__value {
   font-family: "Space Grotesk", Inter, sans-serif;
@@ -249,6 +250,7 @@
   letter-spacing: -0.02em;
   color: var(--ink);
   text-align: right;
+  white-space: nowrap;
 }
 
 .status-inline-stats {

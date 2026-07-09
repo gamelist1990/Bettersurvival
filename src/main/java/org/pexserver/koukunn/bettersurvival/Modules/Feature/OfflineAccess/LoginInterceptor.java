@@ -73,14 +73,74 @@ public class LoginInterceptor extends ChannelDuplexHandler {
     /**
      * ログイン段階で発生した例外がサーバー全体へ波及するのを防ぐ。
      * 例外はこの接続に限定し、該当チャンネルのみを閉じる。
+     *
+     * <p>Netty の {@code DecoderException} のような「不正クライアント / スキャナ / プロキシ forwarding
+     * 不整合 / 古いプロトコル」などで日常的に発生する例外は、接続を静かに閉じるだけで実運用は無害。
+     * これらを WARN 相当でフルスタックトレース出力するとログがノイズだらけになるため、
+     * 既知の無害な例外は {@link OfflineAccessManager#debug} レベルに降格する。</p>
      */
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        manager.debug("exceptionCaught on login channel; closing connection only", cause);
+        if (isBenignProtocolException(cause)) {
+            manager.debug("benign protocol exception on login channel; closing quietly ("
+                    + summarizeException(cause) + ")");
+        } else {
+            manager.debug("exceptionCaught on login channel; closing connection only", cause);
+        }
         try {
             ctx.close();
         } catch (Throwable ignored) {
         }
+    }
+
+    /**
+     * よくあるプロトコル系デコード例外かどうかを判定する。
+     * これらは接続を閉じるだけで対処すれば十分で、スタックトレース出力は不要。
+     */
+    private static boolean isBenignProtocolException(Throwable cause) {
+        for (Throwable t = cause; t != null; t = t.getCause()) {
+            String className = t.getClass().getName();
+            if (className.equals("io.netty.handler.codec.DecoderException")
+                    || className.equals("io.netty.handler.codec.CorruptedFrameException")
+                    || className.equals("io.netty.handler.codec.PrematureChannelClosureException")
+                    || className.equals("io.netty.handler.timeout.ReadTimeoutException")) {
+                return true;
+            }
+            String message = t.getMessage();
+            if (message == null) {
+                continue;
+            }
+            if (message.contains("was larger than I expected")
+                    || message.contains("Received unknown packet id")
+                    || message.contains("VarInt too big")
+                    || message.contains("Length was longer than expected")
+                    || message.contains("Bad packet id")
+                    || message.contains("Connection reset")
+                    || message.contains("Broken pipe")
+                    || message.contains("forcibly closed")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 例外を 1 行で要約する (ログ用)。ネストは 3 段まで辿る。
+     */
+    private static String summarizeException(Throwable cause) {
+        StringBuilder sb = new StringBuilder();
+        int depth = 0;
+        for (Throwable t = cause; t != null && depth < 3; t = t.getCause(), depth++) {
+            if (depth > 0) {
+                sb.append(" -> ");
+            }
+            sb.append(t.getClass().getSimpleName());
+            String message = t.getMessage();
+            if (message != null && !message.isEmpty()) {
+                sb.append(": ").append(message);
+            }
+        }
+        return sb.toString();
     }
 
     private void handleChannelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
