@@ -166,20 +166,20 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 
 | 本家 Mob | 照合状況 | 対応する実装 |
 | --- | --- | --- |
-| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビの移動中限定の跳躍準備・空中の向き固定・着地復帰、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲 | `StandardEnemyAiSystem` |
+| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビの移動中限定の跳躍準備・空中の向き固定・着地復帰、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲、クモ系の本家マーカー弾道 | `StandardEnemyAiSystem` |
 | スライム / マグマキューブ | [x] 敵対時の160/100tick膨張、スライム数上限、サイズごとの能力値。マグマキューブは本家どおり同じ継承処理 | `StandardEnemyAiSystem` |
 | クリーパー | [x] 停止中だけ進む1〜25tick、25tick後の自動進行、30tick爆発、通常／追跡採掘で共有する3回上限 | `StandardEnemyAiSystem` / `TrueCrafterModeModule` |
 | クリーパー追跡採掘 | [x] 壁越し・近距離・同高度での50tick大爆発 | `TrueCrafterModeModule` |
 | ピグリン剣 / クロスボウ / ブルート | [x] 回復・耐火飲用・後退先の足場判定、予備動作後も継続する衝撃波タイマー | `StandardEnemyAiSystem` |
 | ウィッチ / ヴィンディケーター / エヴォーカー | [x] ワープ失敗時のカウント維持、前後の退避経路、ヴィンディケーターの40/60/100tick遷移と非破壊、エヴォーカーの単体最終召喚 | `StandardEnemyAiSystem` / `EvokerAiSystem` |
 | スケルトン系 / 溺死ゾンビ / ピリジャー | [x] 本家の初期化・共通 AI・後退処理。エリート矢の無重力、100tick後の落下、盾での停止 | `MobProfileInitializer` / `TrueCrafterModeModule` |
-| 遠距離切替共通 AI | [x] 近距離5、遠距離5〜16、40tick後退、着地点判定 | `TrueCrafterModeModule` |
-| 追跡共通 AI | [x] 48ブロック索敵、40tick掘削、20tick立ち往生後の足場生成 | `TrueCrafterModeModule` / `TemporaryEnemyBlockSystem` |
+| 遠距離切替共通 AI | [x] 近距離5、遠距離5〜16、40tick後退、後方1ブロックの通路と3ブロック先の足場判定、蓄積カウント保持 | `TrueCrafterModeModule` |
+| 追跡共通 AI | [x] 48ブロック索敵、40tick掘削、前方の眼・足元・胴体・頭上破壊、対象が大きく下にいる場合の真下掘削、20tick立ち往生後の足場生成 | `TrueCrafterModeModule` / `TemporaryEnemyBlockSystem` |
 | 追跡用の仮設足場 | [x] バイオーム別材質、敵が乗る間の寿命停止、60tick消滅 | `TemporaryEnemyBlockSystem` |
 | ジーロット / ドラゴン / ウィザー投射物 | [x] 初速、20〜35tickの加減速、追尾距離、400tick寿命 | `ProjectileMotionSystem` |
 | ピグリンブルート衝撃波 | [x] 前方の叩きつけ、ブロックを通過するmarker、段差追従、40tick移動、4tickごとの12ダメージ | `StandardEnemyAiSystem` / `ProjectileMotionSystem` |
 | ゾンビピグリン | [x] 48ブロック内の強制敵対 | `TrueCrafterModeModule` |
-| 通常 / 弱体 / 中立 / 外縁エンダーマン | [x] かぼちゃ別の敵対距離、能力値、ブロック破壊 | `MobProfileInitializer` / `TrueCrafterModeModule` |
+| 通常 / 弱体 / 中立 / 外縁エンダーマン | [x] かぼちゃ別の敵対距離、能力値、エンド／ネザーでの中立75%・外縁追跡25%抽選、近距離30tickのブロック破壊。本家にない共通ランダムテレポートは除去 | `MobProfileInitializer` / `TrueCrafterModeModule` |
 | エリートスケルトン / ストレイ / ボグド | [x] 装備、遠近切替、矢の変換、休止周期 | `TrueCrafterModeModule` |
 | ウィザーの騎士 / しもべ | [x] 60tick解放、4射ごとの140tick休止中も通常射撃を維持、装備と能力値 | `WitherBossSystem` / `TrueCrafterModeModule` |
 | エンダージーロット | [x] スライム本体、NoAI、弾幕周期、眼球処理 | `EnderZealotAiSystem` / `EnderDragonBossSystem` |

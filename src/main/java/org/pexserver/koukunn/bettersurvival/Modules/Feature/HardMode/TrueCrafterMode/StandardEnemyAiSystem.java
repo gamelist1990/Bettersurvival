@@ -290,17 +290,36 @@ public final class StandardEnemyAiSystem {
                 spider.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 10, false, false));
                 spider.getWorld().playSound(spider.getLocation(), Sound.ENTITY_SPIDER_DEATH, 2.0F, 2.0F);
                 spider.getWorld().playSound(spider.getLocation(), Sound.ENTITY_SLIME_ATTACK, 2.0F, 2.0F);
-                launch(spider, target.getEyeLocation().add(0, -0.9, 0), "poison", Material.SPIDER_EYE, 1.5D);
+                launch(spider, caveSpiderAim(spider, target), "poison", Material.SPIDER_EYE, 1.5D);
             }
             return;
         }
         spider.getWorld().playSound(spider.getLocation(), Sound.ENTITY_SPIDER_DEATH, 2.0F, 2.0F);
         spider.getWorld().playSound(spider.getLocation(), Sound.ENTITY_SLIME_ATTACK, 2.0F, 2.0F);
         if (distance >= 7.0D && distance <= 14.0D) {
-            launch(spider, target.getEyeLocation(), "web", Material.COBWEB, 1.5D);
+            launch(spider, target.getEyeLocation().add(0.0D, 1.0D, 0.0D), "web", Material.COBWEB, 1.5D);
         } else if (distance < 7.0D) {
-            for (double angle : new double[]{-12.0D, -5.0D, 5.0D, 12.0D}) launchSpread(spider, target, angle);
+            launchSpiderSpread(spider);
         }
+    }
+
+    private Location caveSpiderAim(Spider spider, Player target) {
+        Location aim = spider.getLocation();
+        aim.setDirection(target.getEyeLocation().toVector().subtract(aim.toVector()));
+        aim.setPitch(aim.getPitch() - 10.0F);
+        return spider.getLocation().clone().add(aim.getDirection().multiply(5.0D));
+    }
+
+    private void launchSpiderSpread(Spider spider) {
+        Location origin = spider.getLocation();
+        Vector forward = origin.getDirection().setY(0.0D);
+        if (forward.lengthSquared() == 0.0D) return;
+        forward.normalize();
+        Vector side = new Vector(-forward.getZ(), 0.0D, forward.getX());
+        launch(spider, origin.clone().add(side).add(0.0D, 1.0D, 0.0D), "web", Material.COBWEB, 1.0D);
+        launch(spider, origin.clone().subtract(side).add(0.0D, 1.0D, 0.0D), "web", Material.COBWEB, 1.0D);
+        launch(spider, origin.clone().add(side.clone().multiply(0.5D)).add(forward).add(0.0D, 1.0D, 0.0D), "web", Material.COBWEB, 1.0D);
+        launch(spider, origin.clone().subtract(side.clone().multiply(0.5D)).add(forward).add(0.0D, 1.0D, 0.0D), "web", Material.COBWEB, 1.0D);
     }
 
     private void witch(Witch witch, Player target) {
@@ -555,12 +574,6 @@ public final class StandardEnemyAiSystem {
         wave.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, "brute");
         wave.getPersistentDataContainer().set(projectileOwnerKey, PersistentDataType.STRING, brute.getUniqueId().toString());
         wave.getPersistentDataContainer().set(projectileDamageKey, PersistentDataType.DOUBLE, 12.0D);
-    }
-
-    private void launchSpread(LivingEntity source, Player target, double yawOffset) {
-        Vector direction = target.getEyeLocation().toVector().subtract(source.getEyeLocation().toVector()).normalize();
-        direction.rotateAroundY(Math.toRadians(yawOffset));
-        launch(source, source.getEyeLocation().add(direction.multiply(10)), "web", Material.COBWEB, 1.0D);
     }
 
     private void launch(LivingEntity source, Location target, String kind, Material display, double speed) {

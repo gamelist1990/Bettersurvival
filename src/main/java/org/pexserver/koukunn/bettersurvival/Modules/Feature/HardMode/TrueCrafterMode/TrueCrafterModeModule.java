@@ -80,7 +80,6 @@ public final class TrueCrafterModeModule implements Listener {
     private final NamespacedKey enhancedKey;
     private final NamespacedKey variantKey;
     private final NamespacedKey projectileKey;
-    private final NamespacedKey bossPhaseKey;
     private final NamespacedKey companionKey;
     private final NamespacedKey endermanModeKey;
     private final NamespacedKey witherKnightKey;
@@ -89,7 +88,6 @@ public final class TrueCrafterModeModule implements Listener {
     private final NamespacedKey sheathOwnerKey;
     private final NamespacedKey sheathRenderVersionKey;
     private final NamespacedKey creeperAttackCountKey;
-    private final Map<UUID, Long> abilityCooldowns = new HashMap<>();
     private final Map<UUID, Integer> rangedBackSteps = new HashMap<>();
     private final Map<UUID, Integer> terrainDigTicks = new HashMap<>();
     private final Map<UUID, Integer> terrainPlaceTicks = new HashMap<>();
@@ -116,7 +114,6 @@ public final class TrueCrafterModeModule implements Listener {
         enhancedKey = new NamespacedKey(plugin, "truecrafter_enhanced");
         variantKey = new NamespacedKey(plugin, "truecrafter_variant");
         projectileKey = new NamespacedKey(plugin, "truecrafter_projectile");
-        bossPhaseKey = new NamespacedKey(plugin, "truecrafter_boss_phase");
         companionKey = new NamespacedKey(plugin, "truecrafter_companion");
         endermanModeKey = new NamespacedKey(plugin, "truecrafter_enderman_mode");
         witherKnightKey = new NamespacedKey(plugin, "truecrafter_wither_knight");
@@ -338,7 +335,6 @@ public final class TrueCrafterModeModule implements Listener {
                             || display.getItemStack().getType() == Material.NETHERITE_SWORD)
                     .forEach(Entity::remove);
         }
-        abilityCooldowns.remove(event.getEntity().getUniqueId());
         rangedBackSteps.remove(event.getEntity().getUniqueId());
         terrainDigTicks.remove(event.getEntity().getUniqueId());
         terrainPlaceTicks.remove(event.getEntity().getUniqueId());
@@ -409,7 +405,6 @@ public final class TrueCrafterModeModule implements Listener {
             aiTask.cancel();
             aiTask = null;
         }
-        abilityCooldowns.clear();
         rangedBackSteps.clear();
         terrainDigTicks.clear();
         terrainPlaceTicks.clear();
@@ -427,7 +422,6 @@ public final class TrueCrafterModeModule implements Listener {
 
     private void tickEnemies() {
         if (!isEnabled()) return;
-        long now = System.currentTimeMillis();
         for (World world : Bukkit.getWorlds()) {
             for (LivingEntity living : world.getLivingEntities()) {
                 if (!(living instanceof Mob mob) || !isEnemy(living)) continue;
@@ -466,6 +460,7 @@ public final class TrueCrafterModeModule implements Listener {
                     }
                     if (!outerChaser && "normal".equals(enderman.getPersistentDataContainer().get(endermanModeKey, PersistentDataType.STRING)) && target instanceof Player player) {
                         breakEndermanBlocks(enderman, player);
+                        continue;
                     }
                     if ("neutral".equals(endermanMode) || "weak".equals(endermanMode)) continue;
                 }
@@ -489,10 +484,7 @@ public final class TrueCrafterModeModule implements Listener {
                     witherBoss.tick(wither, player);
                     continue;
                 }
-                if (abilityCooldowns.getOrDefault(living.getUniqueId(), 0L) > now) continue;
                 alterTerrain(living, player);
-                long cooldown = useAbility(living, player);
-                if (cooldown > 0L) abilityCooldowns.put(living.getUniqueId(), now + cooldown);
             }
         }
     }
@@ -552,56 +544,6 @@ public final class TrueCrafterModeModule implements Listener {
             closestDistance = distance;
         }
         return closest;
-    }
-
-    private long useAbility(LivingEntity enemy, Player target) {
-        double distance = enemy.getLocation().distance(target.getLocation());
-        if (enemy instanceof Spider && distance >= 4.0D && distance <= 15.0D) {
-            launch(enemy, target, enemy instanceof CaveSpider ? "poison" : "web", enemy instanceof CaveSpider ? Material.SPIDER_EYE : Material.COBWEB, 1.1D);
-            return 3000L;
-        }
-        if (enemy instanceof Witch && distance <= 18.0D) {
-            teleportAround(enemy, target);
-            enemy.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 30, 0));
-            return 3500L;
-        }
-        if (enemy instanceof Vindicator && distance <= 10.0D) {
-            Vector charge = target.getLocation().toVector().subtract(enemy.getLocation().toVector()).normalize().multiply(0.75D).setY(0.18D);
-            enemy.setVelocity(charge);
-            enemy.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 45, 0));
-            return 4000L;
-        }
-        if (enemy instanceof PiglinBrute && distance <= 8.0D) {
-            shockwave(enemy, target);
-            return 5000L;
-        }
-        if (enemy instanceof Creeper creeper) {
-            creeper.setExplosionRadius(4);
-            if (distance > 7.0D) creeper.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 25, 0, false, false));
-            return 1200L;
-        }
-        if (enemy instanceof Enderman && distance <= 14.0D) {
-            teleportAround(enemy, target);
-            return 3000L;
-        }
-        if (enemy instanceof Evoker && distance <= 18.0D) {
-            if (chance(0.35D)) spawnMinion(enemy, EntityType.VINDICATOR);
-            else teleportAround(enemy, target);
-            return 5000L;
-        }
-        if (enemy instanceof Wither) {
-            bossAttack(enemy, target, true);
-            return 3500L;
-        }
-        if (enemy instanceof EnderDragon) {
-            bossAttack(enemy, target, false);
-            return 3000L;
-        }
-        if (enemy instanceof Slime slime && slime.getSize() >= 2 && distance <= 10.0D) {
-            enemy.setVelocity(target.getLocation().toVector().subtract(enemy.getLocation().toVector()).normalize().multiply(0.65D).setY(0.65D));
-            return 3000L;
-        }
-        return 0L;
     }
 
     private void enhance(LivingEntity entity) {
@@ -666,48 +608,18 @@ public final class TrueCrafterModeModule implements Listener {
         if (modifier != null) instance.removeModifier(modifier);
     }
 
-    private void launch(LivingEntity source, Player target, String kind, Material display, double speed) {
-        Snowball ball = source.getWorld().spawn(source.getEyeLocation(), Snowball.class);
-        ball.setShooter(source);
-        ball.setItem(new ItemStack(display));
-        ball.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, kind);
-        ball.setVelocity(target.getEyeLocation().toVector().subtract(source.getEyeLocation().toVector()).normalize().multiply(speed));
-        source.getWorld().playSound(source.getLocation(), Sound.ENTITY_SNOWBALL_THROW, 0.8F, 0.7F);
-    }
-
-    private void shockwave(LivingEntity source, Player target) {
-        source.getWorld().spawnParticle(Particle.EXPLOSION, source.getLocation(), 3, 0.8, 0.2, 0.8, 0.0);
-        Vector push = target.getLocation().toVector().subtract(source.getLocation().toVector()).normalize().multiply(1.25D).setY(0.55D);
-        target.setVelocity(push);
-        target.damage(4.0D, source);
-        source.getWorld().playSound(source.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 1.0F, 0.7F);
-    }
-
-    private void bossAttack(LivingEntity boss, Player target, boolean wither) {
-        double ratio = boss.getHealth() / Math.max(1.0D, boss.getAttribute(Attribute.MAX_HEALTH).getValue());
-        int phase = ratio > 0.75D ? 1 : ratio > 0.5D ? 2 : ratio > 0.25D ? 3 : 4;
-        int previous = boss.getPersistentDataContainer().getOrDefault(bossPhaseKey, PersistentDataType.INTEGER, 1);
-        boss.getPersistentDataContainer().set(bossPhaseKey, PersistentDataType.INTEGER, phase);
-        if (phase > previous) {
-            boss.getWorld().playSound(boss.getLocation(), Sound.ENTITY_WITHER_SPAWN, 1.0F, 1.2F);
-            boss.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, boss.getLocation(), 80, 2.0, 1.5, 2.0, 0.08);
-        }
-        if (chance(0.25D + phase * 0.08D)) {
-            for (int index = 0; index < Math.min(5, phase + 1); index++) spawnMinion(boss, wither ? EntityType.WITHER_SKELETON : EntityType.ENDERMAN);
-        } else if (chance(0.5D)) {
-            boss.getWorld().strikeLightningEffect(target.getLocation());
-            target.damage((wither ? 6.0D : 5.0D) + phase * 1.5D, boss);
-        } else {
-            launch(boss, target, "void", wither ? Material.WITHER_SKELETON_SKULL : Material.ENDER_EYE, 1.1D + phase * 0.1D);
-        }
-    }
-
     private void alterTerrain(LivingEntity enemy, Player target) {
         if (heatLevel() < 3 || enemy.getWorld() != target.getWorld()
                 || enemy.getLocation().distanceSquared(target.getLocation()) > 2304.0D) return;
         Vector direction = target.getLocation().toVector().subtract(enemy.getLocation().toVector()).setY(0).normalize();
         Block ahead = enemy.getEyeLocation().add(direction).getBlock();
-        if (!enemy.hasLineOfSight(target) && isDiggable(ahead.getType())) {
+        Block below = enemy.getLocation().subtract(0.0D, 1.0D, 0.0D).getBlock();
+        boolean targetBelow = Math.abs(target.getLocation().getX() - enemy.getLocation().getX()) <= 8.0D
+                && Math.abs(target.getLocation().getZ() - enemy.getLocation().getZ()) <= 8.0D
+                && target.getLocation().getY() <= enemy.getLocation().getY() - 2.0D
+                && target.getLocation().getY() >= enemy.getLocation().getY() - 34.0D;
+        boolean digDown = targetBelow && isDiggable(below.getType());
+        if (digDown || !enemy.hasLineOfSight(target) && isDiggable(ahead.getType())) {
             // abstract.chaser_ai/search/tick の紫色の掘削探索パーティクル。
             enemy.getWorld().spawnParticle(Particle.DUST, enemy.getEyeLocation(), 1,
                     0.2D, 0.2D, 0.2D, 0.0D,
@@ -733,9 +645,14 @@ public final class TrueCrafterModeModule implements Listener {
                 terrainDigTicks.remove(enemy.getUniqueId());
                 return;
             }
-            breakDiggable(ahead);
-            breakDiggable(enemy.getLocation().add(direction).getBlock());
-            breakDiggable(enemy.getLocation().add(direction).add(0, 1, 0).getBlock());
+            if (digDown) {
+                breakDiggable(below);
+            } else {
+                breakDiggable(ahead);
+                breakDiggable(enemy.getLocation().add(direction).getBlock());
+                breakDiggable(enemy.getLocation().add(direction).add(0.0D, 1.0D, 0.0D).getBlock());
+                breakDiggable(enemy.getEyeLocation().add(0.0D, 1.0D, 0.0D).getBlock());
+            }
             terrainDigTicks.remove(enemy.getUniqueId());
             return;
         }
@@ -748,8 +665,8 @@ public final class TrueCrafterModeModule implements Listener {
         if (terrainPlaceTicks.merge(enemy.getUniqueId(), 1, Integer::sum) < 20) return;
         Block bridge = enemy.getLocation().add(direction.multiply(1.2D)).subtract(0, 1, 0).getBlock();
         Block fartherBridge = enemy.getLocation().add(direction.multiply(2.2D)).subtract(0, 1, 0).getBlock();
-        Block below = enemy.getLocation().subtract(0, 1, 0).getBlock();
-        if (below.isEmpty()) temporaryBlocks.place(below);
+        Block placementBelow = enemy.getLocation().subtract(0, 1, 0).getBlock();
+        if (placementBelow.isEmpty()) temporaryBlocks.place(placementBelow);
         if (bridge.isEmpty()) temporaryBlocks.place(bridge);
         if (fartherBridge.isEmpty()) temporaryBlocks.place(fartherBridge);
     }
@@ -772,12 +689,6 @@ public final class TrueCrafterModeModule implements Listener {
     }
 
 
-    private void spawnMinion(LivingEntity owner, EntityType type) {
-        Location at = owner.getLocation().clone().add(random(-3.0D, 3.0D), 0.2D, random(-3.0D, 3.0D));
-        Entity spawned = owner.getWorld().spawnEntity(at, type);
-        if (spawned instanceof Mob mob && owner instanceof Mob ownerMob) mob.setTarget(ownerMob.getTarget());
-    }
-
     private void spawnOriginalCompanion(LivingEntity entity) {
         if (entity.getPersistentDataContainer().has(companionKey, PersistentDataType.BYTE)) return;
         EntityType companion = null;
@@ -789,24 +700,6 @@ public final class TrueCrafterModeModule implements Listener {
         if (companion == null) return;
         Entity spawned = entity.getWorld().spawnEntity(entity.getLocation(), companion);
         spawned.getPersistentDataContainer().set(companionKey, PersistentDataType.BYTE, (byte) 1);
-    }
-
-    private void teleportAround(LivingEntity entity, Player target) {
-        for (int attempt = 0; attempt < 8; attempt++) {
-            Location at = target.getLocation().clone().add(random(-6.0D, 6.0D), random(-1.0D, 2.0D), random(-6.0D, 6.0D));
-            if (at.getBlock().isPassable() && at.clone().add(0, 1, 0).getBlock().isPassable()) {
-                entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
-                entity.getWorld().spawnParticle(Particle.WITCH, entity.getLocation().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0.0D);
-                entity.getWorld().spawnParticle(Particle.DUST, entity.getLocation().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0D,
-                        new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
-                entity.teleport(at);
-                entity.getWorld().playSound(at, Sound.ENTITY_ENDERMAN_TELEPORT, 0.8F, 1.0F);
-                entity.getWorld().spawnParticle(Particle.WITCH, at.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0.0D);
-                entity.getWorld().spawnParticle(Particle.DUST, at.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0D,
-                        new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
-                return;
-            }
-        }
     }
 
     private Player outerChaserTarget(Enderman enderman) {
@@ -1014,26 +907,18 @@ public final class TrueCrafterModeModule implements Listener {
             entity.getEquipment().setItemInOffHand(main);
             entity.getWorld().playSound(entity.getLocation(), Sound.ITEM_ARMOR_EQUIP_GENERIC, 1.5F, 1.0F);
         }
-        if (!skeleton || entity.getEquipment().getItemInMainHand().getType() == Material.BOW || distance > 5.0D) {
-            rangedBackSteps.remove(entity.getUniqueId());
-            return;
-        }
+        if (!skeleton || entity.getEquipment().getItemInMainHand().getType() == Material.BOW || distance > 5.0D) return;
         if (distance <= 2.0D && target.getNoDamageTicks() > 0 && entity.isOnGround()) rangedBackSteps.put(entity.getUniqueId(), 40);
         int ticks = rangedBackSteps.merge(entity.getUniqueId(), 1, Integer::sum);
         if (ticks < 40 || !entity.isOnGround()) return;
-        Vector away = entity.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0).normalize().multiply(0.7D).setY(0.4D);
-        Location landing = entity.getLocation().clone().add(away.clone().setY(0));
-        if (!landing.getBlock().isPassable() || !landing.clone().add(0, 1, 0).getBlock().isPassable()) return;
+        Vector away = entity.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0.0D);
+        if (away.lengthSquared() == 0.0D) return;
+        away.normalize();
+        Location backward = entity.getLocation().clone().add(away);
+        Location landingBelow = entity.getLocation().clone().add(away.clone().multiply(3.0D)).subtract(0.0D, 1.0D, 0.0D);
+        if (!backward.getBlock().isPassable() || landingBelow.getBlock().isPassable()) return;
         entity.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 10, false, false));
-        Sound retreatSound = switch (entity.getType()) {
-            case PARCHED -> Sound.ENTITY_PARCHED_AMBIENT;
-            case BOGGED -> Sound.ENTITY_BOGGED_DEATH;
-            case STRAY -> Sound.ENTITY_STRAY_DEATH;
-            default -> Sound.ENTITY_SKELETON_DEATH;
-        };
-        float retreatPitch = entity.getType() == EntityType.SKELETON ? 1.5F : 2.0F;
-        entity.getWorld().playSound(entity.getLocation(), retreatSound, 1.0F, retreatPitch);
-        entity.setVelocity(away);
+        entity.setVelocity(away.multiply(0.7D).setY(0.4D));
         entity.getWorld().playSound(entity.getLocation(), Sound.ENTITY_GOAT_LONG_JUMP, 1.0F, 1.2F);
         rangedBackSteps.remove(entity.getUniqueId());
     }

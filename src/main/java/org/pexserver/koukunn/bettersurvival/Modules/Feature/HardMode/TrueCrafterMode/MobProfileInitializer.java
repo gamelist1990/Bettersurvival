@@ -135,9 +135,7 @@ public final class MobProfileInitializer {
             return;
         }
         boolean nonOverworld = enderman.getWorld().getEnvironment() != org.bukkit.World.Environment.NORMAL;
-        double horizontalDistance = Math.hypot(enderman.getLocation().getX(), enderman.getLocation().getZ());
-        boolean outerRegion = enderman.getWorld().getEnvironment() == org.bukkit.World.Environment.NETHER || horizontalDistance > 128.0D;
-        if (nonOverworld && outerRegion && java.util.concurrent.ThreadLocalRandom.current().nextInt(8) >= 6) {
+        if (nonOverworld && java.util.concurrent.ThreadLocalRandom.current().nextInt(8) >= 6) {
             enderman.getPersistentDataContainer().set(endermanModeKey, PersistentDataType.STRING, "outer_chaser");
             base(enderman, Attribute.MOVEMENT_SPEED, 0.12D); base(enderman, Attribute.STEP_HEIGHT, 1D); base(enderman, Attribute.MAX_HEALTH, 30D);
             return;
