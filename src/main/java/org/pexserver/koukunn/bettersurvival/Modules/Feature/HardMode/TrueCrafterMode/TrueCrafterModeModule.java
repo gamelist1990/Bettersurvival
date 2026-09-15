@@ -65,6 +65,7 @@ import org.bukkit.util.Vector;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -91,6 +92,8 @@ public final class TrueCrafterModeModule implements Listener {
     private final Map<UUID, Integer> rangedBackSteps = new HashMap<>();
     private final Map<UUID, Integer> terrainDigTicks = new HashMap<>();
     private final Map<UUID, Integer> terrainPlaceTicks = new HashMap<>();
+    private final Map<UUID, Integer> creeperDigExplosions = new HashMap<>();
+    private final Set<UUID> creeperDigRecovery = new HashSet<>();
     private final Map<UUID, Integer> endermanBreakTicks = new HashMap<>();
     private final Map<UUID, Integer> witherKnightCooldowns = new HashMap<>();
     private final Map<UUID, Integer> witherKnightShots = new HashMap<>();
@@ -341,6 +344,8 @@ public final class TrueCrafterModeModule implements Listener {
         rangedBackSteps.remove(event.getEntity().getUniqueId());
         terrainDigTicks.remove(event.getEntity().getUniqueId());
         terrainPlaceTicks.remove(event.getEntity().getUniqueId());
+        creeperDigExplosions.remove(event.getEntity().getUniqueId());
+        creeperDigRecovery.remove(event.getEntity().getUniqueId());
         endermanBreakTicks.remove(event.getEntity().getUniqueId());
         witherKnightCooldowns.remove(event.getEntity().getUniqueId());
         witherKnightShots.remove(event.getEntity().getUniqueId());
@@ -411,6 +416,8 @@ public final class TrueCrafterModeModule implements Listener {
         rangedBackSteps.clear();
         terrainDigTicks.clear();
         terrainPlaceTicks.clear();
+        creeperDigExplosions.clear();
+        creeperDigRecovery.clear();
         endermanBreakTicks.clear();
         witherKnightCooldowns.clear();
         witherKnightShots.clear();
@@ -428,6 +435,11 @@ public final class TrueCrafterModeModule implements Listener {
         for (World world : Bukkit.getWorlds()) {
             for (LivingEntity living : world.getLivingEntities()) {
                 if (!(living instanceof Mob mob) || !isEnemy(living)) continue;
+                if (living instanceof Creeper creeper && creeperDigRecovery.remove(creeper.getUniqueId())) {
+                    creeper.setInvulnerable(false);
+                    AttributeInstance knockback = creeper.getAttribute(Attribute.KNOCKBACK_RESISTANCE);
+                    if (knockback != null) knockback.setBaseValue(0.0D);
+                }
                 enhance(living);
                 refreshExistingSkeletonSheath(living);
                 syncRangedSkeletonSheath(living);
@@ -705,12 +717,24 @@ public final class TrueCrafterModeModule implements Listener {
                     0.2D, 0.2D, 0.2D, 0.0D,
                     new Particle.DustOptions(org.bukkit.Color.fromRGB(128, 0, 128), 1.0F), true);
             int tick = terrainDigTicks.merge(enemy.getUniqueId(), 1, Integer::sum);
+            boolean creeperBlast = enemy instanceof Creeper
+                    && enemy.getLocation().distanceSquared(target.getLocation()) <= 256.0D
+                    && Math.abs(enemy.getLocation().getY() - target.getLocation().getY()) <= 2.0D;
             if (tick >= 20) enemy.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 10, false, false));
+            if (creeperBlast && tick == 20) enemy.getWorld().playSound(enemy.getLocation(), Sound.ENTITY_CREEPER_PRIMED, 1.0F, 1.0F);
             if (tick == 20 || tick == 25 || tick == 30 || tick == 35) {
                 enemy.getWorld().playSound(enemy.getLocation(), Sound.BLOCK_STONE_BREAK, 1.0F, 0.7F);
                 enemy.getWorld().playSound(enemy.getLocation(), Sound.ENTITY_PLAYER_ATTACK_WEAK, 1.0F, 0.5F);
             }
-            if (tick < 40) return;
+            if (tick < (creeperBlast ? 50 : 40)) return;
+            if (creeperBlast && enemy instanceof Creeper creeper) {
+                creeper.setInvulnerable(true);
+                creeper.getWorld().createExplosion(creeper.getLocation(), creeper.isPowered() ? 6.0F : 3.0F, false, true, creeper);
+                if (creeperDigExplosions.merge(creeper.getUniqueId(), 1, Integer::sum) >= 3) creeper.remove();
+                else creeperDigRecovery.add(creeper.getUniqueId());
+                terrainDigTicks.remove(enemy.getUniqueId());
+                return;
+            }
             breakDiggable(ahead);
             breakDiggable(enemy.getLocation().add(direction).getBlock());
             breakDiggable(enemy.getLocation().add(direction).add(0, 1, 0).getBlock());

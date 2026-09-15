@@ -166,16 +166,18 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 
 | 本家 Mob | 照合状況 | 対応する実装 |
 | --- | --- | --- |
-| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー | `StandardEnemyAiSystem` |
+| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビブルートの着地範囲 | `StandardEnemyAiSystem` |
 | スライム / マグマキューブ | [x] 敵対時の膨張時刻・同族数上限 | `StandardEnemyAiSystem` |
 | クリーパー | [x] 30tick爆発・3回上限 | `StandardEnemyAiSystem` |
+| クリーパー追跡採掘 | [x] 壁越し・近距離・同高度での50tick大爆発 | `TrueCrafterModeModule` |
 | ピグリン剣 / クロスボウ / ブルート | [x] 回復・耐火飲用・後退・衝撃波 | `StandardEnemyAiSystem` |
-| ウィッチ / ヴィンディケーター / エヴォーカー | [x] 発動時刻と主要状態 | `StandardEnemyAiSystem` / `EvokerAiSystem` |
-| スケルトン系 / 溺死ゾンビ / ピリジャー | [x] 本家の初期化・共通 AI・後退処理 | `MobProfileInitializer` / `TrueCrafterModeModule` |
+| ウィッチ / ヴィンディケーター / エヴォーカー | [x] ワープ失敗時のカウント維持、前後の退避経路、ヴィンディケーターの40/60/100tick遷移と非破壊、エヴォーカーの単体最終召喚 | `StandardEnemyAiSystem` / `EvokerAiSystem` |
+| スケルトン系 / 溺死ゾンビ / ピリジャー | [x] 本家の初期化・共通 AI・後退処理。エリート矢の無重力、100tick後の落下、盾での停止 | `MobProfileInitializer` / `TrueCrafterModeModule` |
 | 遠距離切替共通 AI | [x] 近距離5、遠距離5〜16、40tick後退、着地点判定 | `TrueCrafterModeModule` |
 | 追跡共通 AI | [x] 48ブロック索敵、40tick掘削、20tick立ち往生後の足場生成 | `TrueCrafterModeModule` / `TemporaryEnemyBlockSystem` |
 | 追跡用の仮設足場 | [x] バイオーム別材質、敵が乗る間の寿命停止、60tick消滅 | `TemporaryEnemyBlockSystem` |
 | ジーロット / ドラゴン / ウィザー投射物 | [x] 初速、20〜35tickの加減速、追尾距離、400tick寿命 | `ProjectileMotionSystem` |
+| ピグリンブルート衝撃波 | [x] 前方の叩きつけ、40tick移動、4tickごとの12ダメージ | `StandardEnemyAiSystem` / `ProjectileMotionSystem` |
 | ゾンビピグリン | [x] 48ブロック内の強制敵対 | `TrueCrafterModeModule` |
 | 通常 / 弱体 / 中立 / 外縁エンダーマン | [x] かぼちゃ別の敵対距離、能力値、ブロック破壊 | `MobProfileInitializer` / `TrueCrafterModeModule` |
 | エリートスケルトン / ストレイ / ボグド | [x] 装備、遠近切替、矢の変換、休止周期 | `TrueCrafterModeModule` |

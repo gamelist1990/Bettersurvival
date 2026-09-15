@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.TrueCrafte
 
 import org.bukkit.Bukkit;
 import org.bukkit.Color;
+import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.entity.Entity;
@@ -57,6 +58,26 @@ public final class ProjectileMotionSystem {
                     world.spawnParticle(Particle.DUST, projectile.getLocation(), 1, 0.1, 0.1, 0.1, 0,
                             new Particle.DustOptions(Color.fromRGB(204, 51, 255), 1.5F));
                     if (age >= 400) projectile.remove();
+                }
+                case "brute" -> {
+                    if (age >= 40) {
+                        projectile.remove();
+                        continue;
+                    }
+                    aim(projectile, 48.0D);
+                    Vector direction = projectile.getVelocity();
+                    if (direction.lengthSquared() > 0.0D) projectile.setVelocity(direction.normalize().multiply(0.5D));
+                    world.spawnParticle(Particle.CRIT, projectile.getLocation(), 5, 0.2D, 0.1D, 0.2D, 0.05D);
+                    world.spawnParticle(Particle.ELECTRIC_SPARK, projectile.getLocation(), 10, 0.2D, 0.1D, 0.2D, 0.05D);
+                    if (age % 4 == 0) for (Player player : world.getPlayers()) {
+                        Location location = player.getLocation();
+                        Location wave = projectile.getLocation();
+                        if (player.getGameMode().isInvulnerable()
+                                || Math.abs(location.getX() - wave.getX()) > 0.75D
+                                || Math.abs(location.getZ() - wave.getZ()) > 0.75D
+                                || Math.abs(location.getY() - wave.getY()) > 1.0D) continue;
+                        player.damage(12.0D, projectile);
+                    }
                 }
                 case "dragon_homing" -> {
                     world.spawnParticle(Particle.DUST, projectile.getLocation().subtract(projectile.getVelocity().normalize().multiply(0.5D)), 1, 0.3D, 0.3D, 0.3D, 1.0D, new Particle.DustOptions(Color.fromRGB(204, 51, 255), 2.0F));

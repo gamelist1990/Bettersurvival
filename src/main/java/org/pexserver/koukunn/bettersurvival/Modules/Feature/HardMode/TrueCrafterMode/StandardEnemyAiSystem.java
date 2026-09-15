@@ -201,7 +201,7 @@ public final class StandardEnemyAiSystem {
     private void bruteLanding(Zombie zombie) {
         for (Entity entity : zombie.getWorld().getNearbyEntities(zombie.getLocation(), 4.0D, 4.0D, 4.0D)) {
             if (!(entity instanceof LivingEntity victim) || victim == zombie || victim.isInvulnerable()) continue;
-            if (!(victim instanceof Player) && !(victim instanceof Monster)) continue;
+            if (!(victim instanceof Player)) continue;
             victim.damage(7.0D, zombie);
         }
         zombie.getWorld().spawnParticle(Particle.EXPLOSION, zombie.getLocation(), 5, 2.0D, 0.0D, 2.0D, 0.5D);
@@ -229,16 +229,6 @@ public final class StandardEnemyAiSystem {
                 Material.REPEATING_COMMAND_BLOCK, Material.CHAIN_COMMAND_BLOCK,
                 Material.STRUCTURE_BLOCK, Material.JIGSAW, Material.MOVING_PISTON).contains(type)) return;
         block.breakNaturally();
-    }
-
-    private void breakStrongPath(LivingEntity entity, Player target) {
-        Vector forward = target.getLocation().toVector().subtract(entity.getLocation().toVector()).setY(0.0D);
-        if (forward.lengthSquared() == 0.0D) return;
-        forward.normalize();
-        Vector side = new Vector(-forward.getZ(), 0.0D, forward.getX());
-        Location base = entity.getLocation().add(forward);
-        for (int x = -1; x <= 1; x++) for (int y = 0; y <= 2; y++)
-            breakBruteBlock(base.clone().add(side.clone().multiply(x)).add(0.0D, y, 0.0D).getBlock());
     }
 
     private void spider(Spider spider, Player target, boolean poisonous) {
@@ -288,17 +278,18 @@ public final class StandardEnemyAiSystem {
                 monster.getWorld().spawnParticle(Particle.WITCH, monster.getLocation().add(0, 1, 0), 1, 0.2, 0.5, 0.2, 0);
             }
         }
-        if (witch.getLocation().distance(target.getLocation()) > 16.0D || increase(witch) < 60) return;
-        ticks.remove(witch.getUniqueId());
-        teleportRelative(witch, target);
+        if (witch.getLocation().distanceSquared(target.getLocation()) > 256.0D || increase(witch) < 60) return;
+        if (teleportRelative(witch, target)) ticks.remove(witch.getUniqueId());
     }
 
     private void vindicator(Vindicator vindicator, Player target) {
-        if (vindicator.getLocation().distance(target.getLocation()) > 10.0D) return;
+        int current = ticks.getOrDefault(vindicator.getUniqueId(), 0);
+        if (current < 40 && vindicator.getLocation().distanceSquared(target.getLocation()) > 100.0D) return;
         int tick = increase(vindicator);
         if (tick == 40) {
             vindicator.getWorld().playSound(vindicator.getLocation(), Sound.ENTITY_BREEZE_IDLE_GROUND, 1.0F, 2.0F);
             vindicator.getWorld().spawnParticle(Particle.ANGRY_VILLAGER, vindicator.getEyeLocation(), 1);
+            tick = increase(vindicator);
         } else if (tick == 60) {
             vindicator.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 40, 0, false, false));
             setBase(vindicator, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
@@ -312,7 +303,6 @@ public final class StandardEnemyAiSystem {
             setBase(vindicator, Attribute.MOVEMENT_SPEED, 0.3D);
             ticks.remove(vindicator.getUniqueId());
         }
-        if (tick >= 60 && tick < 100) breakStrongPath(vindicator, target);
         if (tick >= 60 && tick < 100) {
             vindicator.getWorld().spawnParticle(Particle.TRIAL_SPAWNER_DETECTION,
                     vindicator.getLocation().add(0, 1, 0), 1,
@@ -513,26 +503,38 @@ public final class StandardEnemyAiSystem {
         Snowball ball = source.getWorld().spawn(source.getEyeLocation(), Snowball.class);
         ball.setShooter(source);
         ball.setItem(new org.bukkit.inventory.ItemStack(display));
+        if (kind.equals("brute")) ball.setGravity(false);
         ball.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, kind);
         ball.setVelocity(target.toVector().subtract(source.getEyeLocation().toVector()).normalize().multiply(speed));
     }
 
-    private void teleportRelative(Witch witch, Player target) {
-        Vector direction = target.getLocation().toVector().subtract(witch.getLocation().toVector()).setY(0.0D);
-        if (direction.lengthSquared() == 0.0D) return;
-        direction.normalize();
-        if (witch.getLocation().distance(target.getLocation()) < 5.0D) direction.multiply(-1.0D);
-        for (int step = 5; step > 0; step--) {
-            Location location = witch.getLocation().clone().add(direction.clone().multiply(step));
-            if (!location.getBlock().isPassable() || !location.clone().add(0, 1, 0).getBlock().isPassable()) continue;
-            witch.getWorld().spawnParticle(Particle.WITCH, witch.getLocation().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
-            witch.getWorld().spawnParticle(Particle.DUST, witch.getLocation().add(0, 1, 0), 25, 0.3D, 0.5D, 0.3D, 1.0D, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
-            witch.teleport(location);
-            witch.getWorld().playSound(location, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
-            witch.getWorld().spawnParticle(Particle.WITCH, location.clone().add(0, 1, 0), 25, 0.3D, 0.5D, 0.3D, 0.0D);
-            witch.getWorld().spawnParticle(Particle.DUST, location.clone().add(0, 1, 0), 25, 0.3D, 0.5D, 0.3D, 1.0D, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
-            return;
+    private boolean teleportRelative(Witch witch, Player target) {
+        Location origin = witch.getLocation();
+        Vector towardTarget = target.getLocation().toVector().subtract(origin.toVector()).setY(0.0D);
+        if (towardTarget.lengthSquared() == 0.0D) return false;
+        towardTarget.normalize();
+        boolean backwardClear = teleportPassable(origin, towardTarget.clone().multiply(-1.0D), 1);
+        boolean forwardClear = teleportPassable(origin, towardTarget, 1);
+        if (!backwardClear && !forwardClear) return false;
+        Vector direction = !backwardClear ? towardTarget
+                : origin.distanceSquared(target.getLocation()) <= 25.0D ? towardTarget.clone().multiply(-1.0D) : towardTarget;
+        if (!teleportPassable(origin, direction, 1)) return false;
+        Location destination = origin;
+        for (int distance = 1; distance <= 6 && teleportPassable(origin, direction, distance); distance++) {
+            destination = origin.clone().add(direction.clone().multiply(distance));
         }
+        witch.getWorld().spawnParticle(Particle.WITCH, origin.clone().add(0.0D, 1.0D, 0.0D), 25, 0.3D, 0.5D, 0.3D, 0.0D);
+        witch.getWorld().spawnParticle(Particle.DUST, origin.clone().add(0.0D, 1.0D, 0.0D), 25, 0.3D, 0.5D, 0.3D, 1.0D, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
+        witch.teleport(destination);
+        witch.getWorld().playSound(destination, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
+        witch.getWorld().spawnParticle(Particle.WITCH, destination.clone().add(0.0D, 1.0D, 0.0D), 25, 0.3D, 0.5D, 0.3D, 0.0D);
+        witch.getWorld().spawnParticle(Particle.DUST, destination.clone().add(0.0D, 1.0D, 0.0D), 25, 0.3D, 0.5D, 0.3D, 1.0D, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
+        return true;
+    }
+
+    private boolean teleportPassable(Location origin, Vector direction, int distance) {
+        Location candidate = origin.clone().add(direction.clone().multiply(distance));
+        return candidate.getBlock().isPassable() && candidate.clone().add(0.0D, 1.0D, 0.0D).getBlock().isPassable();
     }
 
     private int increase(LivingEntity entity) {

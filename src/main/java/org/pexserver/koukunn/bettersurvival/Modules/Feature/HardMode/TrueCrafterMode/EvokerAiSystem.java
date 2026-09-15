@@ -40,11 +40,11 @@ public final class EvokerAiSystem {
             tickFinalSummon(evoker, target, active + 1);
             return true;
         }
-        if (evoker.getLocation().distance(target.getLocation()) <= 5.0D && !evoker.isInsideVehicle()) {
+        if (evoker.getLocation().distanceSquared(target.getLocation()) <= 25.0D && !evoker.isInsideVehicle()) {
             int tick = ticks.merge(evoker.getUniqueId(), 1, Integer::sum);
-            if (tick >= 40) {
+            if (tick >= 40 && evoker.getLocation().distanceSquared(target.getLocation()) <= 256.0D
+                    && teleportAndFangs(evoker, target)) {
                 ticks.remove(evoker.getUniqueId());
-                teleportAndFangs(evoker, target);
             }
         }
         return true;
@@ -100,6 +100,11 @@ public final class EvokerAiSystem {
         evoker.getWorld().spawnParticle(Particle.TRIAL_SPAWNER_DETECTION_OMINOUS, origin.clone().add(0, 2, 0), 5, 4, 4, 4, 0);
         if (tick < 40) return;
         summonTicks.remove(evoker.getUniqueId());
+        org.bukkit.util.Vector facing = target.getLocation().toVector().subtract(origin.toVector()).setY(0.0D);
+        if (facing.lengthSquared() > 0.0D) {
+            origin.setDirection(facing);
+            evoker.setRotation(origin.getYaw(), 0.0F);
+        }
         EntityType type = switch (ThreadLocalRandom.current().nextInt(6)) {
             case 0, 1 -> EntityType.VINDICATOR;
             case 2, 3 -> EntityType.PILLAGER;
@@ -107,43 +112,30 @@ public final class EvokerAiSystem {
             default -> EntityType.ILLUSIONER;
         };
         if (type == EntityType.VINDICATOR || type == EntityType.PILLAGER) {
-            org.bukkit.util.Vector forward = target.getLocation().toVector().subtract(origin.toVector()).setY(0.0D);
-            org.bukkit.util.Vector sideways = forward.lengthSquared() == 0.0D ? new org.bukkit.util.Vector(1, 0, 0) : new org.bukkit.util.Vector(-forward.getZ(), 0, forward.getX()).normalize();
-            for (int side : new int[]{-1, 1}) spawnFinalMob(evoker, target, type, origin.clone().add(sideways.clone().multiply(side * 2.0D)));
+            spawnFinalMob(evoker, target, type, origin);
             evoker.getWorld().spawnParticle(Particle.WITCH, origin.clone().add(0, 1, 0), 50, 0.3, 0.5, 0.3, 0);
             evoker.getWorld().spawnParticle(Particle.DUST, origin.clone().add(0, 1, 0), 50, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
             evoker.getWorld().playSound(origin, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
             return;
         }
-        Entity entity = spawnFinalMob(evoker, target, type, origin);
-        if (type == EntityType.ILLUSIONER) {
-            evoker.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 80, 0, false, false));
-            evoker.getWorld().playSound(origin, Sound.ENTITY_ILLUSIONER_PREPARE_MIRROR, 1.0F, 2.0F);
-            evoker.getWorld().playSound(origin, Sound.ENTITY_ILLUSIONER_MIRROR_MOVE, 1.0F, 1.5F);
-            evoker.getWorld().spawnParticle(Particle.WITCH, origin.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
-            evoker.getWorld().spawnParticle(Particle.DUST, origin.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
-        }
-        if (type == EntityType.RAVAGER && entity instanceof org.bukkit.entity.Ravager ravager) {
-            ravager.addPassenger(evoker);
-            evoker.getWorld().spawnParticle(Particle.EXPLOSION_EMITTER, origin, 1);
-            evoker.getWorld().spawnParticle(Particle.LARGE_SMOKE, origin, 100, 1, 1, 1, 0);
-            evoker.getWorld().playSound(origin, Sound.ENTITY_RAVAGER_CELEBRATE, 1.0F, 1.0F);
-            evoker.getWorld().playSound(origin, Sound.ENTITY_GENERIC_EXPLODE, 2.0F, 2.0F);
-        } else evoker.getWorld().playSound(origin, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
+        spawnFinalMob(evoker, target, type, origin);
     }
 
-    private void teleportAndFangs(Evoker evoker, Player target) {
+    private boolean teleportAndFangs(Evoker evoker, Player target) {
         Location before = evoker.getLocation();
-        org.bukkit.util.Vector direction = target.getLocation().toVector().subtract(before.toVector()).setY(0).normalize();
-        if (before.distance(target.getLocation()) <= 5.0D) direction.multiply(-1);
-        for (int distance = 5; distance > 0; distance--) {
-            Location candidate = before.clone().add(direction.clone().multiply(distance));
-            if (!candidate.getBlock().isPassable() || !candidate.clone().add(0, 1, 0).getBlock().isPassable()) continue;
-            evoker.getWorld().spawnParticle(Particle.WITCH, before.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
-            evoker.getWorld().spawnParticle(Particle.DUST, before.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
-            evoker.teleport(candidate);
-            break;
-        }
+        org.bukkit.util.Vector towardTarget = target.getLocation().toVector().subtract(before.toVector()).setY(0.0D);
+        if (towardTarget.lengthSquared() == 0.0D) return false;
+        towardTarget.normalize();
+        boolean backwardClear = isTeleportPassable(before, towardTarget.clone().multiply(-1.0D), 1);
+        boolean forwardClear = isTeleportPassable(before, towardTarget, 1);
+        if (!backwardClear && !forwardClear) return false;
+        org.bukkit.util.Vector direction = !backwardClear ? towardTarget
+                : before.distanceSquared(target.getLocation()) <= 25.0D ? towardTarget.clone().multiply(-1.0D) : towardTarget;
+        if (!isTeleportPassable(before, direction, 1)) return false;
+        Location destination = recursiveTeleportDestination(before, direction);
+        evoker.getWorld().spawnParticle(Particle.WITCH, before.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
+        evoker.getWorld().spawnParticle(Particle.DUST, before.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
+        evoker.teleport(destination);
         evoker.getWorld().spawnParticle(Particle.WITCH, evoker.getLocation().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
         evoker.getWorld().spawnParticle(Particle.DUST, evoker.getLocation().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
         evoker.getWorld().playSound(evoker.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
@@ -151,6 +143,21 @@ public final class EvokerAiSystem {
             Location fang = evoker.getLocation().add(direction.clone().multiply(2)).add(direction.clone().rotateAroundY(Math.PI / 2).multiply(offset));
             evoker.getWorld().spawnEntity(fang, EntityType.EVOKER_FANGS);
         }
+        return true;
+    }
+
+    private boolean isTeleportPassable(Location origin, org.bukkit.util.Vector direction, int distance) {
+        Location candidate = origin.clone().add(direction.clone().multiply(distance));
+        return candidate.getBlock().isPassable() && candidate.clone().add(0.0D, 1.0D, 0.0D).getBlock().isPassable();
+    }
+
+    private Location recursiveTeleportDestination(Location origin, org.bukkit.util.Vector direction) {
+        Location destination = origin;
+        for (int distance = 1; distance <= 6; distance++) {
+            if (!isTeleportPassable(origin, direction, distance)) break;
+            destination = origin.clone().add(direction.clone().multiply(distance));
+        }
+        return destination;
     }
 
     private Entity spawnFinalMob(Evoker evoker, Player target, EntityType type, Location location) {
