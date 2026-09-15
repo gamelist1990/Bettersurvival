@@ -47,7 +47,7 @@ export const wikiEntries: WikiEntry[] = [
   { slug: 'copper-golem',     title: 'カッパーゴーレム',         summary: '作物採取、戦闘、チェスト整理、落とし物回収、旅・追従モードを解説。', scope: 'player', category: '詳細ガイド', icon: '⚛', component: CopperGolemSection },
   { slug: 'pet-sit',          title: 'Pet・座る機能',             summary: '友好モブのPet化、行動モード、散歩と /sit の使い方。', scope: 'player', category: '詳細ガイド', icon: '♥', component: PetSitSection },
   { slug: 'youtube',          title: 'YouTube ライブ連携',       summary: 'コメント、スパチャ、メンバー、登録者増減とBossBar通知の設定。', scope: 'admin', category: '詳細ガイド', icon: '▶', component: YouTubeSection },
-  { slug: 'hardmode',         title: '真クラモード',             summary: '設定不要で敵・ボス・特殊攻撃を強化するサバイバル高難易度モード。', scope: 'admin', category: '詳細ガイド', icon: '☠', component: HardModeSection },
+  { slug: 'hardmode',         title: '真クラモード 完全攻略',      summary: '熱量、強化Mob、地形追跡、特殊弾、ウィザーとエンダードラゴンの攻略を網羅。', scope: 'admin', category: '詳細ガイド', icon: '☠', component: HardModeSection },
   { slug: 'land-protection',  title: '土地保護',                 summary: 'Lv1-100 の保護半径 / 維持コスト早見表、燃料、パーティ / リング / レイド連携までまとめて解説。', scope: 'player', category: '詳細ガイド', icon: '⛨', component: LandProtectionSection },
   { slug: 'party',            title: 'パーティー (ギルド)',      summary: '招待制の 3 階級グループ機能。名前 / カラー / 表示設定・土地保護連携まで解説。',              scope: 'player', category: '詳細ガイド', icon: '☰', component: PartySection },
   { slug: 'chestshop',        title: 'チェストショップ',         summary: '看板でチェストをショップ化。通貨指定・26 スロット商品・収益回収 UI までの流れ。',           scope: 'player', category: '詳細ガイド', icon: '$', component: ChestShopSection },

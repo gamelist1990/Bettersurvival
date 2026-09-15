@@ -296,6 +296,266 @@
 .wiki-bullets { padding-left: 20px; margin: 0; display: flex; flex-direction: column; gap: 8px; color: var(--wiki-muted); line-height: 1.75; }
 .wiki-bullets strong { color: var(--wiki-text); }
 
+.truecrafter-alert {
+  padding: 20px 22px;
+  border: 1px solid rgba(168, 67, 40, 0.25);
+  border-left: 5px solid #b94b32;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(185, 75, 50, 0.12), rgba(255, 248, 240, 0.92));
+}
+.truecrafter-alert strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #8f321f;
+  font-size: 17px;
+}
+.truecrafter-alert p { margin: 0; }
+.truecrafter-alert-warning {
+  border-left-color: #da8a24;
+  background: linear-gradient(135deg, rgba(231, 155, 53, 0.14), rgba(255, 250, 240, 0.92));
+}
+.truecrafter-alert-warning strong { color: #965b10; }
+
+.truecrafter-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(145px, 1fr));
+  gap: 12px;
+}
+.truecrafter-heat-card {
+  position: relative;
+  min-height: 170px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid var(--wiki-border);
+  border-radius: 16px;
+  background: var(--wiki-panel-strong);
+}
+.truecrafter-heat-card::after {
+  content: '';
+  position: absolute;
+  right: -28px;
+  bottom: -38px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--heat-color);
+  opacity: 0.14;
+}
+.truecrafter-heat-card.heat-1 { --heat-color: #5f9b68; }
+.truecrafter-heat-card.heat-2 { --heat-color: #d3a02c; }
+.truecrafter-heat-card.heat-3 { --heat-color: #df782f; }
+.truecrafter-heat-card.heat-4 { --heat-color: #ce4933; }
+.truecrafter-heat-card.heat-5 { --heat-color: #7d2222; }
+.truecrafter-heat-level {
+  display: block;
+  width: fit-content;
+  margin-bottom: 12px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--heat-color) 16%, white);
+  color: var(--heat-color);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+.truecrafter-heat-card strong {
+  display: block;
+  color: var(--wiki-text);
+  font-size: 17px;
+}
+.truecrafter-heat-card p {
+  position: relative;
+  z-index: 1;
+  margin: 9px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.truecrafter-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  counter-reset: truecrafter-step;
+}
+.truecrafter-steps li {
+  counter-increment: truecrafter-step;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 16px;
+  background: var(--wiki-panel-strong);
+  color: var(--wiki-muted);
+  line-height: 1.7;
+}
+.truecrafter-steps li::before {
+  content: counter(truecrafter-step);
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--wiki-accent);
+  color: #fff;
+  font-weight: 900;
+}
+.truecrafter-steps strong { color: var(--wiki-text); }
+
+.truecrafter-guide-grid,
+.truecrafter-boss-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+.truecrafter-guide-grid article,
+.truecrafter-boss-grid article {
+  padding: 20px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 17px;
+  background: var(--wiki-panel-strong);
+}
+.truecrafter-guide-grid article > span {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  background: var(--wiki-accent-soft);
+  color: #9f4426;
+  font-size: 19px;
+  font-weight: 900;
+}
+.truecrafter-guide-grid h4,
+.truecrafter-boss-grid h4,
+.truecrafter-mob-list h4 {
+  margin: 0;
+  color: var(--wiki-text);
+  font-size: 16px;
+}
+.truecrafter-guide-grid p,
+.truecrafter-boss-grid p { margin: 8px 0 0; }
+
+.truecrafter-mob-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.truecrafter-mob-list article {
+  display: flex;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--wiki-border);
+  border-radius: 16px;
+  background: var(--wiki-panel-strong);
+}
+.truecrafter-mob-icon {
+  display: grid;
+  flex: 0 0 52px;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(74, 55, 38, 0.07);
+  image-rendering: pixelated;
+}
+.truecrafter-mob-icon img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.truecrafter-mob-list small {
+  display: block;
+  margin-top: 4px;
+  color: var(--wiki-accent);
+  font-weight: 750;
+  line-height: 1.5;
+}
+.truecrafter-mob-list p { margin: 7px 0 0; font-size: 14px; }
+
+.truecrafter-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--wiki-border);
+  border-radius: 16px;
+  background: var(--wiki-panel-strong);
+}
+.truecrafter-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+.truecrafter-table th,
+.truecrafter-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--wiki-border);
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.65;
+}
+.truecrafter-table th {
+  background: rgba(74, 55, 38, 0.06);
+  color: var(--wiki-text);
+  font-size: 13px;
+}
+.truecrafter-table td { color: var(--wiki-muted); font-size: 14px; }
+.truecrafter-table td:first-child {
+  color: var(--wiki-text);
+  font-weight: 800;
+  white-space: nowrap;
+}
+.truecrafter-table tbody tr:last-child td { border-bottom: 0; }
+
+.truecrafter-boss-grid { grid-template-columns: repeat(3, 1fr); }
+.truecrafter-boss-grid article {
+  border-top: 4px solid #70416f;
+  background: linear-gradient(160deg, rgba(112, 65, 111, 0.1), var(--wiki-panel-strong));
+}
+.truecrafter-boss-grid article > span {
+  display: block;
+  margin-bottom: 10px;
+  color: #70416f;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+.truecrafter-dragon-grid article {
+  border-top-color: #7449ad;
+  background: linear-gradient(160deg, rgba(116, 73, 173, 0.1), var(--wiki-panel-strong));
+}
+.truecrafter-dragon-grid article > span { color: #7449ad; }
+
+.truecrafter-source {
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: rgba(74, 55, 38, 0.06);
+}
+.truecrafter-source a {
+  color: #9f4426;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  .truecrafter-heat-grid { grid-template-columns: repeat(3, 1fr); }
+  .truecrafter-steps { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 680px) {
+  .truecrafter-heat-grid,
+  .truecrafter-guide-grid,
+  .truecrafter-mob-list,
+  .truecrafter-boss-grid,
+  .truecrafter-steps {
+    grid-template-columns: 1fr;
+  }
+  .truecrafter-heat-card { min-height: 0; }
+  .truecrafter-alert { padding: 17px; }
+}
+
 /* --- Badge --- */
 .wiki-badge {
   display: inline-flex;

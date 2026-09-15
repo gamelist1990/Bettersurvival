@@ -1,7 +1,9 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Pet;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
@@ -95,10 +97,34 @@ public final class PetModule implements Listener {
             if (mob instanceof Tameable tameable) {
                 tameable.setOwner(player);
             }
-            mob.customName(Component.text(player.getName() + "のPet"));
+            mob.customName(Component.text(player.getName() + "'s Pet"));
             mob.getWorld().spawnParticle(Particle.HEART, mob.getLocation().add(0, 1, 0), 8, 0.4, 0.4, 0.4, 0.05);
             mob.getWorld().playSound(mob.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.7F, 1.5F);
-            player.sendMessage("§a" + mob.getName() + " が仲間になりました。スニーク右クリックで行動を切り替えられます");
+            player.sendMessage(tamedMessage(player, mob.getType()));
+            return;
+        }
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand.getType() == Material.NAME_TAG && hand.hasItemMeta()
+                && hand.getItemMeta().displayName() != null) {
+            event.setCancelled(true);
+            if (!owner.equals(player.getUniqueId().toString())) {
+                player.sendMessage(Component.text(
+                        isJapanese(player)
+                                ? "このペットの名前を変更できるのはオーナーだけです。"
+                                : "Only this pet's owner can rename it.",
+                        NamedTextColor.RED));
+                return;
+            }
+            mob.customName(hand.getItemMeta().displayName());
+            mob.setCustomNameVisible(true);
+            if (player.getGameMode() != GameMode.CREATIVE) {
+                consumeOne(player);
+            }
+            player.sendMessage(Component.text(
+                    isJapanese(player)
+                            ? "ペットの名前を変更しました。"
+                            : "Your pet has been renamed.",
+                    NamedTextColor.GREEN));
             return;
         }
         if (!owner.equals(player.getUniqueId().toString()) || !player.isSneaking()) {
@@ -111,7 +137,7 @@ public final class PetModule implements Listener {
             case ROAM -> Mode.FOLLOW;
         };
         setMode(mob, next);
-        player.sendMessage("§6Petモード: §f" + display(next));
+        player.sendMessage(modeMessage(player, next));
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
@@ -122,7 +148,11 @@ public final class PetModule implements Listener {
         String owner = mob.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
         if (owner != null && owner.equals(player.getUniqueId().toString())) {
             event.setCancelled(true);
-            player.sendMessage("§c自分のPetにはダメージを与えられません");
+            player.sendMessage(Component.text(
+                    isJapanese(player)
+                            ? "自分のペットにはダメージを与えられません"
+                            : "You cannot damage your own pet.",
+                    NamedTextColor.RED));
         }
     }
 
@@ -187,8 +217,11 @@ public final class PetModule implements Listener {
         match.consumeMatchedItems(1, 1);
         ItemStack treat = new ItemStack(Material.HEART_OF_THE_SEA);
         ItemMeta meta = treat.getItemMeta();
-        meta.displayName(Component.text(type.key().value() + "用 なかよし素材"));
-        meta.lore(java.util.List.of(Component.text("対象のモブを右クリックすると仲間になります")));
+        meta.displayName(Component.text("❤ ", NamedTextColor.LIGHT_PURPLE)
+                .append(Component.translatable(type)));
+        meta.lore(java.util.List.of(
+                Component.text("❤ ", NamedTextColor.GREEN)
+                        .append(Component.translatable(type))));
         meta.setEnchantmentGlintOverride(true);
         meta.getPersistentDataContainer().set(treatKey, PersistentDataType.STRING, type.key().value());
         treat.setItemMeta(meta);
@@ -215,8 +248,39 @@ public final class PetModule implements Listener {
         catch (IllegalArgumentException ignored) { return Mode.FOLLOW; }
     }
 
-    private String display(Mode mode) {
-        return switch (mode) { case FOLLOW -> "一緒に行動"; case STAY -> "待機"; case ROAM -> "放し飼い"; };
+    private Component tamedMessage(Player player, EntityType type) {
+        Component entityName = Component.translatable(type).color(NamedTextColor.GREEN);
+        Component explanation = Component.text(
+                isJapanese(player)
+                        ? " が仲間になりました。スニークしながら右クリックすると行動を切り替えられます。"
+                        : " is now your pet. Sneak and right-click to change its behavior.",
+                NamedTextColor.GREEN);
+        return entityName.append(explanation);
+    }
+
+    private Component modeMessage(Player player, Mode mode) {
+        String label = isJapanese(player) ? "ペットの行動: " : "Pet behavior: ";
+        return Component.text(label, NamedTextColor.GOLD)
+                .append(Component.text(display(player, mode), NamedTextColor.WHITE));
+    }
+
+    private String display(Player player, Mode mode) {
+        if (isJapanese(player)) {
+            return switch (mode) {
+                case FOLLOW -> "一緒に行動";
+                case STAY -> "待機";
+                case ROAM -> "自由行動";
+            };
+        }
+        return switch (mode) {
+            case FOLLOW -> "Follow";
+            case STAY -> "Stay";
+            case ROAM -> "Roam";
+        };
+    }
+
+    private boolean isJapanese(Player player) {
+        return player.locale().getLanguage().equalsIgnoreCase("ja");
     }
 
     private boolean is(ItemStack stack, Material material) {
