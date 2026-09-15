@@ -6,8 +6,13 @@ import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Marker;
+import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.Wither;
+import org.bukkit.entity.EnderDragon;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
@@ -17,11 +22,15 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 public final class ProjectileMotionSystem {
     private final NamespacedKey kindKey;
     private final NamespacedKey ageKey;
+    private final NamespacedKey ownerKey;
+    private final NamespacedKey damageKey;
     private final BukkitTask task;
 
     public ProjectileMotionSystem(Loader plugin) {
         kindKey = new NamespacedKey(plugin, "truecrafter_projectile");
         ageKey = new NamespacedKey(plugin, "truecrafter_projectile_age");
+        ownerKey = new NamespacedKey(plugin, "truecrafter_projectile_owner");
+        damageKey = new NamespacedKey(plugin, "truecrafter_projectile_damage");
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
     }
 
@@ -29,9 +38,13 @@ public final class ProjectileMotionSystem {
 
     private void tick() {
         for (org.bukkit.World world : Bukkit.getWorlds()) for (Entity entity : world.getEntities()) {
-            if (!(entity instanceof Projectile projectile)) continue;
-            String kind = projectile.getPersistentDataContainer().get(kindKey, PersistentDataType.STRING);
+            String kind = entity.getPersistentDataContainer().get(kindKey, PersistentDataType.STRING);
             if (kind == null) continue;
+            if (kind.equals("brute") && entity instanceof Marker marker) {
+                tickBruteShockwave(world, marker);
+                continue;
+            }
+            if (!(entity instanceof Projectile projectile)) continue;
             int age = projectile.getPersistentDataContainer().getOrDefault(ageKey, PersistentDataType.INTEGER, 0) + 1;
             projectile.getPersistentDataContainer().set(ageKey, PersistentDataType.INTEGER, age);
             switch (kind) {
@@ -58,26 +71,6 @@ public final class ProjectileMotionSystem {
                     world.spawnParticle(Particle.DUST, projectile.getLocation(), 1, 0.1, 0.1, 0.1, 0,
                             new Particle.DustOptions(Color.fromRGB(204, 51, 255), 1.5F));
                     if (age >= 400) projectile.remove();
-                }
-                case "brute" -> {
-                    if (age >= 40) {
-                        projectile.remove();
-                        continue;
-                    }
-                    aim(projectile, 48.0D);
-                    Vector direction = projectile.getVelocity();
-                    if (direction.lengthSquared() > 0.0D) projectile.setVelocity(direction.normalize().multiply(0.5D));
-                    world.spawnParticle(Particle.CRIT, projectile.getLocation(), 5, 0.2D, 0.1D, 0.2D, 0.05D);
-                    world.spawnParticle(Particle.ELECTRIC_SPARK, projectile.getLocation(), 10, 0.2D, 0.1D, 0.2D, 0.05D);
-                    if (age % 4 == 0) for (Player player : world.getPlayers()) {
-                        Location location = player.getLocation();
-                        Location wave = projectile.getLocation();
-                        if (player.getGameMode().isInvulnerable()
-                                || Math.abs(location.getX() - wave.getX()) > 0.75D
-                                || Math.abs(location.getZ() - wave.getZ()) > 0.75D
-                                || Math.abs(location.getY() - wave.getY()) > 1.0D) continue;
-                        player.damage(12.0D, projectile);
-                    }
                 }
                 case "dragon_homing" -> {
                     world.spawnParticle(Particle.DUST, projectile.getLocation().subtract(projectile.getVelocity().normalize().multiply(0.5D)), 1, 0.3D, 0.3D, 0.3D, 1.0D, new Particle.DustOptions(Color.fromRGB(204, 51, 255), 2.0F));
@@ -106,6 +99,72 @@ public final class ProjectileMotionSystem {
                 }
                 default -> { }
             }
+        }
+    }
+
+    private void tickBruteShockwave(org.bukkit.World world, Marker marker) {
+        int age = marker.getPersistentDataContainer().getOrDefault(ageKey, PersistentDataType.INTEGER, 0) + 1;
+        marker.getPersistentDataContainer().set(ageKey, PersistentDataType.INTEGER, age);
+        if (age > 40) {
+            marker.remove();
+            return;
+        }
+        LivingEntity target = world.getEntities().stream()
+                .filter(this::isPiglinEnemy)
+                .filter(entity -> entity.getLocation().distanceSquared(marker.getLocation()) <= 2304.0D)
+                .map(entity -> (LivingEntity) entity)
+                .min(java.util.Comparator.comparingDouble(entity -> entity.getLocation().distanceSquared(marker.getLocation())))
+                .orElse(null);
+        Location location = marker.getLocation();
+        if (target != null) {
+            Vector direction = target.getEyeLocation().toVector().subtract(location.toVector()).setY(0.0D);
+            if (direction.lengthSquared() > 0.0D) {
+                direction.normalize();
+                location.setDirection(direction);
+                marker.setRotation(location.getYaw(), 0.0F);
+            }
+        }
+        Vector forward = marker.getLocation().getDirection().setY(0.0D);
+        if (forward.lengthSquared() > 0.0D) {
+            forward.normalize().multiply(0.5D);
+            location.add(forward);
+        }
+        if (location.clone().add(0.0D, -1.0D, 0.0D).getBlock().isPassable()) location.subtract(0.0D, 1.0D, 0.0D);
+        if (!location.getBlock().isPassable()) location.add(0.0D, 1.0D, 0.0D);
+        marker.teleport(location);
+        world.spawnParticle(Particle.CRIT, location, 5, 0.2D, 0.1D, 0.2D, 0.05D);
+        world.spawnParticle(Particle.ELECTRIC_SPARK, location, 10, 0.2D, 0.1D, 0.2D, 0.05D);
+        if (age % 4 != 0) return;
+        double damage = marker.getPersistentDataContainer().getOrDefault(damageKey, PersistentDataType.DOUBLE, 12.0D);
+        Entity owner = owner(marker);
+        for (Entity entity : world.getNearbyEntities(location, 0.75D, 2.0D, 0.75D)) {
+            if (!(entity instanceof LivingEntity victim) || !isPiglinEnemy(victim)) continue;
+            double y = victim.getLocation().getY() - location.getY();
+            if (y < 0.0D || y > 2.0D) continue;
+            victim.damage(damage, owner == null ? marker : owner);
+        }
+        world.spawnParticle(Particle.ENTITY_EFFECT, location.clone().add(0.0D, 0.5D, 0.0D), 35, 0.3D, 1.0D, 0.3D, 0.0D, Color.fromRGB(255, 128, 0), true);
+        world.spawnParticle(Particle.DUST, location.clone().add(0.0D, 0.5D, 0.0D), 35, 0.3D, 1.0D, 0.3D, 0.0D, new Particle.DustOptions(Color.fromRGB(255, 128, 0), 1.0F));
+        world.spawnParticle(Particle.EXPLOSION, location, 2);
+        world.playSound(location, org.bukkit.Sound.ENTITY_GENERIC_EXPLODE, 1.0F, 2.0F);
+        world.playSound(location, org.bukkit.Sound.ENTITY_BLAZE_SHOOT, 1.0F, 1.0F);
+        if (age >= 40) marker.remove();
+    }
+
+    private boolean isPiglinEnemy(Entity entity) {
+        if (!(entity instanceof LivingEntity living) || living.isInvulnerable()) return false;
+        return entity instanceof Player player ? !player.getGameMode().isInvulnerable()
+                : entity instanceof Monster || entity instanceof Wither || entity instanceof EnderDragon;
+    }
+
+    private Entity owner(Marker marker) {
+        String ownerId = marker.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
+        if (ownerId == null) return null;
+        try {
+            java.util.UUID uuid = java.util.UUID.fromString(ownerId);
+            return marker.getWorld().getEntities().stream().filter(entity -> entity.getUniqueId().equals(uuid)).findFirst().orElse(null);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 

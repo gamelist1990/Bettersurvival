@@ -13,6 +13,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EnderDragon;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.MagmaCube;
+import org.bukkit.entity.Marker;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.PiglinBrute;
 import org.bukkit.entity.Piglin;
@@ -42,6 +43,8 @@ import java.util.UUID;
 /** 通常敵のmcfunctionに記録されたtick時刻と攻撃手順をPaper APIで実行する。 */
 public final class StandardEnemyAiSystem {
     private final NamespacedKey projectileKey;
+    private final NamespacedKey projectileOwnerKey;
+    private final NamespacedKey projectileDamageKey;
     private final Map<UUID, Integer> ticks = new HashMap<>();
     private final Map<UUID, Integer> attacks = new HashMap<>();
     private final Map<UUID, Integer> piglinHealTicks = new HashMap<>();
@@ -55,6 +58,8 @@ public final class StandardEnemyAiSystem {
 
     public StandardEnemyAiSystem(Loader plugin) {
         projectileKey = new NamespacedKey(plugin, "truecrafter_projectile");
+        projectileOwnerKey = new NamespacedKey(plugin, "truecrafter_projectile_owner");
+        projectileDamageKey = new NamespacedKey(plugin, "truecrafter_projectile_damage");
     }
 
     public boolean tick(LivingEntity enemy, Player target) {
@@ -490,7 +495,11 @@ public final class StandardEnemyAiSystem {
             if (!(victim instanceof Player) && !(victim instanceof Monster)) continue;
             victim.damage(19.0D, brute);
         }
-        launch(brute, target.getEyeLocation(), "brute", Material.MOSSY_COBBLESTONE, 1.1D);
+        Marker wave = brute.getWorld().spawn(brute.getLocation(), Marker.class);
+        wave.setRotation(brute.getLocation().getYaw(), 0.0F);
+        wave.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, "brute");
+        wave.getPersistentDataContainer().set(projectileOwnerKey, PersistentDataType.STRING, brute.getUniqueId().toString());
+        wave.getPersistentDataContainer().set(projectileDamageKey, PersistentDataType.DOUBLE, 12.0D);
     }
 
     private void launchSpread(LivingEntity source, Player target, double yawOffset) {
