@@ -92,6 +92,10 @@ public final class OminousCampfireSystem implements Listener {
         if (block == null || !(block.getState() instanceof TileState state)
                 || !state.getPersistentDataContainer().has(itemKey, PersistentDataType.BYTE)) return;
         event.setCancelled(true);
+        if (!event.getPlayer().isOp()) {
+            event.getPlayer().sendMessage(Component.text("熱量を変更できるのはOPのみです。", NamedTextColor.RED));
+            return;
+        }
         openMenu(event.getPlayer());
     }
 

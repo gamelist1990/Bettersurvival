@@ -66,6 +66,10 @@ public final class StandardEnemyAiSystem {
     }
 
     public void tickAmbient(LivingEntity enemy) {
+        if (enemy instanceof Slime slime
+                && (!(slime.getTarget() instanceof Player player) || player.getGameMode().isInvulnerable())) {
+            ticks.remove(slime.getUniqueId());
+        }
         if (!(enemy instanceof Piglin piglin) || piglin.getEquipment() == null) return;
         Player target = piglin.getTarget() instanceof Player player && !player.getGameMode().isInvulnerable() ? player : null;
         tickPiglinFireResist(piglin, target);

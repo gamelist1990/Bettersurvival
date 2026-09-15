@@ -36,6 +36,14 @@ public final class TemporaryEnemyBlockSystem {
         return entry != null && block.getType() == entry.material;
     }
 
+    public boolean isTemporaryNear(Location center, double radius) {
+        double radiusSquared = radius * radius;
+        return blocks.entrySet().stream().anyMatch(entry ->
+                entry.getKey().getWorld() == center.getWorld()
+                        && entry.getKey().clone().add(0.5D, 0.5D, 0.5D).distanceSquared(center) <= radiusSquared
+                        && entry.getKey().getBlock().getType() == entry.getValue().material);
+    }
+
     public void shutdown() {
         task.cancel();
     }
@@ -57,8 +65,7 @@ public final class TemporaryEnemyBlockSystem {
             if (occupied) continue;
             tracked.getValue().emptyTicks++;
             if (tracked.getValue().emptyTicks < 60) continue;
-            // datapack の setblock ... air destroy と同じく、足場のドロップを発生させる。
-            block.breakNaturally();
+            block.setType(Material.AIR, false);
             iterator.remove();
         }
     }

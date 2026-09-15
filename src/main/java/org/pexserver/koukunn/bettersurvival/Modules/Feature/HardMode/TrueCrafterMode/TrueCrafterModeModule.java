@@ -74,7 +74,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /** TrueCrafterModeの戦闘システムをPaper APIだけで再現する。 */
 public final class TrueCrafterModeModule implements Listener {
-    private static final float SKELETON_SHEATH_SCALE = 0.12F;
+    private static final float SKELETON_SHEATH_SCALE = 1.3F;
 
     private final Loader plugin;
     private final TrueCrafterSettings settings;
@@ -121,7 +121,7 @@ public final class TrueCrafterModeModule implements Listener {
         witherMinionKey = new NamespacedKey(plugin, "truecrafter_wither_minion");
         zealotKey = new NamespacedKey(plugin, "truecrafter_zealot");
         sheathOwnerKey = new NamespacedKey(plugin, "truecrafter_sheath_owner");
-        sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v2");
+        sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v3");
         creeperAttackCountKey = new NamespacedKey(plugin, "truecrafter_creeper_attack_count");
         temporaryBlocks = new TemporaryEnemyBlockSystem(plugin);
         standardEnemyAi = new StandardEnemyAiSystem(plugin);
@@ -183,6 +183,10 @@ public final class TrueCrafterModeModule implements Listener {
     @EventHandler
     public void onLoad(EntitiesLoadEvent event) {
         if (!isEnabled()) return;
+        event.getEntities().stream()
+                .filter(ItemDisplay.class::isInstance)
+                .map(ItemDisplay.class::cast)
+                .forEach(this::removeOrphanedSheath);
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
@@ -420,6 +424,7 @@ public final class TrueCrafterModeModule implements Listener {
     private void tickEnemies() {
         if (!isEnabled()) return;
         for (World world : Bukkit.getWorlds()) {
+            world.getEntitiesByClass(ItemDisplay.class).forEach(this::removeOrphanedSheath);
             for (LivingEntity living : world.getLivingEntities()) {
                 initializeNearbyEnemy(living);
                 if (!(living instanceof Mob mob) || !isEnemy(living)
@@ -590,6 +595,7 @@ public final class TrueCrafterModeModule implements Listener {
         int heat = heatLevel();
         assignVariant(entity);
         mobProfiles.apply(entity, variant(entity), heat);
+        if (isChaser(entity)) mobProfiles.applyChaser(entity);
         if (heat >= 4 && !(entity instanceof EnderDragon)) {
             add(entity, Attribute.MAX_HEALTH, heat == 4 ? 0.25D : 0.5D);
             mobProfiles.applyHeat(entity, heat);
@@ -697,40 +703,49 @@ public final class TrueCrafterModeModule implements Listener {
             tickTerrainBridge(enemy, target, direction);
             return;
         }
-        boolean standstill = enemy.isOnGround() && enemy.getVelocity().clone().setY(0.0D).lengthSquared() <= 0.0025D;
+        boolean standstill = enemy.isOnGround()
+                && enemy.getVelocity().clone().setY(0.0D).lengthSquared() <= 0.01D;
         if (!standstill) {
             terrainPlaceTicks.computeIfPresent(id, (key, value) -> value <= 1 ? null : value - 1);
             return;
         }
         if (terrainPlaceTicks.merge(id, 1, Integer::sum) < 20) return;
         int verticalDifference = enemy.getLocation().getBlockY() - target.getLocation().getBlockY();
-        Block placementBelow = enemy.getLocation().subtract(0.0D, 1.0D, 0.0D).getBlock();
         if (verticalDifference < 0) {
             int cooldown = terrainPlaceCooldowns.getOrDefault(id, 0);
-            Block head = enemy.getEyeLocation().add(direction).add(0.0D, 1.0D, 0.0D).getBlock();
-            if (cooldown <= 0 && enemy.getLocation().getBlock().isPassable() && head.isPassable()) {
+            Block current = enemy.getLocation().getBlock();
+            Block upperForward = enemy.getEyeLocation().add(direction).add(0.0D, 1.0D, 0.0D).getBlock();
+            if (cooldown <= 0 && canPlaceEnemyBlock(current)
+                    && (isCollisionSafe(upperForward) || isClimbFoliage(upperForward))) {
+                clearClimbFoliage(enemy.getLocation().add(0.0D, 1.0D, 0.0D).getBlock());
+                clearClimbFoliage(enemy.getEyeLocation().add(0.0D, 1.0D, 0.0D).getBlock());
+                clearClimbFoliage(upperForward);
                 enemy.teleport(enemy.getLocation().add(0.0D, 1.0D, 0.0D));
                 terrainPlaceCooldowns.put(id, 5);
             }
         }
-        if (placementBelow.isEmpty()) temporaryBlocks.place(placementBelow);
+        Block placementBelow = enemy.getLocation().subtract(0.0D, 1.0D, 0.0D).getBlock();
+        if (terrainPlaceCooldowns.containsKey(id) && canPlaceEnemyBlock(placementBelow)) {
+            temporaryBlocks.place(placementBelow);
+        }
         terrainPlaceCooldowns.computeIfPresent(id, (key, value) -> value <= 1 ? null : value - 1);
-        if (verticalDifference == 0) {
+        if (verticalDifference == 0 && enemy.isOnGround()) {
             terrainPlaceTicks.remove(id);
             terrainBridgeTicks.put(id, 0);
         }
     }
 
     private void tickTerrainBridge(LivingEntity enemy, Player target, Vector direction) {
+        if (!enemy.isOnGround()) return;
         UUID id = enemy.getUniqueId();
         enemy.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 0, false, false));
         Block below = enemy.getLocation().subtract(0.0D, 1.0D, 0.0D).getBlock();
         Block lowerBelow = enemy.getLocation().subtract(0.0D, 2.0D, 0.0D).getBlock();
         Block forward = enemy.getLocation().add(direction).subtract(0.0D, 1.0D, 0.0D).getBlock();
         Block fartherForward = enemy.getLocation().add(direction.clone().multiply(2.0D)).subtract(0.0D, 1.0D, 0.0D).getBlock();
-        if (lowerBelow.isEmpty() && forward.isEmpty()) temporaryBlocks.place(forward);
-        if (lowerBelow.isEmpty() && fartherForward.isEmpty()) temporaryBlocks.place(fartherForward);
-        int leftBridgeTicks = temporaryBlocks.isTemporary(below)
+        if (canPlaceEnemyBlock(lowerBelow) && canPlaceEnemyBlock(forward)) temporaryBlocks.place(forward);
+        if (canPlaceEnemyBlock(lowerBelow) && canPlaceEnemyBlock(fartherForward)) temporaryBlocks.place(fartherForward);
+        int leftBridgeTicks = temporaryBlocks.isTemporaryNear(below.getLocation().add(0.5D, 0.5D, 0.5D), 1.0D)
                 ? 0 : terrainBridgeTicks.getOrDefault(id, 0) + 1;
         int verticalDifference = enemy.getLocation().getBlockY() - target.getLocation().getBlockY();
         if (leftBridgeTicks >= 30 || verticalDifference >= 2) {
@@ -739,6 +754,86 @@ public final class TrueCrafterModeModule implements Listener {
             return;
         }
         terrainBridgeTicks.put(id, leftBridgeTicks);
+    }
+
+    private boolean canPlaceEnemyBlock(Block block) {
+        Material material = block.getType();
+        String name = material.name();
+        return material.isAir()
+                || material == Material.WATER
+                || material == Material.LAVA
+                || material == Material.SHORT_GRASS
+                || material == Material.TALL_GRASS
+                || material == Material.FERN
+                || material == Material.LARGE_FERN
+                || material == Material.CRIMSON_ROOTS
+                || material == Material.WARPED_ROOTS
+                || material == Material.NETHER_SPROUTS
+                || material == Material.DEAD_BUSH
+                || material == Material.BROWN_MUSHROOM
+                || material == Material.RED_MUSHROOM
+                || material == Material.VINE
+                || material == Material.STONE_PRESSURE_PLATE
+                || material == Material.SEA_PICKLE
+                || material == Material.KELP
+                || material == Material.KELP_PLANT
+                || material == Material.SEAGRASS
+                || material == Material.TALL_SEAGRASS
+                || material == Material.POTATOES
+                || material == Material.WHEAT
+                || material == Material.MELON_STEM
+                || material == Material.ATTACHED_MELON_STEM
+                || material == Material.PUMPKIN_STEM
+                || material == Material.ATTACHED_PUMPKIN_STEM
+                || material == Material.CARROTS
+                || material == Material.BEETROOTS
+                || name.endsWith("_SAPLING")
+                || name.endsWith("_CORAL")
+                || name.endsWith("_CORAL_FAN")
+                || name.endsWith("_FLOWER")
+                || material == Material.SUNFLOWER
+                || material == Material.LILAC
+                || material == Material.ROSE_BUSH
+                || material == Material.PEONY;
+    }
+
+    private boolean isClimbFoliage(Block block) {
+        String name = block.getType().name();
+        return name.endsWith("_LEAVES")
+                || name.endsWith("_VINES")
+                || block.getType() == Material.VINE
+                || block.getType() == Material.MANGROVE_ROOTS
+                || block.getType() == Material.MOSS_CARPET;
+    }
+
+    private void clearClimbFoliage(Block block) {
+        if (isClimbFoliage(block)) block.setType(Material.AIR, false);
+    }
+
+    private boolean isCollisionSafe(Block block) {
+        Material material = block.getType();
+        String name = material.name();
+        return canPlaceEnemyBlock(block)
+                || material == Material.TRIPWIRE_HOOK
+                || material == Material.TRIPWIRE
+                || material == Material.TORCH
+                || material == Material.WALL_TORCH
+                || material == Material.REDSTONE_TORCH
+                || material == Material.REDSTONE_WALL_TORCH
+                || material == Material.LIGHT_WEIGHTED_PRESSURE_PLATE
+                || material == Material.HEAVY_WEIGHTED_PRESSURE_PLATE
+                || material == Material.LEVER
+                || material == Material.LADDER
+                || material == Material.SNOW
+                || material == Material.COBWEB
+                || material == Material.SUGAR_CANE
+                || material == Material.MOSS_CARPET
+                || name.endsWith("_BUTTON")
+                || name.endsWith("_CARPET")
+                || name.endsWith("_RAIL")
+                || name.endsWith("_PRESSURE_PLATE")
+                || name.endsWith("_BANNER")
+                || name.endsWith("_SIGN");
     }
 
     private void breakDiggable(Block block) {
@@ -883,6 +978,19 @@ public final class TrueCrafterModeModule implements Listener {
                         .get(sheathOwnerKey, PersistentDataType.STRING)))
                 .filter(display -> Math.abs(display.getYaw() - bodyYaw) > 0.1F)
                 .forEach(display -> display.setRotation(bodyYaw, 0.0F));
+    }
+
+    private void removeOrphanedSheath(ItemDisplay display) {
+        String ownerId = display.getPersistentDataContainer().get(sheathOwnerKey, PersistentDataType.STRING);
+        if (ownerId == null) return;
+        Entity vehicle = display.getVehicle();
+        if (!(vehicle instanceof LivingEntity owner)
+                || !owner.isValid()
+                || owner.isDead()
+                || !owner.getUniqueId().toString().equals(ownerId)
+                || !owner.getPassengers().contains(display)) {
+            display.remove();
+        }
     }
 
     private boolean isRangedSkeleton(LivingEntity entity) {

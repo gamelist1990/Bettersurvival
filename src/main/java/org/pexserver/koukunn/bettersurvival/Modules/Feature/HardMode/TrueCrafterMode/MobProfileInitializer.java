@@ -80,6 +80,10 @@ public final class MobProfileInitializer {
         heal(entity);
     }
 
+    public void applyChaser(LivingEntity entity) {
+        base(entity, Attribute.FALL_DAMAGE_MULTIPLIER, 0.0D);
+    }
+
     public void applyHeat(LivingEntity entity, int heat) {
         if (heat < 4) return;
         base(entity, Attribute.WATER_MOVEMENT_EFFICIENCY, heat == 4 ? 0.35D : 0.5D);
