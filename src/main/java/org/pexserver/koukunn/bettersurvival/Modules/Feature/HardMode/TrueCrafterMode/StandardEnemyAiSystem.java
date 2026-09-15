@@ -65,6 +65,11 @@ public final class StandardEnemyAiSystem {
         creeperAttackCountKey = new NamespacedKey(plugin, "truecrafter_creeper_attack_count");
     }
 
+    public void tickAmbient(LivingEntity enemy) {
+        if (!(enemy instanceof Piglin piglin) || piglin.getEquipment() == null) return;
+        Player target = piglin.getTarget() instanceof Player player && !player.getGameMode().isInvulnerable() ? player : null;
+        tickPiglinFireResist(piglin, target);
+    }
     public boolean tick(LivingEntity enemy, Player target) {
         if (enemy instanceof CaveSpider caveSpider) {
             spider(caveSpider, target, true);
@@ -396,12 +401,7 @@ public final class StandardEnemyAiSystem {
         }
     }
 
-    private void piglin(Piglin piglin, Player target) {
-        if (piglin.getEquipment() == null) return;
-        if (piglin.getEquipment().getItemInMainHand().getType() == Material.CROSSBOW) {
-            piglinCrossbow(piglin, target);
-            return;
-        }
+    private void tickPiglinFireResist(Piglin piglin, Player target) {
         UUID id = piglin.getUniqueId();
         Integer fireActive = piglinFireTicks.get(id);
         if (fireActive != null) {
@@ -412,28 +412,35 @@ public final class StandardEnemyAiSystem {
             piglinFireTicks.remove(id);
             ItemStack weapon = piglinWeapons.remove(id);
             if (weapon != null) piglin.getEquipment().setItemInMainHand(weapon);
-            // 本家 fire_resistance 120（6秒）に合わせる。
             piglin.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 120, 0, false, false));
             piglin.getWorld().playSound(piglin.getLocation(), Sound.ENTITY_PLAYER_BURP, 1.0F, 1.0F);
             return;
         }
-        if (piglin.getFireTicks() > 0 && !piglin.hasPotionEffect(PotionEffectType.FIRE_RESISTANCE) && !piglinHealTicks.containsKey(id)) {
-            piglinWeapons.put(id, piglin.getEquipment().getItemInMainHand().clone());
-            ItemStack potion = new ItemStack(Material.POTION);
-            PotionMeta potionMeta = (PotionMeta) potion.getItemMeta();
-            potionMeta.setBasePotionType(PotionType.FIRE_RESISTANCE);
-            potion.setItemMeta(potionMeta);
-            piglin.getEquipment().setItemInMainHand(potion);
-            piglin.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 40, 1, false, false));
-            if (piglin.getLocation().distance(target.getLocation()) <= 7.0D) {
-                Vector away = piglin.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0).normalize().multiply(0.7D).setY(0.4D);
-                piglin.setVelocity(away);
+        if (piglin.getFireTicks() <= 0 || piglin.hasPotionEffect(PotionEffectType.FIRE_RESISTANCE)) return;
+        piglinWeapons.put(id, piglin.getEquipment().getItemInMainHand().clone());
+        ItemStack potion = new ItemStack(Material.POTION);
+        PotionMeta potionMeta = (PotionMeta) potion.getItemMeta();
+        potionMeta.setBasePotionType(PotionType.FIRE_RESISTANCE);
+        potion.setItemMeta(potionMeta);
+        piglin.getEquipment().setItemInMainHand(potion);
+        piglin.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 40, 1, false, false));
+        if (target != null && piglin.getLocation().distance(target.getLocation()) <= 7.0D) {
+            Vector away = piglin.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0.0D);
+            if (away.lengthSquared() > 0.0D) {
+                piglin.setVelocity(away.normalize().multiply(0.7D).setY(0.4D));
                 piglin.getWorld().playSound(piglin.getLocation(), Sound.ENTITY_PIGLIN_JEALOUS, 1.0F, 1.5F);
                 piglin.getWorld().playSound(piglin.getLocation(), Sound.ENTITY_GOAT_LONG_JUMP, 1.0F, 1.2F);
             }
-            piglinFireTicks.put(id, 0);
+        }
+        piglinFireTicks.put(id, 0);
+    }
+    private void piglin(Piglin piglin, Player target) {
+        if (piglin.getEquipment() == null) return;
+        if (piglin.getEquipment().getItemInMainHand().getType() == Material.CROSSBOW) {
+            piglinCrossbow(piglin, target);
             return;
         }
+        UUID id = piglin.getUniqueId();
         Integer active = piglinHealTicks.get(id);
         if (active != null) {
             int tick = active + 1;

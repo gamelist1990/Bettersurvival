@@ -183,8 +183,8 @@ public final class EnderDragonBossSystem {
                 if (state.tick >= 100) reset(state);
             }
             case CHARGE -> {
-                if (state.tick == 0) dragon.getWorld().playSound(dragon.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 10.0F, 0.8F);
-                if (state.tick <= 70) charge(dragon, target);
+                if (state.tick == 0) startCharge(dragon, state);
+                if (state.tick <= 70) charge(dragon, state);
                 if (state.tick >= 100) reset(state);
             }
             case LANDING -> {
@@ -245,14 +245,28 @@ public final class EnderDragonBossSystem {
         dragon.getWorld().playSound(dragon.getLocation(), Sound.ENTITY_WARDEN_ATTACK_IMPACT, 6.0F, 1.0F);
     }
 
-    private void charge(EnderDragon dragon, Player target) {
-        if (target == null) return;
-        Vector direction = target.getLocation().toVector().subtract(dragon.getLocation().toVector()).normalize();
-        dragon.setVelocity(direction.multiply(0.6D));
+    private void startCharge(EnderDragon dragon, State state) {
+        Location location = dragon.getLocation();
+        state.chargeYaw = location.getYaw() - 180.0F;
+        state.chargePitch = location.getPitch();
+        dragon.setPhase(EnderDragon.Phase.CIRCLING);
+        dragon.getWorld().playSound(location, Sound.ENTITY_ENDER_DRAGON_FLAP, 10.0F, 0.5F);
+        dragon.getWorld().playSound(location, Sound.ENTITY_ENDER_DRAGON_GROWL, 10.0F, 0.8F);
+    }
+
+    private void charge(EnderDragon dragon, State state) {
+        state.chargePitch += state.tick < 40 ? 1.0F : -1.0F;
+        Location rotation = dragon.getLocation().clone();
+        rotation.setYaw(state.chargeYaw);
+        rotation.setPitch(state.chargePitch);
+        Location destination = dragon.getLocation().clone().add(rotation.getDirection().normalize().multiply(0.5D));
+        destination.setYaw(state.chargeYaw);
+        destination.setPitch(state.chargePitch);
+        dragon.teleport(destination);
     }
 
     private void lightningPillar(EnderDragon dragon, Player target) {
-        Location origin = target == null ? dragon.getPodium() : target.getLocation();
+        Location origin = dragon.getLocation();
         Location location = origin.clone().add(ThreadLocalRandom.current().nextDouble(-20.0D, 20.0D), 0.0D,
                 ThreadLocalRandom.current().nextDouble(-20.0D, 20.0D));
         lightPillars.add(new LightPillar(location));
@@ -318,6 +332,8 @@ public final class EnderDragonBossSystem {
         private int minionTick;
         private int platformTick;
         private boolean landingApproach;
+        private float chargeYaw;
+        private float chargePitch;
         private Skill skill = Skill.NONE;
         private final List<Skill> remaining = new ArrayList<>(List.of(Skill.CHARGE, Skill.AIMING_EYES, Skill.HOMING));
     }

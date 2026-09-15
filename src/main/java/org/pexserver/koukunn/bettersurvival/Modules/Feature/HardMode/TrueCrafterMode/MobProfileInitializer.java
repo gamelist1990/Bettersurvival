@@ -8,7 +8,6 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Drowned;
 import org.bukkit.entity.PiglinAbstract;
-import org.bukkit.entity.EnderDragon;
 import org.bukkit.entity.Enderman;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
@@ -36,7 +35,7 @@ public final class MobProfileInitializer {
         }
     }
 
-    public void apply(LivingEntity entity, String variant) {
+    public void apply(LivingEntity entity, String variant, int heat) {
         switch (entity.getType()) {
             case ZOMBIE, HUSK, ZOMBIE_VILLAGER -> {
                 org.bukkit.entity.Zombie zombie = (org.bukkit.entity.Zombie) entity;
@@ -48,12 +47,17 @@ public final class MobProfileInitializer {
             case ENDERMAN -> enderman((Enderman) entity);
             case PILLAGER -> { base(entity, Attribute.MAX_HEALTH, 30D); base(entity, Attribute.KNOCKBACK_RESISTANCE, 0.3D); base(entity, Attribute.STEP_HEIGHT, 1D); }
             case VINDICATOR -> { base(entity, Attribute.MAX_HEALTH, 30D); base(entity, Attribute.MOVEMENT_SPEED, 0.3D); base(entity, Attribute.STEP_HEIGHT, 1D); }
+            case EVOKER -> { base(entity, Attribute.MAX_HEALTH, 50D); base(entity, Attribute.KNOCKBACK_RESISTANCE, 1D); base(entity, Attribute.MOVEMENT_SPEED, 0.3D); base(entity, Attribute.STEP_HEIGHT, 1D); }
             case PIGLIN_BRUTE -> { base(entity, Attribute.KNOCKBACK_RESISTANCE, 0.3D); base(entity, Attribute.FALL_DAMAGE_MULTIPLIER, 0D); ((PiglinAbstract) entity).setImmuneToZombification(true); entity.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, Integer.MAX_VALUE, 0, false, false)); }
-            case ZOMBIFIED_PIGLIN -> { base(entity, Attribute.MOVEMENT_SPEED, 0.23D); base(entity, Attribute.MAX_HEALTH, 15D); }
+            case ZOMBIFIED_PIGLIN -> {
+                base(entity, Attribute.MOVEMENT_SPEED, 0.23D);
+                base(entity, Attribute.MAX_HEALTH, 15D);
+                if (heat >= 4) base(entity, Attribute.FALL_DAMAGE_MULTIPLIER, 0D);
+            }
             case PIGLIN -> piglin(entity);
             case SLIME, MAGMA_CUBE -> slime(entity);
             case SKELETON, STRAY, BOGGED, PARCHED -> base(entity, Attribute.STEP_HEIGHT, 1D);
-            case WITHER_SKELETON -> equipBowIfEmpty(entity);
+            case WITHER_SKELETON -> witherSkeleton(entity);
             default -> { }
         }
         if (variant.equals("zombie_brute")) brute(entity);
@@ -128,12 +132,6 @@ public final class MobProfileInitializer {
     }
 
     private void enderman(Enderman enderman) {
-        boolean dragonNearby = enderman.getWorld().getEntitiesByClass(EnderDragon.class).stream().anyMatch(dragon -> dragon.getLocation().distanceSquared(enderman.getLocation()) <= 16384.0D);
-        if (dragonNearby) {
-            enderman.getPersistentDataContainer().set(endermanModeKey, PersistentDataType.STRING, "weak");
-            base(enderman, Attribute.MOVEMENT_SPEED, 0.1D); base(enderman, Attribute.STEP_HEIGHT, 0.5D); base(enderman, Attribute.SCALE, 0.65D); base(enderman, Attribute.ATTACK_DAMAGE, 4D); base(enderman, Attribute.MAX_HEALTH, 20D);
-            return;
-        }
         boolean nonOverworld = enderman.getWorld().getEnvironment() != org.bukkit.World.Environment.NORMAL;
         if (nonOverworld && java.util.concurrent.ThreadLocalRandom.current().nextInt(8) >= 6) {
             enderman.getPersistentDataContainer().set(endermanModeKey, PersistentDataType.STRING, "outer_chaser");
@@ -169,11 +167,15 @@ public final class MobProfileInitializer {
         base(entity, Attribute.FALL_DAMAGE_MULTIPLIER, 0D);
         if (size == 0) { base(entity, Attribute.MOVEMENT_SPEED, 0.5D); base(entity, Attribute.JUMP_STRENGTH, 0.5D); }
         if (size == 1) { base(entity, Attribute.MOVEMENT_SPEED, 0.7D); base(entity, Attribute.JUMP_STRENGTH, 0.8D); }
-        if (size == 2) { base(entity, Attribute.MOVEMENT_SPEED, 0.7D); base(entity, Attribute.JUMP_STRENGTH, 0.8D); }
         if (size == 3) { base(entity, Attribute.MOVEMENT_SPEED, 0.9D); base(entity, Attribute.JUMP_STRENGTH, 1D); }
-        if (size == 4) { base(entity, Attribute.MOVEMENT_SPEED, 1D); base(entity, Attribute.JUMP_STRENGTH, 1.1D); }
     }
 
+    private void witherSkeleton(LivingEntity entity) {
+        base(entity, Attribute.MAX_HEALTH, 24D);
+        base(entity, Attribute.STEP_HEIGHT, 1D);
+        base(entity, Attribute.FALL_DAMAGE_MULTIPLIER, 0D);
+        equipBowIfEmpty(entity);
+    }
     private void equipBowIfEmpty(LivingEntity entity) {
         EntityEquipment equipment = entity.getEquipment();
         // 本家 enemy.wither_skeleton/init は既存の石剣を含め、常に弓へ置換する。

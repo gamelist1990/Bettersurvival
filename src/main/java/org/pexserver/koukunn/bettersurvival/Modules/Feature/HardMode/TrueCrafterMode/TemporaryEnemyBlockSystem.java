@@ -31,6 +31,11 @@ public final class TemporaryEnemyBlockSystem {
         blocks.put(block.getLocation(), new Entry(material));
     }
 
+    public boolean isTemporary(Block block) {
+        Entry entry = blocks.get(block.getLocation());
+        return entry != null && block.getType() == entry.material;
+    }
+
     public void shutdown() {
         task.cancel();
     }
