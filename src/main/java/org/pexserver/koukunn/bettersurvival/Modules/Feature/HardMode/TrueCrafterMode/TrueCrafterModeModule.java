@@ -25,6 +25,7 @@ import org.bukkit.entity.Mob;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.PiglinBrute;
 import org.bukkit.entity.PigZombie;
+import org.bukkit.entity.Piglin;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Slime;
@@ -177,13 +178,11 @@ public final class TrueCrafterModeModule implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onSpawn(CreatureSpawnEvent event) {
         if (!isEnabled()) return;
-        enhance(event.getEntity());
     }
 
     @EventHandler
     public void onLoad(EntitiesLoadEvent event) {
         if (!isEnabled()) return;
-        for (Entity entity : event.getEntities()) if (entity instanceof LivingEntity living) enhance(living);
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
@@ -241,7 +240,8 @@ public final class TrueCrafterModeModule implements Listener {
             player.getWorld().spawnParticle(Particle.ITEM_COBWEB, player.getLocation().add(0, 1, 0), 20, 0.4, 0.6, 0.4, 0.05);
         } else if (kind.equals("poison")) {
             player.addPotionEffect(new PotionEffect(PotionEffectType.POISON, 140, 0));
-            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 50, 2));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 40, 2));
+            player.getWorld().playSound(player.getLocation(), Sound.ENTITY_SLIME_HURT_SMALL, 1.0F, 1.2F);
         } else if (kind.equals("void")) {
             player.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 100, 0));
             player.damage(5.0D, event.getEntity());
@@ -392,7 +392,6 @@ public final class TrueCrafterModeModule implements Listener {
 
     private void enableRuntime() {
         if (aiTask != null) aiTask.cancel();
-        Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(this::enhance));
         aiTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickEnemies, 1L, 1L);
     }
 
@@ -422,7 +421,9 @@ public final class TrueCrafterModeModule implements Listener {
         if (!isEnabled()) return;
         for (World world : Bukkit.getWorlds()) {
             for (LivingEntity living : world.getLivingEntities()) {
-                if (!(living instanceof Mob mob) || !isEnemy(living)) continue;
+                initializeNearbyEnemy(living);
+                if (!(living instanceof Mob mob) || !isEnemy(living)
+                        || !living.getPersistentDataContainer().has(enhancedKey, PersistentDataType.BYTE)) continue;
                 if (living instanceof Creeper creeper && creeperDigRecovery.remove(creeper.getUniqueId())) {
                     creeper.setInvulnerable(false);
                     AttributeInstance knockback = creeper.getAttribute(Attribute.KNOCKBACK_RESISTANCE);
@@ -542,6 +543,42 @@ public final class TrueCrafterModeModule implements Listener {
             closestDistance = distance;
         }
         return closest;
+    }
+
+    private void initializeNearbyEnemy(LivingEntity entity) {
+        if (heatLevel() < 2 || !isEnemy(entity)
+                || entity.getPersistentDataContainer().has(enhancedKey, PersistentDataType.BYTE)
+                || entity instanceof Piglin piglin && !piglin.isAdult()
+                || entity.getWorld().getPlayers().stream().noneMatch(player ->
+                player.getLocation().distanceSquared(entity.getLocation()) <= 4096.0D)) return;
+        enhance(entity);
+        if (entity.getPersistentDataContainer().has(enhancedKey, PersistentDataType.BYTE)) {
+            spawnSourceReinforcement(entity);
+        }
+    }
+
+    /** mob_manager:init の熱量3以上の自然Mob増援抽選を再現する。 */
+    private void spawnSourceReinforcement(LivingEntity entity) {
+        int heat = heatLevel();
+        if (heat < 3) return;
+        EntityType reinforcement = null;
+        double probability = 0.0D;
+        switch (entity.getType()) {
+            case SPIDER -> { reinforcement = EntityType.CAVE_SPIDER; probability = 1.0D / 25.0D; }
+            case GUARDIAN -> { reinforcement = EntityType.DROWNED; probability = 1.0D / 25.0D; }
+            case WITCH -> { reinforcement = EntityType.VINDICATOR; probability = 1.0D / 50.0D; }
+            case EVOKER -> {
+                if (heat >= 4) { reinforcement = EntityType.ILLUSIONER; probability = 0.1D; }
+            }
+            case PIGLIN -> {
+                if (heat >= 4 && entity instanceof Piglin piglin && piglin.isAdult()) {
+                    reinforcement = EntityType.PIGLIN_BRUTE;
+                    probability = 0.1D;
+                }
+            }
+            default -> { }
+        }
+        if (reinforcement != null && chance(probability)) entity.getWorld().spawnEntity(entity.getLocation(), reinforcement);
     }
 
     private void enhance(LivingEntity entity) {

@@ -112,13 +112,33 @@ public final class EvokerAiSystem {
             default -> EntityType.ILLUSIONER;
         };
         if (type == EntityType.VINDICATOR || type == EntityType.PILLAGER) {
-            spawnFinalMob(evoker, target, type, origin);
-            evoker.getWorld().spawnParticle(Particle.WITCH, origin.clone().add(0, 1, 0), 50, 0.3, 0.5, 0.3, 0);
-            evoker.getWorld().spawnParticle(Particle.DUST, origin.clone().add(0, 1, 0), 50, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
+            org.bukkit.util.Vector right = new org.bukkit.util.Vector(-facing.getZ(), 0.0D, facing.getX()).normalize();
+            spawnFinalMob(evoker, target, type, finalSummonPosition(origin, right.clone().multiply(2.0D)));
+            spawnFinalMob(evoker, target, type, finalSummonPosition(origin, right.multiply(-2.0D)));
+            evoker.getWorld().spawnParticle(Particle.WITCH, origin.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
+            evoker.getWorld().spawnParticle(Particle.DUST, origin.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
             evoker.getWorld().playSound(origin, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0F, 1.0F);
             return;
         }
-        spawnFinalMob(evoker, target, type, origin);
+        Entity summoned = spawnFinalMob(evoker, target, type, origin);
+        if (type == EntityType.RAVAGER) {
+            evoker.getWorld().spawnParticle(Particle.EXPLOSION_EMITTER, origin, 1);
+            evoker.getWorld().spawnParticle(Particle.LARGE_SMOKE, origin, 100, 1.0D, 1.0D, 1.0D, 0.0D);
+            evoker.getWorld().playSound(origin, Sound.ENTITY_RAVAGER_CELEBRATE, 1.0F, 1.0F);
+            evoker.getWorld().playSound(origin, Sound.ENTITY_GENERIC_EXPLODE, 2.0F, 2.0F);
+            summoned.addPassenger(evoker);
+        } else if (type == EntityType.ILLUSIONER) {
+            evoker.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 80, 0, false, false));
+            evoker.getWorld().playSound(origin, Sound.ENTITY_ILLUSIONER_PREPARE_MIRROR, 1.0F, 2.0F);
+            evoker.getWorld().playSound(origin, Sound.ENTITY_ILLUSIONER_MIRROR_MOVE, 1.0F, 1.5F);
+            evoker.getWorld().spawnParticle(Particle.WITCH, origin.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 0);
+            evoker.getWorld().spawnParticle(Particle.DUST, origin.clone().add(0, 1, 0), 25, 0.3, 0.5, 0.3, 1.0, new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 0, 255), 1.0F));
+        }
+    }
+
+    private Location finalSummonPosition(Location origin, org.bukkit.util.Vector offset) {
+        Location candidate = origin.clone().add(offset);
+        return candidate.getBlock().isPassable() ? candidate : origin;
     }
 
     private boolean teleportAndFangs(Evoker evoker, Player target) {

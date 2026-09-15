@@ -71,9 +71,13 @@ public final class WitherBossSystem {
             wither.getWorld().playSound(wither.getLocation(), Sound.ENTITY_WITHER_HURT, 1.5F, 0.5F);
             return true;
         }
-        if (state.skill == Skill.NONE) baseMove(wither, target);
+        if (state.skill == Skill.NONE) {
+            baseMove(wither, target);
+            if (state.dashTicks < 0 && state.phase >= 2 && state.tick + 1 == 0) selectDash(state);
+            if (state.dashTicks >= 0) tickDash(wither, target, state);
+        }
         state.tick++;
-        if (state.skill == Skill.NONE && state.tick >= 60) selectSkill(wither, state);
+        if (state.skill == Skill.NONE && state.dashTicks < 0 && state.tick >= 60) selectSkill(wither, state);
         if (state.skill != Skill.NONE) skill(wither, target, state);
         return true;
     }
@@ -163,6 +167,39 @@ public final class WitherBossSystem {
         wither.setSilent(false);
         wither.getWorld().playSound(origin, Sound.ENTITY_WITHER_SHOOT, 1.5F, 0.5F);
         return true;
+    }
+
+    /** 本家 enemy.wither/tick/dash: phase 2以降、通常行動のtick 0で1/3ずつ未実行・左・右を選ぶ。 */
+    private void selectDash(State state) {
+        int selected = ThreadLocalRandom.current().nextInt(3);
+        if (selected == 0) return;
+        state.dashLeft = selected == 1;
+        state.dashTicks = 0;
+    }
+
+    private void tickDash(Wither wither, Player target, State state) {
+        if (state.dashTicks > 25) {
+            state.dashTicks = -1;
+            return;
+        }
+        double speed = 0.0D;
+        if (state.dashTicks <= 15) speed += 0.5D;
+        if (state.dashTicks >= 15 && state.dashTicks <= 20) speed += 0.5D;
+        if (state.dashTicks >= 20 && state.dashTicks <= 25) speed += 0.3D;
+        org.bukkit.util.Vector toward = target.getLocation().toVector().subtract(wither.getLocation().toVector()).setY(0.0D);
+        if (toward.lengthSquared() == 0.0D) return;
+        toward.normalize();
+        org.bukkit.util.Vector side = new org.bukkit.util.Vector(-toward.getZ(), 0.0D, toward.getX());
+        if (!state.dashLeft) side.multiply(-1.0D);
+        Location destination = wither.getLocation().clone().add(side.multiply(speed));
+        if (destination.getBlock().isPassable() && destination.clone().add(0.0D, 2.0D, 0.0D).getBlock().isPassable()) {
+            wither.teleport(destination);
+        } else {
+            state.dashTicks = 25;
+            return;
+        }
+        if (state.dashTicks <= 15 && state.dashTicks % 2 == 0) wither.getWorld().playSound(wither.getLocation(), Sound.ENTITY_BREEZE_SLIDE, 2.0F, 1.2F);
+        state.dashTicks++;
     }
 
     private void selectSkill(Wither wither, State state) {
@@ -435,6 +472,8 @@ public final class WitherBossSystem {
         private int phase = 1;
         private int tick = -10;
         private int used;
+        private int dashTicks = -1;
+        private boolean dashLeft;
         private boolean transition;
         private Skill skill = Skill.NONE;
     }

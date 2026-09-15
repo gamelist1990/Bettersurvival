@@ -32,132 +32,7 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 - 熱量を変える不吉な焚き火はOP持ち限定(クラフト等も)
 - スライムのロジックで敵対時の膨張が機能してない気がするここら辺本家と確認を
 - ウィザースケルトンの背負ってる剣がめちゃ小さい問題が大きくして
-- 現状クラッシュバグがあるためこれを修正:  ```[08:44:34] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH  - 26.2-43-fab8887 (MC: 26.2) ---
-[08:44:34] [Paper Watchdog Thread/ERROR]: The server has not responded for 10 seconds! Creating thread dump
-[08:44:34] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:34] [Paper Watchdog Thread/ERROR]: Server thread dump (Look for plugins here before reporting to Paper!):
-[08:44:34] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:34] [Paper Watchdog Thread/ERROR]: Current Thread: Server thread
-[08:44:34] [Paper Watchdog Thread/ERROR]: 	PID: 81 | Suspended: false | Native: true | State: RUNNABLE
-[08:44:34] [Paper Watchdog Thread/ERROR]: 	Stack:
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes0(Native Method)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes(WinNTFileSystem.java:510)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.FileSystem.hasBooleanAttributes(FileSystem.java:141)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.File.exists(File.java:790)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager.loadConfig(ConfigManager.java:38)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.getGlobal(ToggleModule.java:160)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runForPlayer(AutoPlantModule.java:114)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runIntervalTask(AutoPlantModule.java:109)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.lambda$new$0(AutoPlantModule.java:101)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule$$Lambda/0x000000000c52a748.run(Unknown Source)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftTask.run(CraftTask.java:78)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftScheduler.mainThreadHeartbeat(CraftScheduler.java:474)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickChildren(MinecraftServer.java:1768)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickServer(MinecraftServer.java:1621)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.dedicated.DedicatedServer.tickServer(DedicatedServer.java:404)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.processPacketsAndTick(MinecraftServer.java:1679)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1349)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.lambda$spin$0(MinecraftServer.java:303)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer$$Lambda/0x000000000c160220.run(Unknown Source)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.runWith(Thread.java:1487)
-[08:44:34] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.run(Thread.java:1474)
-[08:44:34] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:34] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH ---
-[08:44:34] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:39] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH  - 26.2-43-fab8887 (MC: 26.2) ---
-[08:44:39] [Paper Watchdog Thread/ERROR]: The server has not responded for 15 seconds! Creating thread dump
-[08:44:39] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:39] [Paper Watchdog Thread/ERROR]: Server thread dump (Look for plugins here before reporting to Paper!):
-[08:44:39] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:39] [Paper Watchdog Thread/ERROR]: Current Thread: Server thread
-[08:44:39] [Paper Watchdog Thread/ERROR]: 	PID: 81 | Suspended: false | Native: true | State: RUNNABLE
-[08:44:39] [Paper Watchdog Thread/ERROR]: 	Stack:
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes0(Native Method)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes(WinNTFileSystem.java:510)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.FileSystem.hasBooleanAttributes(FileSystem.java:141)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.File.exists(File.java:790)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager.loadConfig(ConfigManager.java:38)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.getGlobal(ToggleModule.java:160)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runForPlayer(AutoPlantModule.java:114)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runIntervalTask(AutoPlantModule.java:109)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.lambda$new$0(AutoPlantModule.java:101)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule$$Lambda/0x000000000c52a748.run(Unknown Source)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftTask.run(CraftTask.java:78)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftScheduler.mainThreadHeartbeat(CraftScheduler.java:474)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickChildren(MinecraftServer.java:1768)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickServer(MinecraftServer.java:1621)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.dedicated.DedicatedServer.tickServer(DedicatedServer.java:404)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.processPacketsAndTick(MinecraftServer.java:1679)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1349)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.lambda$spin$0(MinecraftServer.java:303)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer$$Lambda/0x000000000c160220.run(Unknown Source)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.runWith(Thread.java:1487)
-[08:44:39] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.run(Thread.java:1474)
-[08:44:39] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:39] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH ---
-[08:44:39] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:44] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH  - 26.2-43-fab8887 (MC: 26.2) ---
-[08:44:44] [Paper Watchdog Thread/ERROR]: The server has not responded for 20 seconds! Creating thread dump
-[08:44:44] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:44] [Paper Watchdog Thread/ERROR]: Server thread dump (Look for plugins here before reporting to Paper!):
-[08:44:44] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:44] [Paper Watchdog Thread/ERROR]: Current Thread: Server thread
-[08:44:44] [Paper Watchdog Thread/ERROR]: 	PID: 81 | Suspended: false | Native: true | State: RUNNABLE
-[08:44:44] [Paper Watchdog Thread/ERROR]: 	Stack:
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes0(Native Method)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes(WinNTFileSystem.java:510)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.FileSystem.hasBooleanAttributes(FileSystem.java:141)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.File.exists(File.java:790)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager.loadConfig(ConfigManager.java:38)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.getGlobal(ToggleModule.java:160)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runForPlayer(AutoPlantModule.java:114)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runIntervalTask(AutoPlantModule.java:109)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.lambda$new$0(AutoPlantModule.java:101)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule$$Lambda/0x000000000c52a748.run(Unknown Source)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftTask.run(CraftTask.java:78)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftScheduler.mainThreadHeartbeat(CraftScheduler.java:474)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickChildren(MinecraftServer.java:1768)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickServer(MinecraftServer.java:1621)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.dedicated.DedicatedServer.tickServer(DedicatedServer.java:404)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.processPacketsAndTick(MinecraftServer.java:1679)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1349)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.lambda$spin$0(MinecraftServer.java:303)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer$$Lambda/0x000000000c160220.run(Unknown Source)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.runWith(Thread.java:1487)
-[08:44:44] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.run(Thread.java:1474)
-[08:44:44] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:44] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH ---
-[08:44:44] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:49] [Paper Watchdog Thread/ERROR]: --- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH  - 26.2-43-fab8887 (MC: 26.2) ---
-[08:44:49] [Paper Watchdog Thread/ERROR]: The server has not responded for 25 seconds! Creating thread dump
-[08:44:49] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:49] [Paper Watchdog Thread/ERROR]: Server thread dump (Look for plugins here before reporting to Paper!):
-[08:44:49] [Paper Watchdog Thread/ERROR]: ------------------------------
-[08:44:49] [Paper Watchdog Thread/ERROR]: Current Thread: Server thread
-[08:44:49] [Paper Watchdog Thread/ERROR]: 	PID: 81 | Suspended: false | Native: true | State: RUNNABLE
-[08:44:49] [Paper Watchdog Thread/ERROR]: 	Stack:
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes0(Native Method)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.WinNTFileSystem.getBooleanAttributes(WinNTFileSystem.java:510)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.FileSystem.hasBooleanAttributes(FileSystem.java:141)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.io.File.exists(File.java:790)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager.loadConfig(ConfigManager.java:38)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.getGlobal(ToggleModule.java:160)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runForPlayer(AutoPlantModule.java:114)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.runIntervalTask(AutoPlantModule.java:109)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule.lambda$new$0(AutoPlantModule.java:101)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		Bettersurvival-1.5.jar//org.pexserver.koukunn.bettersurvival.Modules.Feature.AutoPlant.AutoPlantModule$$Lambda/0x000000000c52a748.run(Unknown Source)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftTask.run(CraftTask.java:78)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		org.bukkit.craftbukkit.scheduler.CraftScheduler.mainThreadHeartbeat(CraftScheduler.java:474)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickChildren(MinecraftServer.java:1768)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.tickServer(MinecraftServer.java:1621)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.dedicated.DedicatedServer.tickServer(DedicatedServer.java:404)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.processPacketsAndTick(MinecraftServer.java:1679)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.runServer(MinecraftServer.java:1349)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer.lambda$spin$0(MinecraftServer.java:303)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		net.minecraft.server.MinecraftServer$$Lambda/0x000000000c160220.run(Unknown Source)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.runWith(Thread.java:1487)
-[08:44:49] [Paper Watchdog Thread/ERROR]: 		java.base@25.0.2/java.lang.Thread.run(Thread.java:1474)
-[08:44:49] [Paper Watchdog Thread/ERROR]: ------------------------------ ```
+
 ## 実装エンティティ
 
 ## 本家照合の記録
@@ -166,12 +41,12 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 
 | 本家 Mob | 照合状況 | 対応する実装 |
 | --- | --- | --- |
-| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、通常ゾンビだけのヘルメット、移動中限定の跳躍準備・空中の向き固定・着地復帰、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲、クモ系の本家マーカー弾道 | `StandardEnemyAiSystem` |
+| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、通常ゾンビだけのヘルメット、移動中限定の跳躍準備・空中の向き固定・着地復帰、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲、クモ系の本家マーカー弾道、毒7秒・鈍足2秒の毒弾 | `StandardEnemyAiSystem` / `TrueCrafterModeModule` |
 | スライム / マグマキューブ | [x] 敵対時の160/100tick膨張、スライム数上限、サイズ0・1・3だけの本家能力値上書き。マグマキューブは本家どおり同じ継承処理 | `MobProfileInitializer` / `StandardEnemyAiSystem` |
 | クリーパー | [x] 停止中だけ進む1〜25tick、25tick後の自動進行、30tick爆発、通常／追跡採掘で共有する3回上限 | `StandardEnemyAiSystem` / `TrueCrafterModeModule` |
 | クリーパー追跡採掘 | [x] 壁越し・近距離・同高度での50tick大爆発 | `TrueCrafterModeModule` |
 | ピグリン剣 / 槍 / クロスボウ / ブルート | [x] 武器種別の能力値、回復、標的がいない時も進む耐火飲用、後退先の足場判定、予備動作後も継続する衝撃波タイマー | `StandardEnemyAiSystem` |
-| ウィッチ / ヴィンディケーター / エヴォーカー | [x] ワープ失敗時のカウント維持、前後の退避経路、ヴィンディケーターの40/60/100tick遷移と非破壊、エヴォーカーの体力50・耐性1・速度0.3・段差1、単体最終召喚 | `MobProfileInitializer` / `StandardEnemyAiSystem` / `EvokerAiSystem` |
+| ウィッチ / ヴィンディケーター / エヴォーカー | [x] ワープ失敗時のカウント維持、前後の退避経路、ヴィンディケーターの40/60/100tick遷移と非破壊、エヴォーカーの体力50・耐性1・速度0.3・段差1、左右2体の最終召喚、ラヴェジャー騎乗、イリュージョナー時の4秒透明化 | `MobProfileInitializer` / `StandardEnemyAiSystem` / `EvokerAiSystem` |
 | スケルトン系 / 溺死ゾンビ / ピリジャー | [x] 本家の初期化・遠距離切替 AI・後退処理（追跡地形AIは非適用）。パーチドの固有後退音、通常ウィザースケルトンのエリート継承能力値と専用矢、エリート矢の無重力、100tick後の落下、盾での停止 | `MobProfileInitializer` / `TrueCrafterModeModule` |
 | 遠距離切替共通 AI | [x] 近距離5、遠距離5〜16、40tick後退、後方1ブロックの通路と3ブロック先の足場判定、蓄積カウント保持 | `TrueCrafterModeModule` |
 | 追跡共通 AI | [x] 48ブロック索敵、40tick掘削、前方の眼・足元・胴体・頭上破壊、対象が大きく下にいる場合の真下掘削、停止20tick後の橋モード、30tick終了、上下移動 | `TrueCrafterModeModule` / `TemporaryEnemyBlockSystem` |
@@ -183,7 +58,7 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 | エリートスケルトン / ストレイ / ボグド | [x] 装備、遠近切替、矢の変換、休止周期 | `TrueCrafterModeModule` |
 | ウィザーの騎士 / しもべ | [x] 60tick解放、4射ごとの140tick休止中も通常射撃を維持、装備と能力値 | `WitherBossSystem` / `TrueCrafterModeModule` |
 | エンダージーロット | [x] スライム本体、NoAI、弾幕周期、眼球処理 | `EnderZealotAiSystem` / `EnderDragonBossSystem` |
-| ウィザー | [x] 75%・50%遷移、騎士、近距離雷撃、4スキル | `WitherBossSystem` |
+| ウィザー | [x] 75%・50%遷移、騎士、近距離雷撃、4スキル、第二形態以降の0tick抽選による左／右サイドダッシュ（25tick・壁中断） | `WitherBossSystem` |
 | ウィザー雷撃 | [x] 30tick警告、10ダメージ、ウィザー10tick、複合範囲判定 | `WitherFieldSystem` |
 | エンダードラゴン | [x] クリスタル判定、第二形態、足場、3スキル、70tick・0.5ブロック刻みの突進、ドラゴン周囲への落雷柱、着地 | `EnderDragonBossSystem` |
 | ドラゴン雷柱 | [x] 30tick警告、10ダメージ、縦方向の打ち上げ、複合範囲判定 | `EnderDragonBossSystem` |
