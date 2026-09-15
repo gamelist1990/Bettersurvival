@@ -105,13 +105,13 @@ public class AutoPlantModule implements Listener {
         }, 0L, intervalTicks);
     }
     private void runIntervalTask() {
+        if (!toggle.getGlobal("autoplant")) return;
         for (Player player : Bukkit.getOnlinePlayers()) {
             runForPlayer(player);
         }
     }
 
     private void runForPlayer(Player player) {
-        if (!toggle.getGlobal("autoplant")) return;
         if (!toggle.isEnabledFor(player.getUniqueId().toString(), "autoplant")) return;
 
         if (getOffHandSeed(player) == null) return;
