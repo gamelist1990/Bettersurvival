@@ -47,6 +47,14 @@ public class WebMapCommand extends BaseCommand {
                     + " / 一時停止: " + (module.getSettings().isPaused() ? "ON" : "OFF"));
             sendInfo(sender, "ChunkGen: " + module.getActiveChunkGenCount() + " dimension(s) running");
             sendInfo(sender, "マップカラー: " + module.getMapColorProcessingStatus());
+            sendInfo(sender, "公開ワールド: " + module.getSettings().getPublicationMode());
+            return true;
+        }
+
+        if ("publish".equalsIgnoreCase(args[0])) {
+            if (!sender.isOp()) { sendError(sender, "この操作は OP のみ使用できます"); return true; }
+            module.cyclePublicationSelection();
+            sendSuccess(sender, "公開ワールド設定を変更しました: " + module.getSettings().getPublicationMode());
             return true;
         }
 
@@ -97,6 +105,7 @@ public class WebMapCommand extends BaseCommand {
             values.add("status");
             if (sender.isOp()) {
                 values.add("settings");
+                values.add("publish");
                 values.add("restart");
                 values.add("pause");
                 values.add("resume");

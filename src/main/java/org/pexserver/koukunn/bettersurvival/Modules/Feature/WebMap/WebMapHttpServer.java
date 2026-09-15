@@ -63,6 +63,10 @@ public class WebMapHttpServer {
         return server != null;
     }
 
+    public void clearTileCache() {
+        tileCache.clear();
+    }
+
     public synchronized void start(WebMapSettings settings) throws IOException {
         stop();
         String host = settings.isPublicAccess() ? "0.0.0.0" : "127.0.0.1";
@@ -259,7 +263,7 @@ public class WebMapHttpServer {
         int order = 0;
         for (World world : module.getPlugin().getServer().getWorlds()) {
             WebMapDimensionSettings dimension = module.getDimensionSettings(world);
-            if (!dimension.isVisible()) {
+            if (!dimension.isVisible() || !module.isWorldPublished(world)) {
                 continue;
             }
             String worldKey = world.getKey().toString();
@@ -374,7 +378,7 @@ public class WebMapHttpServer {
         int order = 0;
         for (World world : module.getPlugin().getServer().getWorlds()) {
             WebMapDimensionSettings dimension = module.getDimensionSettings(world);
-            if (!dimension.isVisible()) {
+            if (!dimension.isVisible() || !module.isWorldPublished(world)) {
                 continue;
             }
             Map<String, Object> row = new LinkedHashMap<>();
@@ -419,7 +423,7 @@ public class WebMapHttpServer {
 
     private void handleWorldSettings(HttpExchange exchange, String worldName) throws IOException {
         World world = resolveWorldByName(worldName);
-        if (world == null) {
+        if (world == null || !module.isWorldPublished(world)) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
@@ -457,7 +461,7 @@ public class WebMapHttpServer {
 
     private void handleWorldMarkers(HttpExchange exchange, String worldName) throws IOException {
         World world = resolveWorldByName(worldName);
-        if (world == null) {
+        if (world == null || !module.isWorldPublished(world)) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
@@ -473,7 +477,7 @@ public class WebMapHttpServer {
 
     private void handleWorldV1Settings(HttpExchange exchange, String worldName) throws IOException {
         World world = resolveWorldByName(worldName);
-        if (world == null) {
+        if (world == null || !module.isWorldPublished(world)) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
@@ -523,7 +527,7 @@ public class WebMapHttpServer {
 
     private void handleWorldChanges(HttpExchange exchange, String worldName) throws IOException {
         World world = resolveWorldByName(worldName);
-        if (world == null) {
+        if (world == null || !module.isWorldPublished(world)) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
@@ -544,7 +548,7 @@ public class WebMapHttpServer {
 
     private void handleTileImage(HttpExchange exchange, String worldName, String tileZoom, String tileSegment) throws IOException {
         World world = resolveWorldByName(worldName);
-        if (world == null) {
+        if (world == null || !module.isWorldPublished(world)) {
             writeEmptyTile(exchange);
             return;
         }

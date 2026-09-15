@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.entity.Player;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -197,6 +198,12 @@ public class JpChModule implements Listener {
     public void onAsyncChat(AsyncChatEvent event) {
         if (!toggleModule.getGlobal(FEATURE_KEY)) {
             return;
+        }
+
+        if (plugin.getOtherworldModule() != null) {
+            Player sender = event.getPlayer();
+            event.viewers().removeIf(viewer -> viewer instanceof Player recipient
+                    && !plugin.getOtherworldModule().sameGroup(sender, recipient));
         }
 
         String original = PlainTextComponentSerializer.plainText().serialize(event.message());

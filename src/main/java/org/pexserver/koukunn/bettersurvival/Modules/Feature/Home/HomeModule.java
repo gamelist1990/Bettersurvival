@@ -484,6 +484,12 @@ public class HomeModule {
             player.sendMessage("§cHome '" + home.getName() + "' のワールドが見つかりません");
             return;
         }
+        if (plugin.getOtherworldModule() != null
+                && !plugin.getOtherworldModule().getGroup(player.getWorld())
+                        .equals(plugin.getOtherworldModule().getGroup(location.getWorld()))) {
+            player.sendMessage("§cこのHomeは別のワールドグループです");
+            return;
+        }
         player.teleportAsync(location).thenAccept(success -> plugin.getServer().getScheduler().runTask(plugin, () -> {
             if (success) {
                 player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 0.8f, 1.0f);

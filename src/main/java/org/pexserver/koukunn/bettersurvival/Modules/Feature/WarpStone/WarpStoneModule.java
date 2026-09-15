@@ -344,6 +344,11 @@ public class WarpStoneModule implements Listener {
         return discovered.computeIfAbsent(uuid, id -> new LinkedHashSet<>());
     }
 
+    private World viewerWorld(UUID uuid) {
+        Player player = Bukkit.getPlayer(uuid);
+        return player == null ? null : player.getWorld();
+    }
+
     List<StoneView> discoveredStones(UUID uuid, String excludeKey) {
         List<StoneView> views = new ArrayList<>();
         for (String key : discoveredSet(uuid)) {
@@ -353,6 +358,15 @@ public class WarpStoneModule implements Listener {
             WarpStoneStore.StoneData data = stones.get(key);
             Location location = WarpStoneStore.fromKey(key);
             if (data == null || location == null || location.getWorld() == null) {
+                continue;
+            }
+            World viewerWorld = viewerWorld(uuid);
+            if (viewerWorld == null) {
+                continue;
+            }
+            if (plugin.getOtherworldModule() != null
+                    && !plugin.getOtherworldModule().getGroup(viewerWorld)
+                            .equals(plugin.getOtherworldModule().getGroup(location.getWorld()))) {
                 continue;
             }
             views.add(new StoneView(key, data.name(), location));
@@ -601,6 +615,12 @@ public class WarpStoneModule implements Listener {
         Location stoneLoc = WarpStoneStore.fromKey(destKey);
         if (data == null || stoneLoc == null || stoneLoc.getWorld() == null) {
             player.sendMessage(PREFIX + "§cそのワープストーンは失われています");
+            return;
+        }
+        if (plugin.getOtherworldModule() != null
+                && !plugin.getOtherworldModule().getGroup(player.getWorld())
+                        .equals(plugin.getOtherworldModule().getGroup(stoneLoc.getWorld()))) {
+            player.sendMessage(PREFIX + "§cこのワープストーンは別のワールドグループです");
             return;
         }
         if (stoneLoc.getBlock().getType() != Material.LODESTONE) {

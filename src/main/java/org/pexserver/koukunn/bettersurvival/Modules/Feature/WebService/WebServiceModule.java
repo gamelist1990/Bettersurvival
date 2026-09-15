@@ -12,6 +12,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
@@ -674,8 +675,14 @@ public class WebServiceModule implements Listener {
      * 画像は「[画像: 名前]」のクリックで Web 経由で閲覧できるリンクになる。
      */
     private Component webPostComponent(WebPost post, String fallbackName) {
+        String displayName = post.getSource().equalsIgnoreCase("minecraft")
+                ? OtherworldDisplayLabel.forPlayer(plugin, plugin.getServer().getPlayerExact(post.getUsername()))
+                : fallbackName;
+        if (displayName.isBlank()) {
+            displayName = fallbackName;
+        }
         Component header = Component.text("[Web] ", NamedTextColor.GREEN)
-                .append(Component.text(fallbackName, NamedTextColor.WHITE))
+                .append(Component.text(displayName, NamedTextColor.WHITE))
                 .append(Component.text(": ", NamedTextColor.DARK_GRAY));
         Component body = FeedTextUtil.toMinecraftComponent(post.getText(), NamedTextColor.GRAY);
         Component result = header.append(body);

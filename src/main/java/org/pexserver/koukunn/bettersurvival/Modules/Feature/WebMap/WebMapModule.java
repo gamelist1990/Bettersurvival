@@ -191,6 +191,21 @@ public class WebMapModule implements Listener {
         return store.ensureDimensionSettings(settings, world);
     }
 
+    public boolean isWorldPublished(World world) {
+        String group = plugin.getOtherworldModule() == null ? "default" : plugin.getOtherworldModule().getGroup(world);
+        String mode = settings.getPublicationMode();
+        if ("group".equalsIgnoreCase(mode)) return group.equalsIgnoreCase(settings.getPublicationGroup());
+        if ("selected".equalsIgnoreCase(mode)) return "default".equalsIgnoreCase(group) || settings.getPublicationGroups().stream().anyMatch(group::equalsIgnoreCase);
+        return "default".equalsIgnoreCase(group);
+    }
+
+    public void cyclePublicationSelection() {
+        String mode = settings.getPublicationMode();
+        settings.setPublicationMode("default".equalsIgnoreCase(mode) ? "selected" : "selected".equalsIgnoreCase(mode) ? "group" : "default");
+        store.saveSettings(settings);
+        httpServer.clearTileCache();
+    }
+
     public List<WebMapDimensionSettings> getDimensionSettingsList() {
         syncKnownWorlds();
         List<WebMapDimensionSettings> dimensions = new ArrayList<>(settings.getDimensions().values());

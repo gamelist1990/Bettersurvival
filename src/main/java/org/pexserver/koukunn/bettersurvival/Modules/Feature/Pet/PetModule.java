@@ -194,6 +194,13 @@ public final class PetModule implements Listener {
                     continue;
                 }
                 if (!mob.getWorld().equals(player.getWorld())) {
+                    // Entity.teleport does not fire PlayerTeleportEvent, so Otherworld's
+                    // player boundary cannot protect pets automatically.
+                    if (plugin.getOtherworldModule() != null
+                            && !plugin.getOtherworldModule().getGroup(mob.getWorld())
+                                    .equals(plugin.getOtherworldModule().getGroup(player.getWorld()))) {
+                        continue;
+                    }
                     mob.teleport(player.getLocation());
                 } else if (mob.getLocation().distanceSquared(player.getLocation()) > 256) {
                     mob.teleport(player.getLocation());

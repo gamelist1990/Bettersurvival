@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
@@ -206,7 +207,7 @@ public class DiscordWebhookStatusService {
     private List<String> sortedOnlinePlayerNames() {
         List<String> names = new ArrayList<>();
         for (Player player : Bukkit.getOnlinePlayers()) {
-            names.add(player.getName());
+            names.add(OtherworldDisplayLabel.forPlayer(plugin, player));
         }
         names.sort(String.CASE_INSENSITIVE_ORDER);
         if (names.size() > PLAYER_LIST_LIMIT) {

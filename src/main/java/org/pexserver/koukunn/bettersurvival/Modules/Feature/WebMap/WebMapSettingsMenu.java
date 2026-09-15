@@ -45,6 +45,10 @@ public final class WebMapSettingsMenu {
                         settings.isShowTpsBar() ? "§aTPSバー表示: ON" : "§cTPSバー表示: OFF",
                         Material.TARGET,
                         "§7画面上部にサーバーTPS/メモリを表示する")
+                .addButtonAt(19,
+                        "§d公開ワールド: " + settings.getPublicationMode(),
+                        Material.ENDER_EYE,
+                        "§7クリックで公開範囲を切替")
                 .addButtonAt(20,
                         "§bディメンション設定",
                         Material.COMPASS,
@@ -86,6 +90,10 @@ public final class WebMapSettingsMenu {
                         }
                         case 16 -> {
                             module.toggleShowTpsBar();
+                            openMainMenu(p, module);
+                        }
+                        case 19 -> {
+                            module.cyclePublicationSelection();
                             openMainMenu(p, module);
                         }
                         case 20 -> openWorldListMenu(p, module);

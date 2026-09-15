@@ -108,9 +108,11 @@ public class InvseeUI {
         // プレイヤーリストを作成（オンライン優先、その後オフライン）
         List<OfflinePlayer> allPlayers = new ArrayList<>();
         
-        // オンラインプレイヤーを追加
+        // Otherworld groups are isolated for inventory/data access.
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (!p.getUniqueId().equals(viewer.getUniqueId())) {
+            if (!p.getUniqueId().equals(viewer.getUniqueId())
+                    && (plugin.getOtherworldModule() == null
+                    || plugin.getOtherworldModule().sameGroup(viewer, p))) {
                 allPlayers.add(p);
             }
         }

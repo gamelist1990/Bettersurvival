@@ -69,6 +69,12 @@ public class TpaModule implements Listener {
             return;
         }
 
+        // Otherworldグループを跨ぐTPAは禁止
+        if (plugin.getOtherworldModule() != null && !plugin.getOtherworldModule().sameGroup(sender, target)) {
+            sendError(sender, "異なるOtherworldグループ間ではTPAできません");
+            return;
+        }
+
         // ターゲットのチェック
         if (!canReceiveTpa(target)) {
             sendError(sender, target.getName() + " はTPA受信を無効にしています");
@@ -128,6 +134,12 @@ public class TpaModule implements Listener {
         if (sender == null || !sender.isOnline()) {
             store.removeRequest(target.getUniqueId().toString(), request.getSenderUuid());
             sendError(target, request.getSenderName() + " はオフラインです");
+            return;
+        }
+        if (plugin.getOtherworldModule() != null && !plugin.getOtherworldModule().sameGroup(sender, target)) {
+            store.removeRequest(target.getUniqueId().toString(), request.getSenderUuid());
+            sendError(target, "異なるOtherworldグループ間ではTPAできません");
+            sendError(sender, "異なるOtherworldグループ間ではTPAできません");
             return;
         }
 

@@ -15,6 +15,10 @@ public class WebMapTileCache {
         };
     }
 
+    public synchronized void clear() {
+        cache.clear();
+    }
+
     public synchronized TileEntry get(String key) {
         return cache.get(key);
     }

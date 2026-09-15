@@ -9,6 +9,8 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
+import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.time.Instant;
 
@@ -17,9 +19,11 @@ public class DiscordWebhookEventService {
     private static final int LEAVE_COLOR = 0xED4245;
 
     private final DiscordWebhookClient client;
+    private final Loader plugin;
 
-    public DiscordWebhookEventService(DiscordWebhookClient client) {
+    public DiscordWebhookEventService(DiscordWebhookClient client, Loader plugin) {
         this.client = client;
+        this.plugin = plugin;
     }
 
     public void sendJoin(DiscordWebhookSettings settings, Player player) {
@@ -36,7 +40,7 @@ public class DiscordWebhookEventService {
         embed.addProperty("title", title);
         embed.addProperty("color", color);
         embed.addProperty("timestamp", Instant.now().toString());
-        embed.addProperty("description", compactPlayerEventText(title, player.getName(), online));
+        embed.addProperty("description", compactPlayerEventText(title, OtherworldDisplayLabel.forPlayer(plugin, player), online));
 
         JsonObject thumbnail = new JsonObject();
         thumbnail.addProperty("url", getPlayerIconUrl(player));

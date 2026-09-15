@@ -29,7 +29,7 @@ public class DiscordWebhookModule implements Listener {
         this.store = new DiscordWebhookStore(configManager);
         this.client = new DiscordWebhookClient(plugin);
         this.settings = store.load();
-        this.webhookEventService = new DiscordWebhookEventService(client);
+        this.webhookEventService = new DiscordWebhookEventService(client, plugin);
         this.statusService = new DiscordWebhookStatusService(plugin, client, this::getSettings, this::saveStatusMessageId);
         this.botModeService = new DiscordWebhookBotModeService(plugin, client, this::getSettings);
         statusService.updateStatusAutoUpdateTask();

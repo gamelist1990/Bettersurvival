@@ -19,6 +19,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.Disco
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookSettings;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.FeedTextUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebPost;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
 
 import java.util.ArrayList;
@@ -326,11 +327,11 @@ public class DiscordWebhookBotModeService {
     }
 
     private String normalizedPlayerName(Player player) {
-        String rawName = player.getName();
-        if (!FloodgateUtil.isBedrock(player)) {
-            return rawName;
-        }
-        return FloodgateUtil.stripPrefix(rawName).replace("_", " ");
+        String rawName = FloodgateUtil.isBedrock(player)
+                ? FloodgateUtil.stripPrefix(player.getName()).replace("_", " ")
+                : player.getName();
+        String label = OtherworldDisplayLabel.forPlayer(plugin, player);
+        return label.equals(player.getName()) ? rawName : label.replace(player.getName(), rawName);
     }
 
     /**

@@ -436,6 +436,9 @@ public class WebMapStore {
         config.put("port", settings.getPort());
         config.put("publicAccess", settings.isPublicAccess());
         config.put("autoTrackPlayers", settings.isAutoTrackPlayers());
+        config.put("publicationMode", settings.getPublicationMode());
+        config.put("publicationGroup", settings.getPublicationGroup());
+        config.put("publicationGroups", settings.getPublicationGroups());
         config.put("events", settings.getEvents());
         config.put("dimensions", settings.getDimensions());
         return config;
@@ -448,6 +451,9 @@ public class WebMapStore {
         Object port = config.get("port");
         Object publicAccess = config.get("publicAccess");
         Object autoTrackPlayers = config.get("autoTrackPlayers");
+        Object publicationMode = config.get("publicationMode");
+        Object publicationGroup = config.get("publicationGroup");
+        Object publicationGroups = config.get("publicationGroups");
         Object events = config.get("events");
         Object dimensions = config.get("dimensions");
         if (enabled instanceof Boolean value) {
@@ -464,6 +470,13 @@ public class WebMapStore {
         }
         if (autoTrackPlayers instanceof Boolean value) {
             settings.setAutoTrackPlayers(value);
+        }
+        if (publicationMode instanceof String value) settings.setPublicationMode(value);
+        if (publicationGroup instanceof String value) settings.setPublicationGroup(value);
+        if (publicationGroups instanceof Iterable<?> values) {
+            java.util.Set<String> groups = new java.util.LinkedHashSet<>();
+            for (Object value : values) if (value != null) groups.add(value.toString());
+            settings.setPublicationGroups(groups);
         }
         if (events instanceof java.util.Map<?, ?> rawEvents) {
             WebMapSettings.EventSettings eventSettings = new WebMapSettings.EventSettings();

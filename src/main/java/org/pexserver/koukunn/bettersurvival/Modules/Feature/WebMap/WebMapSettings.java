@@ -2,6 +2,8 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class WebMapSettings {
     public static class EventSettings {
@@ -49,6 +51,9 @@ public class WebMapSettings {
     private boolean publicAccess = false;
     private boolean autoTrackPlayers = true;
     private boolean showTpsBar = false;
+    private String publicationMode = "default";
+    private String publicationGroup = "default";
+    private Set<String> publicationGroups = new LinkedHashSet<>();
     private EventSettings events = new EventSettings();
     private Map<String, WebMapDimensionSettings> dimensions = new LinkedHashMap<>();
 
@@ -99,6 +104,13 @@ public class WebMapSettings {
     public void setShowTpsBar(boolean showTpsBar) {
         this.showTpsBar = showTpsBar;
     }
+
+    public String getPublicationMode() { return publicationMode; }
+    public void setPublicationMode(String mode) { this.publicationMode = mode == null ? "default" : mode; }
+    public String getPublicationGroup() { return publicationGroup; }
+    public void setPublicationGroup(String group) { this.publicationGroup = group == null ? "default" : group; }
+    public Set<String> getPublicationGroups() { return publicationGroups; }
+    public void setPublicationGroups(Set<String> groups) { this.publicationGroups = groups == null ? new LinkedHashSet<>() : new LinkedHashSet<>(groups); }
 
     public EventSettings getEvents() {
         return events;

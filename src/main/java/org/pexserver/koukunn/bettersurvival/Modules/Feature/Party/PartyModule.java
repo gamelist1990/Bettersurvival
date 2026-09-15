@@ -30,6 +30,7 @@ public class PartyModule implements Listener {
     public static final int MAX_NAME_LENGTH = 16;
     private static final long INVITE_EXPIRE_MILLIS = 5L * 60L * 1000L;
 
+    private final Loader plugin;
     private final ToggleModule toggle;
     private final PartyStore store;
     private final Map<UUID, Party> parties = new LinkedHashMap<>();
@@ -39,6 +40,7 @@ public class PartyModule implements Listener {
     private final Map<UUID, Map<UUID, Long>> invites = new ConcurrentHashMap<>();
 
     public PartyModule(Loader plugin, ToggleModule toggle) {
+        this.plugin = plugin;
         this.toggle = toggle;
         this.store = new PartyStore(plugin.getConfigManager());
         parties.putAll(store.loadAll());
@@ -187,6 +189,9 @@ public class PartyModule implements Listener {
         if (target.getUniqueId().equals(inviter.getUniqueId())) {
             return "自分自身は招待できません";
         }
+        if (plugin.getOtherworldModule() != null && !plugin.getOtherworldModule().sameGroup(inviter, target)) {
+            return "別のワールドグループのプレイヤーは招待できません";
+        }
         if (getPartyOf(target.getUniqueId()) != null) {
             return target.getName() + " は既に別のパーティーに所属しています";
         }
@@ -227,6 +232,10 @@ public class PartyModule implements Listener {
         }
         if (getPartyOf(player.getUniqueId()) != null) {
             return "既にパーティーに所属しています";
+        }
+        Player leader = Bukkit.getPlayer(party.getLeader());
+        if (leader != null && plugin.getOtherworldModule() != null && !plugin.getOtherworldModule().sameGroup(leader, player)) {
+            return "別のワールドグループのパーティーには加入できません";
         }
         map.remove(party.getId());
         party.getMembers().add(player.getUniqueId());
@@ -365,9 +374,14 @@ public class PartyModule implements Listener {
 
     /** パーティー全員（オンライン）へメッセージを送る。 */
     public void broadcast(Party party, String message) {
+        Player anchor = null;
         for (UUID member : party.getAllMembers()) {
             Player online = Bukkit.getPlayer(member);
-            if (online != null) {
+            if (online != null) { anchor = online; break; }
+        }
+        for (UUID member : party.getAllMembers()) {
+            Player online = Bukkit.getPlayer(member);
+            if (online != null && (anchor == null || plugin.getOtherworldModule() == null || plugin.getOtherworldModule().sameGroup(anchor, online))) {
                 online.sendMessage(message);
             }
         }

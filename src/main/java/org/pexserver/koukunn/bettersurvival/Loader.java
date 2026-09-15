@@ -68,6 +68,8 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Sit.SitListener;
 import org.pexserver.koukunn.bettersurvival.Commands.hardmode.HardModeCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.TrueCrafterMode.TrueCrafterModeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldModule;
+import org.pexserver.koukunn.bettersurvival.Commands.otherworld.OtherworldCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapModule;
@@ -84,6 +86,7 @@ public final class Loader extends JavaPlugin {
     private CommandBlockManager commandBlockManager;
     private ToggleModule toggleModule;
     private TpaModule tpaModule;
+    private OtherworldModule otherworldModule;
     private DiscordWebhookModule discordWebhookModule;
     private DiscordBotModule discordBotModule;
     private HomeModule homeModule;
@@ -196,6 +199,8 @@ public final class Loader extends JavaPlugin {
         // TPA モジュール登録 (テレポートリクエスト機能)
         tpaModule = new TpaModule(this);
         getServer().getPluginManager().registerEvents(tpaModule, this);
+        otherworldModule = new OtherworldModule(this);
+        getServer().getPluginManager().registerEvents(otherworldModule, this);
         betterMenuModule = new BetterMenuModule(this, toggleModule, itemCombineModule);
         getServer().getPluginManager().registerEvents(betterMenuModule, this);
         copperGolemModule = new CopperGolemModule(this, toggleModule, itemCombineModule);
@@ -424,6 +429,7 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new RenameCommand());
         // TPA command: テレポートリクエスト
         commandManager.register(new TpaCommand(this));
+        commandManager.register(new OtherworldCommand(this));
         // Home command: 登録済みHomeへの移動
         commandManager.register(new HomeCommand(this));
         // InvSee command: プレイヤーインベントリ閲覧・編集（OP専用）
@@ -479,6 +485,10 @@ public final class Loader extends JavaPlugin {
 
     public TpaModule getTpaModule() {
         return tpaModule;
+    }
+
+    public OtherworldModule getOtherworldModule() {
+        return otherworldModule;
     }
 
     public DiscordWebhookModule getDiscordWebhookModule() {
