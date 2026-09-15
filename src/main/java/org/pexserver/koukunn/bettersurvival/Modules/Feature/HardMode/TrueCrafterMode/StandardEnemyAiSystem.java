@@ -45,8 +45,8 @@ public final class StandardEnemyAiSystem {
     private final NamespacedKey projectileKey;
     private final NamespacedKey projectileOwnerKey;
     private final NamespacedKey projectileDamageKey;
+    private final NamespacedKey creeperAttackCountKey;
     private final Map<UUID, Integer> ticks = new HashMap<>();
-    private final Map<UUID, Integer> attacks = new HashMap<>();
     private final Map<UUID, Integer> piglinHealTicks = new HashMap<>();
     private final Map<UUID, ItemStack> piglinWeapons = new HashMap<>();
     private final Map<UUID, Boolean> piglinHealUsed = new HashMap<>();
@@ -60,6 +60,7 @@ public final class StandardEnemyAiSystem {
         projectileKey = new NamespacedKey(plugin, "truecrafter_projectile");
         projectileOwnerKey = new NamespacedKey(plugin, "truecrafter_projectile_owner");
         projectileDamageKey = new NamespacedKey(plugin, "truecrafter_projectile_damage");
+        creeperAttackCountKey = new NamespacedKey(plugin, "truecrafter_creeper_attack_count");
     }
 
     public boolean tick(LivingEntity enemy, Player target) {
@@ -104,7 +105,6 @@ public final class StandardEnemyAiSystem {
 
     public void remove(UUID id) {
         ticks.remove(id);
-        attacks.remove(id);
         piglinHealTicks.remove(id);
         piglinWeapons.remove(id);
         piglinHealUsed.remove(id);
@@ -116,7 +116,6 @@ public final class StandardEnemyAiSystem {
 
     public void clear() {
         ticks.clear();
-        attacks.clear();
         piglinHealTicks.clear();
         piglinWeapons.clear();
         piglinHealUsed.clear();
@@ -157,22 +156,24 @@ public final class StandardEnemyAiSystem {
 
     private void zombieBrute(Zombie zombie, Player target) {
         UUID id = zombie.getUniqueId();
+        boolean leaping = zombieBruteLeaping.containsKey(id);
+        int current = ticks.getOrDefault(id, 0);
+        if (!leaping && current < 30 && zombie.getLocation().distanceSquared(target.getLocation()) > 256.0D) return;
         int tick = increase(zombie);
-        if (zombieBruteLeaping.containsKey(id)) {
-            if (tick >= 50 && zombie.isOnGround()) {
-                zombieBruteLeaping.remove(id);
-                bruteLanding(zombie);
-                ticks.remove(id);
-            }
-            return;
+        if (!leaping && tick == 30) {
+            bruteWindup(zombie);
+            tick = increase(zombie);
         }
-        double distance = zombie.getLocation().distance(target.getLocation());
-        if (tick < 30 && distance > 16.0D) {
+        if (!bruteLeapPathClear(zombie)) {
             ticks.remove(id);
             return;
         }
-        if (tick == 30 || tick == 70) bruteWindup(zombie);
-        if (tick == 40 && clearAhead(zombie)) {
+        if (leaping) {
+            if (tick >= 50 && zombie.isOnGround()) {
+                zombieBruteLeaping.remove(id);
+                bruteLanding(zombie);
+            }
+        } else if (tick == 40) {
             Vector direction = target.getLocation().toVector().subtract(zombie.getLocation().toVector()).setY(0.0D);
             if (direction.lengthSquared() > 0.0D) zombie.setVelocity(direction.normalize().multiply(1.0D).setY(0.7D));
             zombie.getWorld().playSound(zombie.getLocation(), Sound.ENTITY_GOAT_LONG_JUMP, 1.5F, 0.7F);
@@ -180,6 +181,7 @@ public final class StandardEnemyAiSystem {
             zombieBruteLeaping.put(id, true);
             return;
         }
+        if (tick == 70) bruteWindup(zombie);
         if (tick == 80) {
             setBase(zombie, Attribute.MOVEMENT_SPEED, 0.35D);
             zombie.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 60, 1, false, false));
@@ -207,6 +209,7 @@ public final class StandardEnemyAiSystem {
         for (Entity entity : zombie.getWorld().getNearbyEntities(zombie.getLocation(), 4.0D, 4.0D, 4.0D)) {
             if (!(entity instanceof LivingEntity victim) || victim == zombie || victim.isInvulnerable()) continue;
             if (!(victim instanceof Player)) continue;
+            if (victim.getLocation().distanceSquared(zombie.getLocation()) > 16.0D) continue;
             victim.damage(7.0D, zombie);
         }
         zombie.getWorld().spawnParticle(Particle.EXPLOSION, zombie.getLocation(), 5, 2.0D, 0.0D, 2.0D, 0.5D);
@@ -217,12 +220,22 @@ public final class StandardEnemyAiSystem {
     }
 
     private void breakBrutePath(Zombie zombie, Player target) {
-        Vector forward = target.getLocation().toVector().subtract(zombie.getLocation().toVector()).setY(0.0D);
+        Vector forward = zombie.getLocation().getDirection().setY(0.0D);
         if (forward.lengthSquared() == 0.0D) return;
         forward.normalize();
         Vector side = new Vector(-forward.getZ(), 0.0D, forward.getX());
         Location base = zombie.getLocation().add(forward);
         for (int x = -1; x <= 1; x++) for (int y = 0; y <= 2; y++) breakBruteBlock(base.clone().add(side.clone().multiply(x)).add(0.0D, y, 0.0D).getBlock());
+    }
+
+    private boolean bruteLeapPathClear(Zombie zombie) {
+        Location origin = zombie.getLocation();
+        Vector forward = origin.getDirection().setY(0.0D);
+        if (forward.lengthSquared() == 0.0D) return false;
+        forward.normalize();
+        Location lower = origin.clone().add(forward);
+        Location upper = lower.clone().add(0.0D, 1.0D, 0.0D);
+        return lower.getBlock().isPassable() && upper.getBlock().isPassable();
     }
 
     private void breakBruteBlock(Block block) {
@@ -316,7 +329,8 @@ public final class StandardEnemyAiSystem {
     }
 
     private void brute(PiglinBrute brute, Player target) {
-        if (brute.getLocation().distance(target.getLocation()) > 16.0D) return;
+        int current = ticks.getOrDefault(brute.getUniqueId(), 0);
+        if (current < 40 && brute.getLocation().distanceSquared(target.getLocation()) > 256.0D) return;
         int tick = increase(brute);
         if (tick == 40) {
             brute.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 60, 2, false, false));
@@ -324,6 +338,7 @@ public final class StandardEnemyAiSystem {
             brute.getWorld().playSound(brute.getLocation(), Sound.BLOCK_TRIAL_SPAWNER_ABOUT_TO_SPAWN_ITEM, 2.0F, 1.2F);
             brute.getWorld().playSound(brute.getLocation(), Sound.BLOCK_TRIAL_SPAWNER_OMINOUS_ACTIVATE, 2.0F, 0.5F);
             brute.getWorld().playSound(brute.getLocation(), Sound.ENTITY_PIGLIN_BRUTE_ANGRY, 1.0F, 0.7F);
+            tick = increase(brute);
         } else if (tick == 80) {
             shockwave(brute, target);
         } else if (tick >= 120) {
@@ -399,50 +414,59 @@ public final class StandardEnemyAiSystem {
             return;
         }
         int tick = piglinCrossbowTicks.merge(id, 1, Integer::sum);
-        if (tick < 30 || !clearAhead(piglin)) return;
+        Vector away = piglin.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0.0D);
+        if (tick < 30 || away.lengthSquared() == 0.0D) return;
+        away.normalize();
+        Location backward = piglin.getLocation().clone().add(away);
+        Location landingBelow = piglin.getLocation().clone().add(away.clone().multiply(3.0D)).subtract(0.0D, 1.0D, 0.0D);
+        if (!backward.getBlock().isPassable() || landingBelow.getBlock().isPassable()) return;
         piglinCrossbowTicks.remove(id);
         piglin.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 10, false, false));
-        Vector away = piglin.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0).normalize().multiply(1.0D).setY(0.2D);
-        piglin.setVelocity(away);
+        piglin.setVelocity(away.multiply(1.0D).setY(0.2D));
         piglin.getWorld().playSound(piglin.getLocation(), Sound.ENTITY_PIGLIN_JEALOUS, 1.0F, 1.5F);
         piglin.getWorld().playSound(piglin.getLocation(), Sound.ENTITY_GOAT_LONG_JUMP, 1.0F, 1.2F);
     }
 
     private void creeper(Creeper creeper, Player target) {
-        if (creeper.isIgnited() || creeper.isInWater()) {
+        if (creeper.isIgnited()) {
             creeper.setMaxFuseTicks(30);
             ticks.remove(creeper.getUniqueId());
             creeper.removePotionEffect(PotionEffectType.INVISIBILITY);
             return;
         }
-        creeper.setMaxFuseTicks(9999);
+        creeper.setMaxFuseTicks(creeper.isInWater() ? 30 : 9999);
         if (creeperExplosionRecovery.remove(creeper.getUniqueId()) != null) {
             creeper.setInvulnerable(false);
             setBase(creeper, Attribute.KNOCKBACK_RESISTANCE, 0.0D);
             return;
         }
         double distance = creeper.getLocation().distance(target.getLocation());
-        if (distance >= 4.0D && distance <= 32.0D && creeper.getNoDamageTicks() == 0) {
+        int current = ticks.getOrDefault(creeper.getUniqueId(), 0);
+        if (current == 0 && distance >= 4.0D && distance <= 32.0D && creeper.getNoDamageTicks() == 0) {
             creeper.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 25, 0, false, false));
         } else if (distance < 4.0D) {
             creeper.removePotionEffect(PotionEffectType.INVISIBILITY);
         }
-        if (distance > 7.0D) {
-            ticks.remove(creeper.getUniqueId());
+        boolean standstill = creeper.isOnGround() && creeper.getVelocity().getX() * creeper.getVelocity().getX()
+                + creeper.getVelocity().getZ() * creeper.getVelocity().getZ() < 1.0E-6D;
+        if (current < 25 && (distance > 7.0D || !standstill)) {
+            if (current > 0) ticks.remove(creeper.getUniqueId());
             setBase(creeper, Attribute.KNOCKBACK_RESISTANCE, 0.0D);
             return;
         }
         int tick = increase(creeper);
-        creeper.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 10, false, false));
-        setBase(creeper, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
-        creeper.getWorld().spawnParticle(Particle.SMOKE, creeper.getLocation().add(0, 0.5D, 0), 5, 0.3D, 0.5D, 0.3D, 0.0D);
-        creeper.getWorld().spawnParticle(Particle.ELECTRIC_SPARK, creeper.getLocation().add(0, 0.5D, 0), 2, 0.2D, 0.5D, 0.2D, 0.5D);
+        if (standstill) {
+            setBase(creeper, Attribute.KNOCKBACK_RESISTANCE, 1.0D);
+            creeper.getWorld().spawnParticle(Particle.SMOKE, creeper.getLocation().add(0, 0.5D, 0), 5, 0.3D, 0.5D, 0.3D, 0.0D);
+            creeper.getWorld().spawnParticle(Particle.ELECTRIC_SPARK, creeper.getLocation().add(0, 0.5D, 0), 2, 0.2D, 0.5D, 0.2D, 0.5D);
+        }
         if (tick == 25) {
             creeper.getWorld().playSound(creeper.getLocation(), Sound.ENTITY_CREEPER_PRIMED, 1.0F, 1.0F);
         } else if (tick == 30) {
             creeper.setInvulnerable(true);
             creeper.getWorld().createExplosion(creeper.getLocation(), creeper.isPowered() ? 6.0F : 3.0F, false, true, creeper);
-            int count = attacks.merge(creeper.getUniqueId(), 1, Integer::sum);
+            int count = creeper.getPersistentDataContainer().getOrDefault(creeperAttackCountKey, PersistentDataType.INTEGER, 0) + 1;
+            creeper.getPersistentDataContainer().set(creeperAttackCountKey, PersistentDataType.INTEGER, count);
             if (count >= 3) creeper.remove();
             else creeperExplosionRecovery.put(creeper.getUniqueId(), true);
             ticks.remove(creeper.getUniqueId());

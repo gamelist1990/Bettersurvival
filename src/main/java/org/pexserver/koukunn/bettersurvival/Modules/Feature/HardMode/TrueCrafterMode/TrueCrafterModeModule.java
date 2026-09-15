@@ -88,11 +88,11 @@ public final class TrueCrafterModeModule implements Listener {
     private final NamespacedKey zealotKey;
     private final NamespacedKey sheathOwnerKey;
     private final NamespacedKey sheathRenderVersionKey;
+    private final NamespacedKey creeperAttackCountKey;
     private final Map<UUID, Long> abilityCooldowns = new HashMap<>();
     private final Map<UUID, Integer> rangedBackSteps = new HashMap<>();
     private final Map<UUID, Integer> terrainDigTicks = new HashMap<>();
     private final Map<UUID, Integer> terrainPlaceTicks = new HashMap<>();
-    private final Map<UUID, Integer> creeperDigExplosions = new HashMap<>();
     private final Set<UUID> creeperDigRecovery = new HashSet<>();
     private final Map<UUID, Integer> endermanBreakTicks = new HashMap<>();
     private final Map<UUID, Integer> witherKnightCooldowns = new HashMap<>();
@@ -124,6 +124,7 @@ public final class TrueCrafterModeModule implements Listener {
         zealotKey = new NamespacedKey(plugin, "truecrafter_zealot");
         sheathOwnerKey = new NamespacedKey(plugin, "truecrafter_sheath_owner");
         sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v2");
+        creeperAttackCountKey = new NamespacedKey(plugin, "truecrafter_creeper_attack_count");
         temporaryBlocks = new TemporaryEnemyBlockSystem(plugin);
         standardEnemyAi = new StandardEnemyAiSystem(plugin);
         evokerAi = new EvokerAiSystem();
@@ -344,7 +345,6 @@ public final class TrueCrafterModeModule implements Listener {
         rangedBackSteps.remove(event.getEntity().getUniqueId());
         terrainDigTicks.remove(event.getEntity().getUniqueId());
         terrainPlaceTicks.remove(event.getEntity().getUniqueId());
-        creeperDigExplosions.remove(event.getEntity().getUniqueId());
         creeperDigRecovery.remove(event.getEntity().getUniqueId());
         endermanBreakTicks.remove(event.getEntity().getUniqueId());
         witherKnightCooldowns.remove(event.getEntity().getUniqueId());
@@ -416,7 +416,6 @@ public final class TrueCrafterModeModule implements Listener {
         rangedBackSteps.clear();
         terrainDigTicks.clear();
         terrainPlaceTicks.clear();
-        creeperDigExplosions.clear();
         creeperDigRecovery.clear();
         endermanBreakTicks.clear();
         witherKnightCooldowns.clear();
@@ -730,7 +729,9 @@ public final class TrueCrafterModeModule implements Listener {
             if (creeperBlast && enemy instanceof Creeper creeper) {
                 creeper.setInvulnerable(true);
                 creeper.getWorld().createExplosion(creeper.getLocation(), creeper.isPowered() ? 6.0F : 3.0F, false, true, creeper);
-                if (creeperDigExplosions.merge(creeper.getUniqueId(), 1, Integer::sum) >= 3) creeper.remove();
+                int count = creeper.getPersistentDataContainer().getOrDefault(creeperAttackCountKey, PersistentDataType.INTEGER, 0) + 1;
+                creeper.getPersistentDataContainer().set(creeperAttackCountKey, PersistentDataType.INTEGER, count);
+                if (count >= 3) creeper.remove();
                 else creeperDigRecovery.add(creeper.getUniqueId());
                 terrainDigTicks.remove(enemy.getUniqueId());
                 return;

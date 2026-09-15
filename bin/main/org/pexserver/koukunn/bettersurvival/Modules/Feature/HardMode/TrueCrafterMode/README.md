@@ -166,11 +166,11 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 
 | 本家 Mob | 照合状況 | 対応する実装 |
 | --- | --- | --- |
-| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビブルートの着地範囲 | `StandardEnemyAiSystem` |
+| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲 | `StandardEnemyAiSystem` |
 | スライム / マグマキューブ | [x] 敵対時の膨張時刻・同族数上限 | `StandardEnemyAiSystem` |
-| クリーパー | [x] 30tick爆発・3回上限 | `StandardEnemyAiSystem` |
+| クリーパー | [x] 停止中だけ進む1〜25tick、25tick後の自動進行、30tick爆発、通常／追跡採掘で共有する3回上限 | `StandardEnemyAiSystem` / `TrueCrafterModeModule` |
 | クリーパー追跡採掘 | [x] 壁越し・近距離・同高度での50tick大爆発 | `TrueCrafterModeModule` |
-| ピグリン剣 / クロスボウ / ブルート | [x] 回復・耐火飲用・後退・衝撃波 | `StandardEnemyAiSystem` |
+| ピグリン剣 / クロスボウ / ブルート | [x] 回復・耐火飲用・後退先の足場判定、予備動作後も継続する衝撃波タイマー | `StandardEnemyAiSystem` |
 | ウィッチ / ヴィンディケーター / エヴォーカー | [x] ワープ失敗時のカウント維持、前後の退避経路、ヴィンディケーターの40/60/100tick遷移と非破壊、エヴォーカーの単体最終召喚 | `StandardEnemyAiSystem` / `EvokerAiSystem` |
 | スケルトン系 / 溺死ゾンビ / ピリジャー | [x] 本家の初期化・共通 AI・後退処理。エリート矢の無重力、100tick後の落下、盾での停止 | `MobProfileInitializer` / `TrueCrafterModeModule` |
 | 遠距離切替共通 AI | [x] 近距離5、遠距離5〜16、40tick後退、着地点判定 | `TrueCrafterModeModule` |
