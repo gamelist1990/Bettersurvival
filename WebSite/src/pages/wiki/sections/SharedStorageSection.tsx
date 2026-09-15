@@ -105,6 +105,7 @@ export function SharedStorageSection() {
         <li>1 つの <strong>主チェスト (main)</strong> と、複数の <strong>sub チェスト</strong> を "ID" で束ねます。</li>
         <li>主チェストに放り込んだアイテムは、接続中の sub へ<strong>自動で仕分け</strong>されます。</li>
         <li>sub には普通のチェストでも、<strong>チェスト付きトロッコ</strong>でもなれます。</li>
+        <li><strong>回収専用の樽</strong>から、主チェストまで戻らずに全アイテム一覧を開けます。</li>
         <li>額縁を使えば「この sub にはこのアイテムだけ入れる」みたいなルールも作れます。</li>
         <li>設定は全部 GUI から。主チェストの隣に木の斧などの sort 棒アイテムを持って開くとメニューが出ます。</li>
       </ul>
@@ -113,11 +114,13 @@ export function SharedStorageSection() {
       <p>金床で名札を以下の形式に変更します。<code>&lt;ID&gt;</code> は好きな名前 (半角英数字が無難) にしてください。同じ ID を持つチェスト同士が同じ倉庫グループになります。</p>
       <CommandBox command="chest-<ID>" description="主 (main) チェスト用の名札。例: chest-base1" />
       <CommandBox command="chestsub-<ID>" description="sub チェスト用の名札。例: chestsub-base1 (main と同じ ID で揃える)" />
+      <CommandBox command="chestget-<ID>" description="回収専用の樽用の名札。例: chestget-base1 (main と同じ ID で揃える)" />
 
       <h3>2. 主チェストと sub チェストを作る</h3>
       <ol>
         <li><code>chest-&lt;ID&gt;</code> の名札を <strong>普通のチェスト</strong> と一緒にドロップ → 主チェストのアイテムが完成。</li>
         <li><code>chestsub-&lt;ID&gt;</code> の名札を <strong>普通のチェスト</strong> または <strong>チェスト付きトロッコ</strong> と一緒にドロップ → sub のアイテムが完成。</li>
+        <li><code>chestget-&lt;ID&gt;</code> の名札を <strong>樽</strong>と一緒にドロップ → 回収専用の樽が完成。金床で樽自体を同じ名前にしても使えます。</li>
         <li>完成したアイテムを設置します。</li>
       </ol>
 
@@ -129,7 +132,17 @@ export function SharedStorageSection() {
         <li>sub は <strong>同じ ID / 同じ役割</strong> なら隣接させてラージチェスト化 OK。</li>
         <li>sub は<strong>複数個</strong>置けます。同じ ID の sub は全部同じネットワークにまとまります。</li>
         <li>sub の <strong>初期の接続範囲</strong> は主チェストから一定ブロック以内。範囲は後述の UI で変更できます (最大 50 ブロック)。</li>
+        <li>回収樽も主チェストの接続範囲内にだけ設置・使用できます。範囲を狭めて樽が範囲外になった場合は、再び範囲内に入るまで利用できません。</li>
       </ul>
+
+      <h3>回収専用の樽を使う</h3>
+      <ol>
+        <li>主チェストの設定で<strong>ChestPage</strong>を有効にします。</li>
+        <li>同じIDの回収樽を接続範囲内へ設置します。</li>
+        <li>回収樽を右クリックすると、主チェストから開くものと同じカテゴリ・アイテム一覧が表示されます。</li>
+        <li>一覧から目的のsubを選び、アイテムを回収します。</li>
+      </ol>
+      <p>回収樽は一覧を開くためだけの端末です。樽本体へアイテムを入れたり、ホッパーで搬入・搬出したりすることはできません。ChestLockと主チェストのアクセス権もそのまま適用されます。</p>
 
       <h3>4. 設定 UI を開く</h3>
       <p>主チェストの近くで、<strong>木の棒などの sort 棒</strong>を持ってスニーク右クリック、または主チェストを直接右クリックで設定メニューが開きます (実装の <code>SharedStorageSettingsUi</code>)。</p>

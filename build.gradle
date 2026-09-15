@@ -72,11 +72,23 @@ tasks.withType(JavaCompile).configureEach {
     }
 }
 
+def bundledYouTubeOAuthClientId = project.findProperty('youtubeOAuthClientId')
+        ?: System.getenv('YOUTUBE_OAUTH_CLIENT_ID') ?: ''
+def bundledYouTubeOAuthClientSecret = project.findProperty('youtubeOAuthClientSecret')
+        ?: System.getenv('YOUTUBE_OAUTH_CLIENT_SECRET') ?: ''
+
 processResources {
-    def props = [version: project.version]
+    def props = [
+            version: project.version,
+            youtubeOAuthClientId: bundledYouTubeOAuthClientId,
+            youtubeOAuthClientSecret: bundledYouTubeOAuthClientSecret
+    ]
     inputs.properties props
     filteringCharset = 'UTF-8'
     filesMatching(['plugin.yml', 'paper-plugin.yml']) {
+        expand props
+    }
+    filesMatching('youtube-oauth.properties') {
         expand props
     }
 }
@@ -109,6 +121,7 @@ tasks.register('buildWebSiteFrontend', Exec) {
 }
 
 processResources {
+    exclude 'hardmode/TrueCrafterMode.zip'
     if (webSiteDir.exists()) {
         dependsOn tasks.named('buildWebSiteFrontend')
         from(webSiteDistDir) {

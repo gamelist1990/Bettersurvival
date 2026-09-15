@@ -7,12 +7,12 @@ export function CopperGolemSection() {
     <SectionShell
       eyebrow="CopperGolem"
       title="カッパーゴーレム 詳細ガイド"
-      intro="作物の自動収穫と拠点防衛を担う独自モブ。召喚から作物採取モード / 戦闘モードの設定、そして GUI 操作までを 1 ページに集約します。"
+      intro="農作業、拠点防衛、倉庫整理、落とし物回収、旅の同行を担う独自モブ。召喚から各モードの設定までを解説します。"
       scope="player"
     >
       <h3>何ができるモブか</h3>
       <ul className="wiki-bullets">
-        <li>プレイヤーが召喚する銅製ゴーレム。<strong>作物採取モード</strong>で農場を自動化したり、<strong>戦闘モード</strong>で拠点周辺を巡回させたりできます。</li>
+        <li>プレイヤーが召喚する銅製ゴーレム。作物採取、戦闘、チェスト整理、落とし物回収、旅・追従を切り替えられます。</li>
         <li>1 体ごとに固有 ID を持ち、複数召喚できます。各個体に別々のプロファイル (対象チェスト / 装備 / モード) を保存できます。</li>
         <li>スニーク + 右クリックでその個体の管理メニューが開きます。</li>
         <li>死んでも <strong>プロファイル (対象・装備の登録情報) は残り</strong>、同じ ID で再召喚すれば設定を引き継げます。</li>
@@ -28,9 +28,17 @@ export function CopperGolemSection() {
       <h3>管理メニューを開く</h3>
       <p>召喚したカッパーゴーレムに向かって <strong>スニーク + 右クリック</strong>すると、そのゴーレム専用の管理 GUI が開きます。ここから以下を設定します:</p>
       <ul className="wiki-bullets">
-        <li>モード切替 (作物採取 / 戦闘)</li>
+        <li>モード切替 (Idle / 作物採取 / 戦闘 / チェスト整理 / 落とし物回収 / 旅・追従)</li>
         <li>作物採取モードの <strong>保管先チェスト</strong> と <strong>骨粉供給元チェスト</strong> の登録</li>
         <li>戦闘モードの武器・装備の設定</li>
+      </ul>
+
+      <h3>倉庫・旅モード</h3>
+      <ul className="wiki-bullets">
+        <li><strong>チェスト整理</strong>: 登録したチェストや樽へ移動し、同種アイテムをまとめて種類順に並べます。</li>
+        <li><strong>落とし物回収</strong>: 行動範囲内の所有者指定がないドロップアイテムを拾い、空きのある登録先へ運びます。</li>
+        <li><strong>旅・追従</strong>: 最後に管理画面を開いたプレイヤーについて移動します。リード中はリード操作を優先します。</li>
+        <li>ChestLock、ChestShop、SharedStorage、他人の土地保護に属する保管先は利用しません。</li>
       </ul>
 
       <h3>作物採取モード (CROP)</h3>

@@ -54,13 +54,11 @@ public class RecyclerUI implements InventoryHolder {
     private static final String[] GEAR_FRAMES = {"§a⚙", "§2⚙", "§e⚙"};
     private static final Set<Integer> EDITABLE_SLOTS = buildEditableSlots();
 
-    private final RecyclerModule module;
     private final RecyclerData data;
     private final String key;
     private final Inventory inventory;
 
     public RecyclerUI(RecyclerModule module, RecyclerData data, String key) {
-        this.module = module;
         this.data = data;
         this.key = key;
         this.inventory = Bukkit.createInventory(this, SIZE, ComponentUtils.legacy("§8♻ §2リサイクラー §8- §7分解装置"));

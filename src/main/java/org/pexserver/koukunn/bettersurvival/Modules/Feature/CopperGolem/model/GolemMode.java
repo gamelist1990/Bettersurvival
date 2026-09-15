@@ -5,7 +5,10 @@ import java.util.Locale;
 public enum GolemMode {
     IDLE("Idle"),
     CROP("作物採取"),
-    COMBAT("戦闘");
+    COMBAT("戦闘"),
+    SORT("チェスト整理"),
+    COLLECT("落とし物回収"),
+    FOLLOW("旅・追従");
 
     private final String displayName;
 

@@ -14,6 +14,8 @@ const utilityGroups = [
       { name: 'AnythingFeed', toggle: 'anythingfeed', text: '非繁殖動物に任意の食料で反応するようにします。通常より自由な餌やり挙動になります。' },
       { name: 'AutoPlant', toggle: 'autoplant', text: 'オフハンドに植えたいアイテムを持ちながら耕した土の近くに行くと、自動で植え・収穫します。農地管理を楽にします。' },
       { name: 'AirDash', toggle: 'airdash', text: '空中でジャンプキーを再入力するとエアダッシュします。移動や戦闘の立ち回りを広げます。' },
+      { name: 'Pet', toggle: '常時利用', text: '友好モブごとの「なかよし素材」で仲間にし、一緒に行動・待機・放し飼いを切り替えられます。リードでの散歩にも対応します。' },
+      { name: 'Sit', toggle: '常時利用', text: '/sit で足元のブロックに座れます。再実行または降車キーで立ち上がります。' },
     ],
   },
   {
@@ -40,12 +42,11 @@ const utilityGroups = [
     ],
   },
   {
-    title: '保護・大会・特別システム',
-    summary: '土地保護、リング、トーナメントなど、サーバー内イベントや拠点防衛に関係する機能です。',
+    title: '保護・特別システム',
+    summary: '土地保護など、拠点防衛に関係する機能です。',
     items: [
       { name: 'LandProtect', toggle: 'landprotect', text: 'ロデストーン + ダイヤで作る土地保護コアを有効/無効にします。拠点や土地を守る中心機能です。' },
-      { name: 'Tournament', toggle: 'tournament', text: 'リングを使った頂点決定戦、つまりトーナメント大会機能です。/tournament から利用します。' },
-      { name: 'CopperGolem', toggle: 'coppergolem', text: 'カッパーゴーレムの召喚と作物採取 AI を有効/無効にします。農業や拠点作業を補助します。' },
+      { name: 'CopperGolem', toggle: 'coppergolem', text: '作物採取・戦闘・チェスト整理・落とし物回収・旅の追従を行うカッパーゴーレムです。' },
       { name: 'BetterMenu', toggle: 'bettermenu', text: '木の斧 GUI ツールの生成・起動を有効/無効にします。便利メニュー系の入口です。' },
       { name: 'KeepAliveGuard', toggle: 'keepaliveguard', text: 'OP の keepalive timeout kick を可能な範囲でキャンセルします。管理者向け寄りの安定化機能です。' },
     ],
@@ -115,6 +116,9 @@ export function PlayerUtilitiesSection() {
       <CommandBox command="/tpa ui" description="TPA 用の UI を開きます。" />
       <CommandBox command="/party" description="パーティーメニューを開きます (/p も同じ)。" />
       <CommandBox command="/list" description="オンラインプレイヤー一覧を表示します。" />
+      <CommandBox command="/sit" description="その場に座ります。再実行または降車キーで立ち上がります。" />
+      <CommandBox command="/pet list" description="Pet化できる友好モブの一覧を表示します。" />
+      <CommandBox command="/pet recipe <モブ名>" description="対象モブ用の「なかよし素材」の合成方法を表示します。" />
 
       <h3>注意点</h3>
       <ul className="wiki-bullets">

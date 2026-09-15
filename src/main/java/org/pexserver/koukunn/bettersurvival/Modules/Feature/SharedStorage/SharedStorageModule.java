@@ -15,6 +15,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Chest;
+import org.bukkit.block.Barrel;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.ItemFrame;
@@ -96,8 +97,10 @@ public class SharedStorageModule implements Listener {
     private static final String FEATURE_KEY = "sharedstorage";
     private static final String ROLE_MAIN = "main";
     private static final String ROLE_SUB = "sub";
+    private static final String ROLE_GET = "get";
     private static final String MAIN_PREFIX = "chest-";
     private static final String SUB_PREFIX = "chestsub-";
+    private static final String GET_PREFIX = "chestget-";
     private static final int MAX_SUB_DISTANCE_LIMIT = 50;
     private static final int MENU_TOGGLE_SLOT = SharedStorageSettingsUi.SLOT_SUB_INSERT;
     private static final int MENU_EXTRACT_SLOT = SharedStorageSettingsUi.SLOT_SUB_EXTRACT;
@@ -170,13 +173,48 @@ public class SharedStorageModule implements Listener {
                 .verticalRadius(2.0D)
                 .allowAirCombine(true)
                 .then(this::craftSharedSubMinecart);
+        itemCombineModule.recipe("shared_storage_get")
+                .first(this::isPlainBarrelItem)
+                .second(this::isGetNameTag)
+                .groundRadius(0.5D)
+                .airRadius(1.5D)
+                .verticalRadius(2.0D)
+                .allowAirCombine(true)
+                .then(this::craftSharedGetBarrel);
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (event.getBlockPlaced().getType() != Material.CHEST)
+        if (event.getBlockPlaced().getType() != Material.CHEST && event.getBlockPlaced().getType() != Material.BARREL)
             return;
         StorageItemData itemData = getStorageItemData(event.getItemInHand());
+        if (itemData == null && event.getBlockPlaced().getType() == Material.BARREL) {
+            String namedGetId = resolveGetBarrelItemId(event.getItemInHand());
+            if (namedGetId != null)
+                itemData = new StorageItemData(namedGetId, ROLE_GET);
+        }
+
+        if (itemData != null && ROLE_GET.equals(itemData.role())) {
+            SharedNetwork network = networks.get(itemData.id());
+            if (network == null || network.main() == null) {
+                event.setCancelled(true);
+                event.getPlayer().sendMessage("§c同じIDの主チェストが見つかりません");
+                return;
+            }
+            if (!isWithinNetworkRange(network, event.getBlockPlaced().getLocation())) {
+                event.setCancelled(true);
+                event.getPlayer().sendMessage("§c回収樽は主チェストから" + network.subRange() + "ブロック以内に設置してください");
+                return;
+            }
+            if (event.getBlockPlaced().getState() instanceof Barrel barrel) {
+                barrel.setCustomName(GET_PREFIX + itemData.id());
+                barrel.update(true, false);
+            }
+            return;
+        }
+
+        if (event.getBlockPlaced().getType() == Material.BARREL)
+            return;
 
         if (itemData == null) {
             if (isAdjacentToMainChest(event.getBlockPlaced())) {
@@ -216,6 +254,16 @@ public class SharedStorageModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
+        String getId = resolveGetBarrelId(event.getBlock());
+        if (getId != null) {
+            if (event.getPlayer().getGameMode() != org.bukkit.GameMode.CREATIVE) {
+                event.setDropItems(false);
+                event.getBlock().getWorld().dropItemNaturally(
+                        event.getBlock().getLocation().add(0.5D, 0.1D, 0.5D),
+                        createSharedGetBarrelItem(getId));
+            }
+            return;
+        }
         Placement placement = resolvePlacement(event.getBlock().getLocation());
         if (placement == null)
             return;
@@ -242,7 +290,15 @@ public class SharedStorageModule implements Listener {
         if (event.getHand() != EquipmentSlot.HAND)
             return;
         Block clicked = event.getClickedBlock();
-        if (clicked == null || clicked.getType() != Material.CHEST)
+        if (clicked == null)
+            return;
+        String getId = resolveGetBarrelId(clicked);
+        if (getId != null && event.getAction().isRightClick() && toggle.getGlobal(FEATURE_KEY)) {
+            event.setCancelled(true);
+            openGetBarrel(event.getPlayer(), clicked, getId);
+            return;
+        }
+        if (clicked.getType() != Material.CHEST)
             return;
         Placement placement = resolvePlacement(clicked.getLocation());
         if (placement == null || !placement.isMain())
@@ -278,6 +334,11 @@ public class SharedStorageModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onInventoryOpen(InventoryOpenEvent event) {
+        String getId = resolveGetBarrelId(event.getInventory());
+        if (getId != null) {
+            event.setCancelled(true);
+            return;
+        }
         Placement placement = resolvePlacement(event.getInventory());
         if (placement == null || !placement.isMain() || !toggle.getGlobal(FEATURE_KEY))
             return;
@@ -376,6 +437,10 @@ public class SharedStorageModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onInventoryMoveItem(InventoryMoveItemEvent event) {
+        if (resolveGetBarrelId(event.getSource()) != null || resolveGetBarrelId(event.getDestination()) != null) {
+            event.setCancelled(true);
+            return;
+        }
         // source 側の禁止判定を先に行う。後段の contribution 記録より前にキャンセルを確定させないと、
         // キャンセルされた搬送が pending として記録されてしまう
         Placement sourcePlacement = resolvePlacement(event.getSource());
@@ -610,6 +675,29 @@ public class SharedStorageModule implements Listener {
     }
 
     private void openChestPageCategoryMenu(Player player, SharedNetwork network, int page) {
+        openChestPageCategoryMenu(player, network, page, false);
+    }
+
+    private void openGetBarrel(Player player, Block barrel, String networkId) {
+        SharedNetwork network = networks.get(networkId);
+        if (network == null || network.main() == null) {
+            player.sendMessage("§c同じIDの主チェストが見つかりません");
+            return;
+        }
+        if (!isWithinNetworkRange(network, barrel.getLocation())) {
+            player.sendMessage("§cこの回収樽は主チェストの接続範囲外です §7(現在: " + network.subRange() + "ブロック)");
+            return;
+        }
+        if (!network.enableChestPage()) {
+            player.sendMessage("§c主チェストの設定でChestPageを有効にしてください");
+            return;
+        }
+        if (!canUseContainer(player, barrel.getLocation()) || !canUseContainer(player, network.main()))
+            return;
+        openChestPageCategoryMenu(player, network, 0, true);
+    }
+
+    private void openChestPageCategoryMenu(Player player, SharedNetwork network, int page, boolean getBarrelView) {
         List<SubCategoryEntry> categories = resolveSubCategoryEntries(network, player);
         if (categories.isEmpty()) {
             player.sendMessage("§esubコンテナが見つかりません");
@@ -629,8 +717,11 @@ public class SharedStorageModule implements Listener {
                 network.id(),
                 page,
                 entries,
-                (p, nextPage) -> openChestPageCategoryMenu(p, network, nextPage),
-                p -> openMainMenu(p, network),
+                (p, nextPage) -> openChestPageCategoryMenu(p, network, nextPage, getBarrelView),
+                p -> {
+                    if (getBarrelView) ChestUI.closeMenu(p);
+                    else openMainMenu(p, network);
+                },
                 (p, index) -> {
                     SubCategoryEntry category = categories.get(index);
                     if (category.subs().size() == 1) {
@@ -641,11 +732,16 @@ public class SharedStorageModule implements Listener {
                         p.openInventory(sub.inventory());
                         return;
                     }
-                    openChestPageSubMenu(p, network, category.key(), index / 45, 0);
+                    openChestPageSubMenu(p, network, category.key(), index / 45, 0, getBarrelView);
                 });
     }
 
     private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage) {
+        openChestPageSubMenu(player, network, categoryKey, categoryPage, subPage, false);
+    }
+
+    private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage,
+                                      boolean getBarrelView) {
         List<SubCategoryEntry> categories = resolveSubCategoryEntries(network, player);
         SubCategoryEntry category = null;
         for (SubCategoryEntry entry : categories) {
@@ -655,7 +751,7 @@ public class SharedStorageModule implements Listener {
             }
         }
         if (category == null || category.subs().isEmpty()) {
-            openChestPageCategoryMenu(player, network, categoryPage);
+            openChestPageCategoryMenu(player, network, categoryPage, getBarrelView);
             return;
         }
         List<ResolvedInventory> subs = category.subs();
@@ -676,8 +772,8 @@ public class SharedStorageModule implements Listener {
                 category.useDefaultItemLabel() ? "アイテム" : ChatColor.stripColor(category.displayName()),
                 subPage,
                 entries,
-                (p, nextPage) -> openChestPageSubMenu(p, network, categoryKey, categoryPage, nextPage),
-                p -> openChestPageCategoryMenu(p, network, categoryPage),
+                (p, nextPage) -> openChestPageSubMenu(p, network, categoryKey, categoryPage, nextPage, getBarrelView),
+                p -> openChestPageCategoryMenu(p, network, categoryPage, getBarrelView),
                 (p, index) -> {
                     ResolvedInventory sub = subs.get(index);
                     if (!canUseSubInventory(p, sub))
@@ -875,6 +971,18 @@ public class SharedStorageModule implements Listener {
         Location center = match.center();
         center.getWorld().dropItemNaturally(center, createSharedSubMinecartItem(tag.id()));
         center.getWorld().playSound(center, Sound.BLOCK_ENDER_CHEST_OPEN, 0.8F, 1.3F);
+    }
+
+    private void craftSharedGetBarrel(ItemCombineModule.CombineMatch match) {
+        if (!toggle.getGlobal(FEATURE_KEY))
+            return;
+        StorageNameTag tag = getStorageNameTag(match.second().getItemStack(), ROLE_GET);
+        if (tag == null)
+            return;
+        match.consumeMatchedItems(1, 1);
+        Location center = match.center();
+        center.getWorld().dropItemNaturally(center, createSharedGetBarrelItem(tag.id()));
+        center.getWorld().playSound(center, Sound.BLOCK_BARREL_OPEN, 0.8F, 1.2F);
     }
 
     private PlacementConflict findPlacementConflict(List<Location> footprint, StorageItemData itemData) {
@@ -1801,6 +1909,45 @@ public class SharedStorageModule implements Listener {
         return !meta.hasDisplayName();
     }
 
+    private boolean isPlainBarrelItem(ItemStack stack) {
+        return stack != null && stack.getType() == Material.BARREL && !isCustomSharedChest(stack);
+    }
+
+    private boolean isWithinNetworkRange(SharedNetwork network, Location location) {
+        if (network == null || network.main() == null || location == null)
+            return false;
+        return containerDistance(resolveContainerLocations(network.main()), List.of(location)) <= network.subRange();
+    }
+
+    private String resolveGetBarrelId(Block block) {
+        if (block == null || block.getType() != Material.BARREL || !(block.getState() instanceof Barrel barrel))
+            return null;
+        return parseGetBarrelId(barrel.getCustomName());
+    }
+
+    private String resolveGetBarrelId(Inventory inventory) {
+        if (inventory == null || !(inventory.getHolder() instanceof Barrel barrel))
+            return null;
+        return parseGetBarrelId(barrel.getCustomName());
+    }
+
+    private String resolveGetBarrelItemId(ItemStack stack) {
+        if (stack == null || stack.getType() != Material.BARREL || !stack.hasItemMeta())
+            return null;
+        ItemMeta meta = stack.getItemMeta();
+        return meta.hasDisplayName() ? parseGetBarrelId(meta.getDisplayName()) : null;
+    }
+
+    private String parseGetBarrelId(String rawName) {
+        if (rawName == null || rawName.isBlank())
+            return null;
+        String normalized = ChatColor.stripColor(rawName).trim();
+        if (!normalized.toLowerCase(Locale.ROOT).startsWith(GET_PREFIX))
+            return null;
+        String id = normalized.substring(GET_PREFIX.length()).trim();
+        return id.isEmpty() ? null : id;
+    }
+
     private boolean hasAdjacentChest(Block block) {
         for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
             Material type = block.getRelative(face).getType();
@@ -1825,6 +1972,10 @@ public class SharedStorageModule implements Listener {
 
     private boolean isSubNameTag(ItemStack stack) {
         return getStorageNameTag(stack, ROLE_SUB) != null;
+    }
+
+    private boolean isGetNameTag(ItemStack stack) {
+        return getStorageNameTag(stack, ROLE_GET) != null;
     }
 
     private java.util.Optional<Location> resolveMainLockLocation(Location location) {
@@ -1863,7 +2014,7 @@ public class SharedStorageModule implements Listener {
         if (raw == null)
             return null;
         String normalized = raw.trim().toLowerCase(Locale.ROOT);
-        String prefix = ROLE_MAIN.equals(role) ? MAIN_PREFIX : SUB_PREFIX;
+        String prefix = ROLE_MAIN.equals(role) ? MAIN_PREFIX : ROLE_SUB.equals(role) ? SUB_PREFIX : GET_PREFIX;
         if (!normalized.startsWith(prefix))
             return null;
         String id = raw.trim().substring(prefix.length()).trim();
@@ -1899,12 +2050,26 @@ public class SharedStorageModule implements Listener {
         return stack;
     }
 
+    private ItemStack createSharedGetBarrelItem(String id) {
+        ItemStack stack = new ItemStack(Material.BARREL);
+        ItemMeta meta = stack.getItemMeta();
+        ComponentUtils.setDisplayName(meta, "§b共有ストレージ回収樽 §7[get:" + id + "]");
+        ComponentUtils.setLore(meta,
+                "§7ID: " + id,
+                "§7右クリックで全アイテム一覧を開きます",
+                "§7主チェストの接続範囲内でのみ使用できます");
+        meta.getPersistentDataContainer().set(roleKey, PersistentDataType.STRING, ROLE_GET);
+        meta.getPersistentDataContainer().set(idKey, PersistentDataType.STRING, id);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
     private boolean isCustomSharedChest(ItemStack stack) {
         return getStorageItemData(stack) != null;
     }
 
     private StorageItemData getStorageItemData(ItemStack stack) {
-        if (stack == null || stack.getType() != Material.CHEST || !stack.hasItemMeta())
+        if (stack == null || (stack.getType() != Material.CHEST && stack.getType() != Material.BARREL) || !stack.hasItemMeta())
             return null;
         ItemMeta meta = stack.getItemMeta();
         String role = meta.getPersistentDataContainer().get(roleKey, PersistentDataType.STRING);

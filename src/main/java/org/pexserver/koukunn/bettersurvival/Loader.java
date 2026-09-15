@@ -59,6 +59,14 @@ import org.pexserver.koukunn.bettersurvival.Commands.offline.OfflineCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.w.WhitelistCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.party.PartyCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.land.LandCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.youtube.YouTubeCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.sit.SitCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.pet.PetCommand;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.YouTube.YouTubeLiveChatModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Pet.PetModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Sit.SitListener;
+import org.pexserver.koukunn.bettersurvival.Commands.hardmode.HardModeCommand;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.TrueCrafterMode.TrueCrafterModeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Tpa.TpaModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeListener;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
@@ -103,15 +111,17 @@ public final class Loader extends JavaPlugin {
     private CustomEnchantTableModule customEnchantTableModule;
     private WarpStoneModule warpStoneModule;
     private KeepAliveGuardModule keepAliveGuardModule;
-    private org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule ringModule;
-    private org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule tournamentModule;
     private OfflineAccessModule offlineAccessModule;
+    private YouTubeLiveChatModule youTubeLiveChatModule;
+    private PetModule petModule;
+    private TrueCrafterModeModule trueCrafterMode;
 
     @Override
     public void onEnable() {
         // マネージャーを初期化
         commandManager = new CommandManager(this);
         configManager = new ConfigManager(this);
+        youTubeLiveChatModule = new YouTubeLiveChatModule(this);
         ChestUI.register();
         DialogUI.register();
         pendingWhitelistModule = new PendingWhitelistModule(this, configManager);
@@ -136,13 +146,20 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(offlineAccessModule, this);
         offlineAccessModule.inject();
 
+        /** /pet コマンドへ有効なモジュールを渡すため、コマンド登録前に初期化する。 */
+        itemCombineModule = new ItemCombineModule(this);
+        getServer().getPluginManager().registerEvents(itemCombineModule, this);
+        petModule = new PetModule(this, itemCombineModule);
+        getServer().getPluginManager().registerEvents(petModule, this);
+        trueCrafterMode = new TrueCrafterModeModule(this);
+        getServer().getPluginManager().registerEvents(trueCrafterMode, this);
+
         // コマンドを登録
         registerCommands();
 
         // Toggle module (GUI)
         getServer().getPluginManager().registerEvents(new ToggleListener(toggleModule), this);
-        itemCombineModule = new ItemCombineModule(this);
-        getServer().getPluginManager().registerEvents(itemCombineModule, this);
+        getServer().getPluginManager().registerEvents(new SitListener(this), this);
 
         // TreeMine モジュール登録
         TreeMineModule treemine = new TreeMineModule(toggleModule);
@@ -218,13 +235,6 @@ public final class Loader extends JavaPlugin {
         // JPCh モジュール登録 (ローマ字チャットを日本語へ自動変換)
         JpChModule jpChModule = new JpChModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(jpChModule, this);
-        // Ring モジュール登録 (土地保護内の闘技場リング / Duel / マッチング)
-        ringModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule(this, landProtectionModule);
-        landProtectionModule.setRingModule(ringModule);
-        getServer().getPluginManager().registerEvents(ringModule, this);
-        // Tournament モジュール登録 (頂点決定戦: リングを使ったトーナメント大会)
-        tournamentModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule(this, toggleModule, ringModule);
-        getServer().getPluginManager().registerEvents(tournamentModule, this);
         webServiceModule = new WebServiceModule(this);
         getServer().getPluginManager().registerEvents(webServiceModule, this);
         webMapModule = new WebMapModule(this);
@@ -307,7 +317,6 @@ public final class Loader extends JavaPlugin {
         toggleModule.registerFeature(
             new ToggleFeature(JpChModule.FEATURE_KEY, "JPCh", "チャットのローマ字を検出して日本語へ自動翻訳します", Material.WRITABLE_BOOK, false));
         toggleModule.registerFeature(
-            new ToggleFeature("tournament", "Tournament", "リングを使った頂点決定戦(トーナメント大会)を有効/無効にします (/tournament)", Material.GOLDEN_SWORD, false));        toggleModule.registerFeature(
                 new ToggleFeature("offlineaccess", "OfflineAccess", "オフラインアカウントのログインを許可/拒否します", Material.COMPASS, false));        if (!toggleModule.hasGlobal("treemine")) {
             toggleModule.setGlobal("treemine", true);
         }
@@ -398,9 +407,6 @@ public final class Loader extends JavaPlugin {
         if (!toggleModule.hasGlobal(JpChModule.FEATURE_KEY)) {
             toggleModule.setGlobal(JpChModule.FEATURE_KEY, true);
         }
-        if (!toggleModule.hasGlobal("tournament")) {
-            toggleModule.setGlobal("tournament", true);
-        }
         getLogger().info("Better Survival Plugin が有効になりました");
     }
 
@@ -443,12 +449,14 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new PartyCommand(this, "p"));
         // Land command: 土地保護のデバッグ表示・情報
         commandManager.register(new LandCommand(this));
-        // Tournament command: 頂点決定戦（トーナメント大会）の参加・管理
-        commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.tournament.TournamentCommand(this));
         // OfflineAccess command: オフラインアカウントログイン許可リスト管理
         commandManager.register(new OfflineCommand(offlineAccessModule));
         // Command: グローバル無効化コマンド
         commandManager.register(new CommandCommand(this.commandBlockManager));
+        commandManager.register(new YouTubeCommand(youTubeLiveChatModule));
+        commandManager.register(new SitCommand(this));
+        commandManager.register(new PetCommand(petModule));
+        commandManager.register(new HardModeCommand(trueCrafterMode));
         // 他のコマンドはここに追加できます
     }
 
@@ -533,14 +541,6 @@ public final class Loader extends JavaPlugin {
         return warpStoneModule;
     }
 
-    public org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ring.RingModule getRingModule() {
-        return ringModule;
-    }
-
-    public org.pexserver.koukunn.bettersurvival.Modules.Feature.Tournament.TournamentModule getTournamentModule() {
-        return tournamentModule;
-    }
-
     public WebMapModule getWebMapModule() {
         return webMapModule;
     }
@@ -590,12 +590,6 @@ public final class Loader extends JavaPlugin {
         if (chunkLoaderModule != null) {
             chunkLoaderModule.shutdown();
         }
-        if (tournamentModule != null) {
-            tournamentModule.shutdown();
-        }
-        if (ringModule != null) {
-            ringModule.shutdown();
-        }
         if (landProtectionModule != null) {
             landProtectionModule.shutdown();
         }
@@ -613,6 +607,15 @@ public final class Loader extends JavaPlugin {
         }
         if (warpStoneModule != null) {
             warpStoneModule.shutdown();
+        }
+        if (youTubeLiveChatModule != null) {
+            youTubeLiveChatModule.shutdown();
+        }
+        if (petModule != null) {
+            petModule.shutdown();
+        }
+        if (trueCrafterMode != null) {
+            trueCrafterMode.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }

@@ -49,11 +49,6 @@ public class CropHarvestWorker {
             boolean allowBoneMeal) {
         tickHeldItemAnimation(golem);
 
-        if (profile.cropFilters().isEmpty()) {
-            clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
-            return 0;
-        }
-
         int capacity = Math.max(1, harvestCapacity);
         if (capacity <= 0) {
             clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
@@ -92,6 +87,11 @@ public class CropHarvestWorker {
         // 収穫より前に処理することで「自律的にすぐ耕す」挙動になる。
         if (profile.autoTill()
                 && handleTrampledFarmland(golem, searchCenter, range, maxHarvestBlocks, moveSpeed)) {
+            return 0;
+        }
+
+        if (profile.cropFilters().isEmpty()) {
+            clearHeldItem(golem, CopperGolem.State.GETTING_NO_ITEM);
             return 0;
         }
 

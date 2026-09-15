@@ -75,7 +75,6 @@ export function PartySection() {
       <h3>他機能との連携</h3>
       <ul className="wiki-bullets">
         <li><strong>土地保護</strong>: コアの管理者にパーティー全体を紐付けできます。リーダー / サブリーダーがコア設定を触れ、メンバーは自動でアクセス許可。</li>
-        <li><strong>Ring / Tournament</strong>: パーティー単位で参加する運用も可能 (現在地の設定に依存)。</li>
         <li><strong>DeathChest / ChestLock</strong>: パーティーメンバーに個別で共有権限を付ける運用ができます。</li>
       </ul>
 

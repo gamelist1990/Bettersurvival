@@ -95,13 +95,10 @@ export function LandProtectionSection() {
       <h3>コマンド</h3>
       <CommandBox command="/land info" description="現在地の保護状況 (オーナー / レベル / 半径 / 消費速度 / 燃料残 / 領地 PvP) を表示します。" />
       <CommandBox command="/land debug" description="保護境界線をパーティクルでデバッグ表示。緑 = アクセス可 / 赤 = 他人の領地 / 灰 = 無効。" />
-      <CommandBox command="/land ring" description="リング (闘技場) 設定 UI をこの領地で開く。オーナー / 副リーダーのみ。" />
 
       <h3>連携する他機能</h3>
       <ul className="wiki-bullets">
         <li><strong>Party</strong>: リーダー / 副リーダーが管理でき、メンバーが自動的にアクセス許可されます。</li>
-        <li><strong>Ring (闘技場)</strong>: 領地内にリングを定義して 1v1 デュエルなどが行えます。<code>/land ring</code> から設定。</li>
-        <li><strong>Tournament</strong>: リングを使ったトーナメント大会。土地保護のリング設定が前提。</li>
         <li><strong>DeathChest</strong>: 死亡時の保管チェストは土地保護の中でのみ守られます。</li>
         <li><strong>ParallelFurnace</strong> / <strong>ChestLock</strong> / <strong>ChestShop</strong>: 領地内では所有者以外の操作を制限します。</li>
       </ul>

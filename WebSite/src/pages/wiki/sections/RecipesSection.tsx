@@ -94,6 +94,16 @@ const recipes: Recipe[] = [
     note: 'レール上でも sub として動作します。',
   },
   {
+    name: '共有ストレージ 回収樽',
+    category: '共有ストレージ',
+    itemA: '樽',
+    itemB: '名前を「chestget-<ID>」にした名札 (main と同じ ID)',
+    result: '回収専用の樽',
+    toggleKey: 'sharedstorage',
+    defaultOn: false,
+    note: '主チェストの接続範囲内で右クリックすると、ChestPageの全アイテム一覧を開けます。',
+  },
+  {
     name: 'ParallelFurnace / 並列かまど',
     category: '生産',
     itemA: 'かまど',

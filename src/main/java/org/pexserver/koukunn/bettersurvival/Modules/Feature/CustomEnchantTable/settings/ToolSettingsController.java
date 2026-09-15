@@ -1,6 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.settings;
 
-import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;

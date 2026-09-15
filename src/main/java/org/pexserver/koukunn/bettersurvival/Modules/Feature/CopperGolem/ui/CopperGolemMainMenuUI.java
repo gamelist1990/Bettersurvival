@@ -39,7 +39,7 @@ public final class CopperGolemMainMenuUI {
             int boneMealUnlockCost,
             ActionHandler handler) {
         switch (profile.mode()) {
-            case IDLE -> openIdleMenu(player, profile, maxRange, handler);
+            case IDLE, SORT, COLLECT, FOLLOW -> openIdleMenu(player, profile, maxRange, handler);
             case CROP -> openCropMenu(player, profile, maxRange, replantUnlocked, boneMealUnlocked, replantUnlockCost, boneMealUnlockCost, handler);
             case COMBAT -> openCombatMenu(player, profile, maxRange, handler);
         }
@@ -54,21 +54,22 @@ public final class CopperGolemMainMenuUI {
                 + "\n§7Level: §f" + profile.level()
                 + "\n§7未使用ポイント: §e" + profile.availablePoints()
                 + "\n§7Mode: §f" + profile.mode().getDisplayName()
-                + "\n§7状態: §f停止中"
+                + "\n§7状態: §f" + profile.mode().getDisplayName()
                 + "\n§7行動範囲: §f" + profile.range() + " / " + maxRange
                 + "\n§7範囲拡張: §f" + profile.rangePoints()
                 + "\n§7保管先: §f" + profile.targets().size() + "件";
 
         ChestUI.builder()
-                .title("Copper Golem [Idle]: " + profile.id())
+                .title("Copper Golem [" + profile.mode().getDisplayName() + "]: " + profile.id())
                 .size(54)
                 .addButtonAt(4, "§6ステータス", Material.COPPER_BLOCK, info)
                 .addButtonAt(10, "§bモード切替", Material.COMPARATOR, "§7現在: " + profile.mode().getDisplayName())
                 .addButtonAt(11, "§e行動範囲", Material.SPYGLASS, "§71 〜 " + maxRange + " の範囲で設定")
                 .addButtonAt(13, "§6範囲拡張 +1", Material.COMPASS,
                         "§7必要ポイント: 1\n§7現在: " + profile.rangePoints() + "\n§7最大行動範囲が増えます")
-                .addButtonAt(19, "§7機能スロット", Material.GRAY_STAINED_GLASS_PANE, "§7戦闘モードで利用可能")
-                .addButtonAt(20, "§6保管先設定", Material.CHEST, "§7チェスト/ラージチェスト/樽を複数登録")
+                .addButtonAt(19, "§6利用可能モード", Material.HOPPER,
+                        "§7作物採取 / 戦闘 / チェスト整理\n§7落とし物回収 / 旅・追従 / Idle")
+                .addButtonAt(20, "§6保管先設定", Material.CHEST, "§7整理・回収先のチェスト/樽を複数登録")
                 .addButtonAt(53, "§c閉じる", Material.BARRIER, "")
                 .then((result, p) -> {
                     if (result.slot == null) {

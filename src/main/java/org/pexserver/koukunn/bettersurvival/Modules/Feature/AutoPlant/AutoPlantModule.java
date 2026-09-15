@@ -55,6 +55,7 @@ public class AutoPlantModule implements Listener {
         base = base.replaceFirst("_SEEDS?$", "");
 
         for (Material m : Material.values()) {
+            if (m.isLegacy()) continue;
             if (!m.isBlock()) continue;
             try {
                 if (!(m.createBlockData() instanceof Ageable)) continue;
@@ -68,7 +69,7 @@ public class AutoPlantModule implements Listener {
         for (String sfx : suffixes) {
             try {
                 Material m = Material.valueOf(base + sfx);
-                if (m.isBlock()) {
+                if (!m.isLegacy() && m.isBlock()) {
                     try {
                         if (m.createBlockData() instanceof Ageable) return m;
                     } catch (Throwable ignored) {}
@@ -77,6 +78,7 @@ public class AutoPlantModule implements Listener {
         }
 
         for (Material m : Material.values()) {
+            if (m.isLegacy()) continue;
             if (!m.isBlock()) continue;
             try {
                 if (!(m.createBlockData() instanceof Ageable)) continue;

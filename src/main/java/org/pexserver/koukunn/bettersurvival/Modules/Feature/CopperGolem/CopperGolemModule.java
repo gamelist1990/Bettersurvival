@@ -56,6 +56,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.Com
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.CropModeWorker;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.ModeExecutionContext;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.ModeWorker;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.mode.UtilityModeWorker;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.ContainerTarget;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.CropRouteMode;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.GolemMode;
@@ -112,6 +113,7 @@ public class CopperGolemModule implements Listener {
     private final CopperGolemCraftItems craftItems;
     private final CropHarvestWorker cropHarvestWorker;
     private final CombatWorker combatWorker;
+    private final UtilityModeWorker utilityModeWorker;
     private final Map<GolemMode, ModeWorker> modeWorkers = new LinkedHashMap<>();
 
     private final org.bukkit.NamespacedKey summonCoreKey;
@@ -138,8 +140,12 @@ public class CopperGolemModule implements Listener {
         this.craftItems = new CopperGolemCraftItems(this.summonCoreKey);
         this.cropHarvestWorker = new CropHarvestWorker();
         this.combatWorker = new CombatWorker();
+        this.utilityModeWorker = new UtilityModeWorker(plugin);
         this.modeWorkers.put(GolemMode.CROP, new CropModeWorker(this.cropHarvestWorker));
         this.modeWorkers.put(GolemMode.COMBAT, new CombatModeWorker(this.combatWorker));
+        this.modeWorkers.put(GolemMode.SORT, this.utilityModeWorker);
+        this.modeWorkers.put(GolemMode.COLLECT, this.utilityModeWorker);
+        this.modeWorkers.put(GolemMode.FOLLOW, this.utilityModeWorker);
         loadProfiles();
         registerRecipes(itemCombineModule);
         this.workerTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickWorkers, 20L, 20L);
@@ -203,6 +209,7 @@ public class CopperGolemModule implements Listener {
         }
 
         event.setCancelled(true);
+        utilityModeWorker.assign(golem, event.getPlayer());
         openMainMenu(event.getPlayer(), profile);
     }
 
@@ -396,6 +403,7 @@ public class CopperGolemModule implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onEntityDeath(EntityDeathEvent event) {
         if (event.getEntity() instanceof CopperGolem golem) {
+            utilityModeWorker.releaseCargo(golem);
             String id = golem.getPersistentDataContainer().get(golemIdKey, PersistentDataType.STRING);
             if (id == null || id.isBlank()) {
                 return;
@@ -1977,7 +1985,10 @@ public class CopperGolemModule implements Listener {
         return switch (mode) {
             case IDLE -> GolemMode.CROP;
             case CROP -> GolemMode.COMBAT;
-            case COMBAT -> GolemMode.IDLE;
+            case COMBAT -> GolemMode.SORT;
+            case SORT -> GolemMode.COLLECT;
+            case COLLECT -> GolemMode.FOLLOW;
+            case FOLLOW -> GolemMode.IDLE;
         };
     }
 
@@ -1989,6 +2000,10 @@ public class CopperGolemModule implements Listener {
             }
             if (isSharedStorageContainer(location)) {
                 player.sendMessage("§cSharedStorage 管理チェストは登録できません");
+                return false;
+            }
+            if (plugin.getChestShopModule() != null && plugin.getChestShopModule().isShopChest(location)) {
+                player.sendMessage("§cChestShop のチェストは登録できません");
                 return false;
             }
             if (isProtectedByOthers(player, location)) {

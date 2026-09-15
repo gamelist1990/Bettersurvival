@@ -22,7 +22,7 @@ export function AdminToggleSection() {
         <li><strong>採掘・農業</strong>: treemine、oremine、autofeed、autofishing、anythingfeed、autoplant</li>
         <li><strong>チェスト・保管</strong>: chestlock、chestshop、chestsort、sharedstorage、deathchest</li>
         <li><strong>カスタム要素</strong>: enchantsplit、customenchant、parallelfurnace、recycler、chunkloader、warpstone</li>
-        <li><strong>ワールド・コミュニティ</strong>: home、tpa、party、landprotect、tournament、webmap、webservice</li>
+        <li><strong>ワールド・コミュニティ</strong>: home、tpa、party、landprotect、webmap、webservice</li>
         <li><strong>環境対応</strong>: bedrockskin、geyseranvil、geysersmithing、offlineaccess、keepaliveguard</li>
       </ul>
 
