@@ -299,10 +299,7 @@ public final class TrueCrafterModeModule implements Listener {
     public void onKnightShoot(EntityShootBowEvent event) {
         if (!(event.getEntity() instanceof WitherSkeleton skeleton) || !skeleton.getPersistentDataContainer().has(witherKnightKey, PersistentDataType.BYTE)) return;
         UUID id = skeleton.getUniqueId();
-        if (witherKnightCooldowns.getOrDefault(id, 0) > 0) {
-            event.setCancelled(true);
-            return;
-        }
+        if (witherKnightCooldowns.getOrDefault(id, 0) > 0) return;
         if (witherKnightShots.merge(id, 1, Integer::sum) < 4) return;
         witherKnightShots.remove(id);
         witherKnightCooldowns.put(id, 140);

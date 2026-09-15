@@ -53,6 +53,8 @@ public final class StandardEnemyAiSystem {
     private final Map<UUID, Integer> piglinFireTicks = new HashMap<>();
     private final Map<UUID, Integer> piglinCrossbowTicks = new HashMap<>();
     private final Map<UUID, Boolean> creeperExplosionRecovery = new HashMap<>();
+    private final Map<UUID, Boolean> zombieLeaping = new HashMap<>();
+    private final Map<UUID, Boolean> zombieLeapAirborne = new HashMap<>();
     private final Map<UUID, Boolean> zombieBruteLeaping = new HashMap<>();
     private final NamespacedKey variantKey = new NamespacedKey("bettersurvival", "truecrafter_variant");
 
@@ -111,6 +113,8 @@ public final class StandardEnemyAiSystem {
         piglinFireTicks.remove(id);
         piglinCrossbowTicks.remove(id);
         creeperExplosionRecovery.remove(id);
+        zombieLeaping.remove(id);
+        zombieLeapAirborne.remove(id);
         zombieBruteLeaping.remove(id);
     }
 
@@ -122,6 +126,8 @@ public final class StandardEnemyAiSystem {
         piglinFireTicks.clear();
         piglinCrossbowTicks.clear();
         creeperExplosionRecovery.clear();
+        zombieLeaping.clear();
+        zombieLeapAirborne.clear();
         zombieBruteLeaping.clear();
     }
 
@@ -134,24 +140,49 @@ public final class StandardEnemyAiSystem {
             ticks.remove(zombie.getUniqueId());
             return;
         }
-        double distance = zombie.getLocation().distance(target.getLocation());
-        if (distance > 10.0D || zombie.isInWater()) {
-            ticks.remove(zombie.getUniqueId());
-            return;
-        }
+        UUID id = zombie.getUniqueId();
+        boolean leaping = zombieLeaping.containsKey(id);
+        updateZombieLeap(zombie, target, leaping);
+        int current = ticks.getOrDefault(id, 0);
+        boolean standstill = zombie.isOnGround() && zombie.getVelocity().getX() * zombie.getVelocity().getX()
+                + zombie.getVelocity().getZ() * zombie.getVelocity().getZ() < 1.0E-6D;
+        if (current < 30 && (leaping || standstill || zombie.getLocation().distanceSquared(target.getLocation()) > 100.0D)) return;
         int tick = increase(zombie);
         if (tick == 30) {
             zombie.getWorld().playSound(zombie.getLocation(), Sound.ENTITY_BREEZE_IDLE_GROUND, 1.0F, 2.0F);
             zombie.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 40, 1, false, false));
             zombie.getWorld().spawnParticle(Particle.ANGRY_VILLAGER, zombie.getEyeLocation(), 1);
+            tick = increase(zombie);
         }
-        if (tick == 40 && clearAhead(zombie)) {
+        if (!bruteLeapPathClear(zombie)) {
+            ticks.remove(id);
+            return;
+        }
+        if (tick == 40 && !leaping) {
             zombie.getWorld().playSound(zombie.getLocation(), Sound.ENTITY_GOAT_LONG_JUMP, 1.0F, 1.2F);
             zombie.getWorld().playSound(zombie.getLocation(), Sound.ENTITY_WITCH_THROW, 1.0F, 0.5F);
             Vector motion = target.getLocation().toVector().subtract(zombie.getLocation().toVector()).normalize().multiply(1.0D).setY(0.4D);
             zombie.setVelocity(motion);
+            setBase(zombie, Attribute.ATTACK_KNOCKBACK, 1.5D);
+            zombieLeaping.put(id, true);
         }
-        if (tick >= 80) ticks.remove(zombie.getUniqueId());
+        if (tick >= 80) ticks.remove(id);
+    }
+
+    private void updateZombieLeap(Zombie zombie, Player target, boolean leaping) {
+        if (!leaping) return;
+        UUID id = zombie.getUniqueId();
+        Vector direction = target.getLocation().toVector().subtract(zombie.getLocation().toVector()).setY(0.0D);
+        if (direction.lengthSquared() > 0.0D) {
+            Location facing = zombie.getLocation();
+            facing.setDirection(direction);
+            zombie.setRotation(facing.getYaw(), zombie.getLocation().getPitch());
+        }
+        if (!zombie.isOnGround()) zombieLeapAirborne.put(id, true);
+        if (!zombieLeapAirborne.containsKey(id) || (!zombie.isOnGround() && !zombie.isInWater())) return;
+        zombieLeaping.remove(id);
+        zombieLeapAirborne.remove(id);
+        setBase(zombie, Attribute.ATTACK_KNOCKBACK, 0.0D);
     }
 
     private void zombieBrute(Zombie zombie, Player target) {
@@ -474,15 +505,15 @@ public final class StandardEnemyAiSystem {
     }
 
     private void slime(Slime slime) {
-        boolean magma = slime instanceof MagmaCube;
-        int nearbyLimit = magma ? 7 : 5;
-        long nearby = slime.getNearbyEntities(16, 16, 16).stream().filter(entity -> magma ? entity instanceof MagmaCube : entity instanceof Slime && !(entity instanceof MagmaCube)).count();
-        if (nearby >= nearbyLimit) {
+        long nearbySlimes = slime.getNearbyEntities(16, 16, 16).stream()
+                .filter(entity -> entity.getType() == org.bukkit.entity.EntityType.SLIME).count();
+        long limit = slime instanceof MagmaCube ? 6L : 5L;
+        if (nearbySlimes >= limit) {
             ticks.remove(slime.getUniqueId());
             return;
         }
         int size = slime.getSize();
-        int threshold = magma ? (size == 0 ? 180 : 140) : (size == 0 ? 160 : 100);
+        int threshold = size == 0 ? 160 : 100;
         if (increase(slime) < threshold || size >= 4) return;
         ticks.remove(slime.getUniqueId());
         slime.setSize(size + 1);

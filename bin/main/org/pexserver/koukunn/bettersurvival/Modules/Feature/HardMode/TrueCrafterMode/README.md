@@ -166,8 +166,8 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 
 | 本家 Mob | 照合状況 | 対応する実装 |
 | --- | --- | --- |
-| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲 | `StandardEnemyAiSystem` |
-| スライム / マグマキューブ | [x] 敵対時の膨張時刻・同族数上限 | `StandardEnemyAiSystem` |
+| ゾンビ / ゾンビブルート / クモ / 洞窟グモ | [x] 個別攻撃タイマー、ゾンビの移動中限定の跳躍準備・空中の向き固定・着地復帰、ゾンビブルートの跳躍後カウント保持、前方2ブロック判定、着地範囲 | `StandardEnemyAiSystem` |
+| スライム / マグマキューブ | [x] 敵対時の160/100tick膨張、スライム数上限、サイズごとの能力値。マグマキューブは本家どおり同じ継承処理 | `StandardEnemyAiSystem` |
 | クリーパー | [x] 停止中だけ進む1〜25tick、25tick後の自動進行、30tick爆発、通常／追跡採掘で共有する3回上限 | `StandardEnemyAiSystem` / `TrueCrafterModeModule` |
 | クリーパー追跡採掘 | [x] 壁越し・近距離・同高度での50tick大爆発 | `TrueCrafterModeModule` |
 | ピグリン剣 / クロスボウ / ブルート | [x] 回復・耐火飲用・後退先の足場判定、予備動作後も継続する衝撃波タイマー | `StandardEnemyAiSystem` |
@@ -181,7 +181,7 @@ TrueCrafterMode v3.0.0-beta 12 を参照し、Datapack の function 処理を Pa
 | ゾンビピグリン | [x] 48ブロック内の強制敵対 | `TrueCrafterModeModule` |
 | 通常 / 弱体 / 中立 / 外縁エンダーマン | [x] かぼちゃ別の敵対距離、能力値、ブロック破壊 | `MobProfileInitializer` / `TrueCrafterModeModule` |
 | エリートスケルトン / ストレイ / ボグド | [x] 装備、遠近切替、矢の変換、休止周期 | `TrueCrafterModeModule` |
-| ウィザーの騎士 / しもべ | [x] 60tick解放、4射ごとの休止、装備と能力値 | `WitherBossSystem` / `TrueCrafterModeModule` |
+| ウィザーの騎士 / しもべ | [x] 60tick解放、4射ごとの140tick休止中も通常射撃を維持、装備と能力値 | `WitherBossSystem` / `TrueCrafterModeModule` |
 | エンダージーロット | [x] スライム本体、NoAI、弾幕周期、眼球処理 | `EnderZealotAiSystem` / `EnderDragonBossSystem` |
 | ウィザー | [x] 75%・50%遷移、騎士、近距離雷撃、4スキル | `WitherBossSystem` |
 | ウィザー雷撃 | [x] 30tick警告、10ダメージ、ウィザー10tick、複合範囲判定 | `WitherFieldSystem` |
