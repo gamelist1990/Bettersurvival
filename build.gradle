@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'io.papermc.paperweight.userdev' version '2.0.0-beta.23'
     id("xyz.jpenilla.run-paper") version "2.3.1"
     id 'com.gradleup.shadow' version '8.3.5'
 }
@@ -20,8 +21,7 @@ repositories {
 }
 
 dependencies {
-
-    compileOnly("io.papermc.paper:paper-api:26.2.build.+")
+    paperweight.paperDevBundle("26.2.build.+")
     compileOnly('com.mojang:authlib:7.0.61')
     compileOnly('io.netty:netty-transport:4.2.7.Final')
     implementation 'com.google.code.gson:gson:2.10.1'
@@ -36,6 +36,8 @@ dependencies {
     compileOnly('org.geysermc.geyser:api:2.9.0-SNAPSHOT')
 }
 
+paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.getMOJANG_PRODUCTION()
+
 tasks.shadowJar {
     archiveClassifier.set('')
 }
@@ -46,9 +48,6 @@ tasks.build {
 
 tasks {
     runServer {
-        // Configure the Minecraft version for our task.
-        // This is the only required configuration besides applying the plugin.
-        // Your plugin's jar (or shadowJar if present) will be used automatically.
         minecraftVersion("26.2")
     }
 }

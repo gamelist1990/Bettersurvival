@@ -36,6 +36,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -120,7 +121,7 @@ public final class JustLevelingRuntime implements Listener {
         if (attacker != null) {
             int luck = leveling.getLevel(attacker, LevelingAptitude.LUCK);
             int criticalTier = LevelingAptitude.LUCK.passiveTier10(luck);
-            if (criticalTier > 0 && attacker.getFallDistance() > 0.0F && !attacker.isOnGround()) {
+            if (criticalTier > 0 && attacker.getFallDistance() > 0.0F) {
                 event.setDamage(event.getDamage() * (1.0D + 0.25D * criticalTier));
             }
             if (event.getDamager() instanceof AbstractArrow) {
@@ -131,7 +132,7 @@ public final class JustLevelingRuntime implements Listener {
                 if (state != null && state.expiresAt >= System.currentTimeMillis() && has(attacker, LevelingSkill.COUNTER_ATTACK)) event.setDamage(event.getDamage() + state.bonusDamage);
                 if (has(attacker, LevelingSkill.LIMIT_BREAKER) && ThreadLocalRandom.current().nextInt(10_000) < 100) {
                     event.setDamage(event.getDamage() * 999.0D);
-                    attacker.sendActionBar("§6限界突破！");
+                    attacker.sendActionBar(ComponentUtils.legacy("§6限界突破！"));
                 }
             }
         }
@@ -200,7 +201,7 @@ public final class JustLevelingRuntime implements Listener {
         if (!has(player, LevelingSkill.ALCHEMY_MANIPULATION) || event.getItem().getType() != Material.POTION) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             for (PotionEffect effect : new ArrayList<>(player.getActivePotionEffects())) {
-                if (!isNegative(effect.getType())) player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1, effect.isAmbient(), effect.hasParticles(), effect.hasIcon()), true);
+                if (!isNegative(effect.getType())) player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1, effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));
             }
         });
     }
@@ -219,7 +220,7 @@ public final class JustLevelingRuntime implements Listener {
         Material[] loot = {Material.IRON_NUGGET, Material.GOLD_NUGGET, Material.EMERALD, Material.LAPIS_LAZULI, Material.DIAMOND};
         Material reward = loot[ThreadLocalRandom.current().nextInt(loot.length)];
         event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation(), new ItemStack(reward));
-        player.sendActionBar("§6お宝を発見！");
+        player.sendActionBar(ComponentUtils.legacy("§6お宝を発見！"));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -232,7 +233,7 @@ public final class JustLevelingRuntime implements Listener {
         ItemStack refund = candidates.get(ThreadLocalRandom.current().nextInt(candidates.size())).clone();
         refund.setAmount(1);
         player.getInventory().addItem(refund);
-        player.sendActionBar("§a収束: 素材を1個還元しました");
+        player.sendActionBar(ComponentUtils.legacy("§a収束: 素材を1個還元しました"));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -267,7 +268,7 @@ public final class JustLevelingRuntime implements Listener {
         ItemStack item = event.getItem();
         if (item == null || item.getEnchantments().isEmpty()) return;
         ItemMeta meta = item.getItemMeta();
-        player.sendMessage("§b学者 §7- §f" + (meta != null && meta.hasDisplayName() ? meta.getDisplayName() : item.getType().name()));
+        player.sendMessage("§b学者 §7- §f" + (meta != null && meta.hasDisplayName() ? ComponentUtils.getDisplayName(meta) : item.getType().name()));
         item.getEnchantments().forEach((enchantment, level) -> player.sendMessage("§7 • §d" + enchantment.getKey().getKey() + " §f" + level));
     }
 

@@ -3,6 +3,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSys
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -105,7 +106,7 @@ public final class LevelingExtras {
                     if (skill.requiredLevel() > previous && skill.requiredLevel() <= current) {
                         player.sendMessage("§6✦ 新しいスキルを解放しました: §d" + skill.displayName()
                                 + " §7(" + aptitude.abbreviation() + " Lv." + skill.requiredLevel() + ")");
-                        player.sendActionBar("§dスキル解放: §f" + skill.displayName());
+                        player.sendActionBar(ComponentUtils.legacy("§dスキル解放: §f" + skill.displayName()));
                     }
                 }
             }

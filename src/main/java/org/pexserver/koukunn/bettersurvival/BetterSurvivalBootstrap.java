@@ -10,23 +10,20 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CustomEnchantTable.api.CustomEnchantDefinitions;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDatapackBootstrap;
 
 /**
  * Paper の bootstrap フェーズ。
  *
- * Registry Modification API を使い、カスタムエンチャントを
- * 「本物のエンチャント」としてエンチャントレジストリに登録する。
- * ここで登録したエンチャントは実行時に
- * RegistryAccess から bettersurvival:&lt;id&gt; で取得でき、
- * ツールチップにも Vanilla エンチャントと同じ形式で表示される。
- *
- * IN_ENCHANTING_TABLE タグには追加しないため、通常のエンチャントテーブルには
- * 出現せず、カスタムエンチャントテーブル経由でのみ付与される。
+ * Otherworld の生成DataPackをDataPack discovery中に登録した後、
+ * Registry Modification API でカスタムエンチャントを登録する。
  */
 public class BetterSurvivalBootstrap implements PluginBootstrap {
 
     @Override
     public void bootstrap(BootstrapContext context) {
+        OtherworldDatapackBootstrap.register(context);
+
         context.getLifecycleManager().registerEventHandler(RegistryEvents.ENCHANTMENT.compose().newHandler(event -> {
             for (CustomEnchantDefinitions.Definition def : CustomEnchantDefinitions.all()) {
                 event.registry().register(

@@ -15,6 +15,8 @@ import org.bukkit.block.Container;
 import org.bukkit.block.Furnace;
 import org.bukkit.block.Hopper;
 import org.bukkit.block.data.Lightable;
+import org.bukkit.craftbukkit.CraftServer;
+import org.bukkit.craftbukkit.inventory.CraftItemStack;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
@@ -54,7 +56,6 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandP
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -108,9 +109,6 @@ public class ParallelFurnaceModule implements Listener {
     private final Set<Material> nonSmeltableCache = new HashSet<>();
     private final Map<Material, Integer> fuelTicksCache = new HashMap<>();
 
-    private Object nmsFuelValues;
-    private Method nmsBurnDuration;
-    private Method nmsAsCopy;
     private boolean nmsFuelUnavailable;
 
     private final BukkitTask processTask;
@@ -830,7 +828,7 @@ public class ParallelFurnaceModule implements Listener {
     /**
      * 通常かまどと同一の燃焼時間 (tick)。燃料でなければ 0。
      *
-     * まずサーバー内部の燃料テーブル (NMS FuelValues) をリフレクションで参照し、
+     * まずサーバー内部の燃料テーブル (NMS FuelValues) を直接参照し、
      * Vanilla (+データパック改変) の正確な値を返す。参照できない環境では
      * Vanilla の燃料表を再現した内蔵テーブルへフォールバックする。
      */
@@ -850,46 +848,18 @@ public class ParallelFurnaceModule implements Listener {
         return ticks;
     }
 
-    /** サーバー実装 (FuelValues#burnDuration) から燃焼時間を取得。使えない場合は -1 */
+    /** サーバー実装の FuelValues から燃焼時間を直接取得。 */
     private int lookupServerBurnTicks(Material material) {
         if (nmsFuelUnavailable) {
             return -1;
         }
         try {
-            if (nmsBurnDuration == null) {
-                Object craftServer = Bukkit.getServer();
-                Object mcServer = craftServer.getClass().getMethod("getServer").invoke(craftServer);
-                Object fuelValues = null;
-                for (Method method : mcServer.getClass().getMethods()) {
-                    if (method.getName().equals("fuelValues") && method.getParameterCount() == 0) {
-                        fuelValues = method.invoke(mcServer);
-                        break;
-                    }
-                }
-                if (fuelValues == null) {
-                    throw new NoSuchMethodException("MinecraftServer#fuelValues");
-                }
-                Method burn = null;
-                for (Method method : fuelValues.getClass().getMethods()) {
-                    if (method.getName().equals("burnDuration") && method.getParameterCount() == 1) {
-                        burn = method;
-                        break;
-                    }
-                }
-                if (burn == null) {
-                    throw new NoSuchMethodException("FuelValues#burnDuration");
-                }
-                Class<?> craftItemStack = Class.forName(craftServer.getClass().getPackageName() + ".inventory.CraftItemStack");
-                nmsAsCopy = craftItemStack.getMethod("asNMSCopy", ItemStack.class);
-                nmsFuelValues = fuelValues;
-                nmsBurnDuration = burn;
-            }
-            Object nmsStack = nmsAsCopy.invoke(null, new ItemStack(material));
-            Object result = nmsBurnDuration.invoke(nmsFuelValues, nmsStack);
-            return result instanceof Number number ? Math.max(0, number.intValue()) : -1;
+            CraftServer craftServer = (CraftServer) Bukkit.getServer();
+            net.minecraft.world.item.ItemStack nmsStack = CraftItemStack.asNMSCopy(new ItemStack(material));
+            return Math.max(0, craftServer.getServer().fuelValues().burnDuration(nmsStack));
         } catch (Throwable t) {
             nmsFuelUnavailable = true;
-            plugin.getLogger().info("[並列かまど] サーバー内部の燃料テーブルに接続できないため、内蔵のVanilla燃料表を使用します: " + t);
+            plugin.getLogger().info("[並列かまど] NMS燃料テーブルを利用できないため、内蔵のVanilla燃料表を使用します: " + t);
             return -1;
         }
     }
