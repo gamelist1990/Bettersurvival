@@ -25,7 +25,7 @@ public class PartyCommand extends BaseCommand {
     @Override public String getName() { return name; }
     @Override public String getDescription() { return "パーティー（ギルド）を作成・管理するコマンド"; }
     @Override public PermissionLevel getPermissionLevel() { return PermissionLevel.MEMBER; }
-    @Override public String getUsage() { return "/" + name + " [info|list]"; }
+    @Override public String getUsage() { return "/" + name + " [info|list|search]"; }
 
     @Override
     public boolean execute(CommandSender sender, String[] args) {
@@ -37,6 +37,14 @@ public class PartyCommand extends BaseCommand {
             switch (args[0].toLowerCase()) {
                 case "info" -> { showInfo(player, module); return true; }
                 case "list" -> { showList(player, module); return true; }
+                case "search", "find" -> {
+                    if (module.getPartyOf(player.getUniqueId()) != null) {
+                        sendError(player, "このワールドグループでは既にパーティーに所属しています");
+                    } else {
+                        getMenu().openPublicParties(player);
+                    }
+                    return true;
+                }
                 default -> { }
             }
         }
@@ -47,13 +55,14 @@ public class PartyCommand extends BaseCommand {
     private void showInfo(Player player, PartyModule module) {
         Party party = module.getPartyOf(player.getUniqueId());
         if (party == null) {
-            sendInfo(player, "このワールドグループではパーティーに所属していません。/" + name + " から作成できます");
+            sendInfo(player, "このワールドグループではパーティーに所属していません。/" + name + " から作成・検索できます");
             return;
         }
         player.sendMessage("§d====== パーティー情報 [§b" + party.getScope() + "§d] ======");
         player.sendMessage("§7名前: " + party.getColoredName());
+        player.sendMessage("§7参加方式: " + (party.isPublicParty() ? "§a公開" : "§eプライベート (招待制)"));
         player.sendMessage("§7カラー: " + party.getColor().getLegacyCode() + party.getColor().getDisplayName());
-        if (!party.getDescription().isEmpty()) player.sendMessage("§7説明: §f" + party.getDescription());
+        player.sendMessage("§7説明: §f" + (party.getDescription().isEmpty() ? "説明なし" : party.getDescription()));
         player.sendMessage("§7リーダー: §e" + party.nameOf(party.getLeader()));
         StringBuilder coLeaders = new StringBuilder();
         for (UUID uuid : party.getCoLeaders()) {
@@ -71,7 +80,8 @@ public class PartyCommand extends BaseCommand {
         if (parties.isEmpty()) { sendInfo(player, "このワールドグループにはパーティーがまだ存在しません"); return; }
         player.sendMessage("§d====== パーティー一覧 [§b" + module.scope(player) + "§d] (" + parties.size() + ") ======");
         for (Party party : parties) {
-            player.sendMessage("§7- " + party.getColoredName() + " §7(" + party.getAllMembers().size() + "人)"
+            player.sendMessage("§7- " + (party.isPublicParty() ? "§a[公開] " : "§e[非公開] ")
+                    + party.getColoredName() + " §7(" + party.getAllMembers().size() + "人)"
                     + (party.getDescription().isEmpty() ? "" : " §8" + party.getDescription()));
         }
     }
@@ -81,7 +91,7 @@ public class PartyCommand extends BaseCommand {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
             String prefix = args[0].toLowerCase();
-            for (String candidate : List.of("info", "list")) if (candidate.startsWith(prefix)) out.add(candidate);
+            for (String candidate : List.of("info", "list", "search")) if (candidate.startsWith(prefix)) out.add(candidate);
         }
         return out;
     }
