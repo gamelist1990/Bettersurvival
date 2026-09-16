@@ -22,6 +22,9 @@ import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -227,6 +230,45 @@ public class OtherworldModule implements Listener {
         if (group == null || !canAccess(player, groupName)) return false;
         World world = world(group, Environment.NORMAL);
         return world != null && player.teleport(world.getSpawnLocation());
+    }
+
+    public synchronized boolean deleteGroup(String name) {
+        name = normalize(name);
+        Group group = groups.get(name);
+        if (group == null || name.equals("default")) return false;
+
+        World fallback = world(groups.get("default"), Environment.NORMAL);
+        if (fallback == null) return false;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (getGroup(player).equals(name) && !player.teleport(fallback.getSpawnLocation())) return false;
+        }
+
+        Set<String> worldIds = new LinkedHashSet<>(group.worlds.values());
+        worldIds.addAll(group.customWorlds.values());
+        for (String worldId : worldIds) {
+            World loaded = resolveWorldId(worldId);
+            if (loaded != null && !Bukkit.unloadWorld(loaded, false)) return false;
+        }
+        groups.remove(name);
+        members.remove(name);
+        save();
+        for (String worldId : worldIds) deleteWorldDirectory(worldId);
+        return true;
+    }
+
+    private void deleteWorldDirectory(String worldId) {
+        if (worldId == null || worldId.contains(":")) return;
+        Path worldPath = plugin.getServer().getWorldContainer().toPath().resolve(worldId).normalize();
+        if (!worldPath.getParent().equals(plugin.getServer().getWorldContainer().toPath().toAbsolutePath().normalize())) return;
+        try (var paths = Files.walk(worldPath)) {
+            paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                try { Files.deleteIfExists(path); } catch (IOException exception) {
+                    plugin.getLogger().warning("Otherworld deletion failed: " + path + " (" + exception.getMessage() + ")");
+                }
+            });
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Otherworld deletion failed: " + worldPath + " (" + exception.getMessage() + ")");
+        }
     }
 
     private World world(Group group, Environment environment) {
