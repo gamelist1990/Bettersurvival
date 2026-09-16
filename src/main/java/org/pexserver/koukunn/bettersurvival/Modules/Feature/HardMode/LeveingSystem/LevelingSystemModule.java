@@ -36,7 +36,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /** Forge Mod "Just Leveling" のサーバー側コアを Paper API で再構成する。 */
 public final class LevelingSystemModule implements Listener {
-    private static final String GUI_TITLE = "§8Just Leveling";
+    private static final String GUI_TITLE = "§8Just Leveling - 能力値";
     private static final int FIRST_COST = 5;
 
     private final Loader plugin;
@@ -84,8 +84,8 @@ public final class LevelingSystemModule implements Listener {
     public ItemStack createLevelingBook() {
         ItemStack item = new ItemStack(Material.ENCHANTED_BOOK);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName("§dLeveling Book");
-        meta.setLore(List.of("§7Just Leveling の能力値を開く", "§7右クリックで使用", "§8Paper port"));
+        meta.setDisplayName("§dレベリングの書");
+        meta.setLore(List.of("§7能力値画面を開きます", "§7右クリックで使用", "§8Just Leveling - Paper版"));
         meta.getPersistentDataContainer().set(bookKey, PersistentDataType.BYTE, (byte) 1);
         item.setItemMeta(meta);
         return item;
@@ -103,23 +103,23 @@ public final class LevelingSystemModule implements Listener {
             ItemMeta meta = icon.getItemMeta();
             meta.setDisplayName("§e" + aptitude.displayName() + " §7[" + aptitude.abbreviation() + "]");
             List<String> lore = new ArrayList<>();
-            lore.add("§fWorld group: §b" + dataScope(player));
-            lore.add("§fLevel: §a" + level + "§7/§a" + LevelingAptitude.MAX_LEVEL);
-            lore.add("§fRank: §b" + aptitude.rank(level));
-            lore.add("§fNext cost: §6" + levelCost(level) + " vanilla levels");
+            lore.add("§fワールドグループ: §b" + dataScope(player));
+            lore.add("§fレベル: §a" + level + "§7/§a" + LevelingAptitude.MAX_LEVEL);
+            lore.add("§fランク: §b" + aptitude.rank(level));
+            lore.add("§f次の強化コスト: §6" + levelCost(level) + " 経験値レベル");
             lore.add("");
-            lore.add("§7Passive I: " + aptitude.passiveTier10(level) + "/10");
-            lore.add("§7Passive II: " + aptitude.passiveTier5(level) + "/5");
+            lore.add("§7パッシブI: " + aptitude.passiveTier10(level) + "/10");
+            lore.add("§7パッシブII: " + aptitude.passiveTier5(level) + "/5");
             lore.add("");
-            lore.add(level >= LevelingAptitude.MAX_LEVEL ? "§aMAX LEVEL" : "§eClick to level up");
+            lore.add(level >= LevelingAptitude.MAX_LEVEL ? "§a最大レベル" : "§eクリックでレベルアップ");
             meta.setLore(lore);
             icon.setItemMeta(meta);
             inventory.setItem(slots[i], icon);
         }
         ItemStack info = new ItemStack(Material.EXPERIENCE_BOTTLE);
         ItemMeta infoMeta = info.getItemMeta();
-        infoMeta.setDisplayName("§aExperience");
-        infoMeta.setLore(List.of("§7Vanilla level: §f" + player.getLevel(), "§7Level-up consumes vanilla levels."));
+        infoMeta.setDisplayName("§a経験値");
+        infoMeta.setLore(List.of("§7現在の経験値レベル: §f" + player.getLevel(), "§7能力強化時に経験値レベルを消費します。"));
         info.setItemMeta(infoMeta);
         inventory.setItem(22, info);
         player.openInventory(inventory);
@@ -135,7 +135,7 @@ public final class LevelingSystemModule implements Listener {
         int current = getLevel(player, aptitude);
         if (current >= LevelingAptitude.MAX_LEVEL) { player.sendMessage("§c" + aptitude.displayName() + " は最大レベルです。"); return false; }
         int cost = levelCost(current);
-        if (player.getLevel() < cost) { player.sendMessage("§cレベルが足りません。必要: " + cost + " / 所持: " + player.getLevel()); return false; }
+        if (player.getLevel() < cost) { player.sendMessage("§c経験値レベルが足りません。必要: " + cost + " / 所持: " + player.getLevel()); return false; }
         player.setLevel(player.getLevel() - cost);
         setLevel(player, aptitude, current + 1);
         player.sendMessage("§a" + aptitude.displayName() + " が Lv." + (current + 1) + " になりました。 §7[" + dataScope(player) + "]");
@@ -153,7 +153,6 @@ public final class LevelingSystemModule implements Listener {
     private String path(Player player, LevelingAptitude aptitude) {
         String base = "players." + player.getUniqueId() + ".aptitudes." + aptitude.key();
         String scope = dataScope(player);
-        // 既存通常ワールドの進行は互換維持。Otherworld各グループだけ完全に別名前空間へ保存する。
         return scope.equals("default") ? base : "otherworld." + scope + "." + base;
     }
 
@@ -177,7 +176,7 @@ public final class LevelingSystemModule implements Listener {
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
         applyPassives(player);
-        player.sendMessage("§7Leveling profile: §b" + dataScope(player));
+        player.sendMessage("§7レベリングプロフィール切替: §b" + dataScope(player));
     }
 
     @EventHandler(ignoreCancelled = true)
