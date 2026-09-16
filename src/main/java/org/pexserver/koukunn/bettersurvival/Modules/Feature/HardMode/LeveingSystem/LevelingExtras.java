@@ -2,19 +2,24 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSys
 
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Paper版独自の補助機能。Just Leveling本体の進行値は変更せず、
- * プロフィール・スキル進捗・Otherworld単位ランキングを提供する。
+ * プロフィール・スキル進捗・Otherworld単位ランキング・解放通知を提供する。
  */
 public final class LevelingExtras {
     private final LevelingSystemModule leveling;
+    private final Map<String, Integer> observedLevels = new HashMap<>();
 
-    public LevelingExtras(LevelingSystemModule leveling) {
+    public LevelingExtras(Loader plugin, LevelingSystemModule leveling) {
         this.leveling = leveling;
+        Bukkit.getScheduler().runTaskTimer(plugin, this::scanSkillUnlocks, 20L, 20L);
     }
 
     public int totalLevel(Player player) {
@@ -88,6 +93,28 @@ public final class LevelingExtras {
                     + " §7- Total §a" + totalLevel(player) + mark);
         }
         viewer.sendMessage("§8※ 同じOtherworldグループ内のオンラインプレイヤーのみ集計");
+    }
+
+    private void scanSkillUnlocks() {
+        if (!leveling.isEnabled()) return;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            String scope = leveling.dataScope(player);
+            for (LevelingAptitude aptitude : LevelingAptitude.values()) {
+                int current = leveling.getLevel(player, aptitude);
+                String key = scope + ":" + player.getUniqueId() + ":" + aptitude.key();
+                Integer previous = observedLevels.put(key, current);
+                if (previous == null || current <= previous) continue;
+
+                for (LevelingSkill skill : LevelingSkill.values()) {
+                    if (skill.aptitude() != aptitude) continue;
+                    if (skill.requiredLevel() > previous && skill.requiredLevel() <= current) {
+                        player.sendMessage("§6✦ New Skill Unlocked: §d" + skill.displayName()
+                                + " §7(" + aptitude.abbreviation() + " Lv." + skill.requiredLevel() + ")");
+                        player.sendActionBar("§dSkill Unlocked: §f" + skill.displayName());
+                    }
+                }
+            }
+        }
     }
 
     private LevelingSkill nextSkill(Player player) {
