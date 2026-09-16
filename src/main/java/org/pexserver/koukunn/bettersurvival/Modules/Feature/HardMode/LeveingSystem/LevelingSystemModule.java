@@ -8,7 +8,6 @@ import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -31,12 +30,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Forge Mod "Just Leveling" のサーバー側コアを Paper API で再構成した実装。
- * クライアント Mod 固有の描画・キー入力は、チェスト GUI と Leveling Book に置き換える。
+ * Forge Mod "Just Leveling" のサーバー側コアを Paper API で再構成する。
  */
 public final class LevelingSystemModule implements Listener {
     private static final String GUI_TITLE = "§8Just Leveling";
@@ -132,7 +130,6 @@ public final class LevelingSystemModule implements Listener {
     }
 
     private int levelCost(int currentLevel) {
-        // 本家デフォルト aptitudeFirstCostLevel=5 を起点に、進行に合わせて段階的に増加。
         return FIRST_COST + Math.max(0, currentLevel / 2);
     }
 
@@ -151,7 +148,7 @@ public final class LevelingSystemModule implements Listener {
             recipe.setIngredient('B', Material.BOOK);
             Bukkit.addRecipe(recipe);
         } catch (IllegalArgumentException ignored) {
-            // reload 等で既に登録されているケースは無視する。
+            // reload時など、既に登録されているケース。
         }
     }
 
@@ -163,8 +160,7 @@ public final class LevelingSystemModule implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onUseBook(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) return;
-        ItemStack item = event.getItem();
-        if (!isLevelingBook(item)) return;
+        if (!isLevelingBook(event.getItem())) return;
         event.setCancelled(true);
         open(event.getPlayer());
     }
@@ -190,19 +186,23 @@ public final class LevelingSystemModule implements Listener {
         if (attacker != null) {
             if (event.getDamager() instanceof Projectile) {
                 int dex = getLevel(attacker, LevelingAptitude.DEXTERITY);
+                // projectileDamageValue=5.0 / 5 tiers => +1 damage per passive level.
                 event.setDamage(event.getDamage() + LevelingAptitude.DEXTERITY.passiveTier5(dex));
             } else {
                 int strength = getLevel(attacker, LevelingAptitude.STRENGTH);
-                if (strength >= 16 && attacker.getInventory().getItemInOffHand().getType().isAir()) {
-                    event.setDamage(event.getDamage() * 1.5D); // One Handed
+                if (strength >= 10 && attacker.getInventory().getItemInOffHand().getType().isAir()) {
+                    event.setDamage(event.getDamage() * 1.5D); // One Handed: +50%
                 }
                 AttributeInstance maxHealth = attacker.getAttribute(Attribute.MAX_HEALTH);
-                if (strength >= 32 && maxHealth != null && attacker.getHealth() <= maxHealth.getValue() * 0.30D) {
+                if (strength >= 30 && maxHealth != null && attacker.getHealth() <= maxHealth.getValue() * 0.30D) {
                     event.setDamage(event.getDamage() * 1.5D); // Berserker
                 }
+
                 int luck = getLevel(attacker, LevelingAptitude.LUCK);
-                if (luck >= 20 && attacker.getFallDistance() > 0.0F && Math.random() < 0.10D) {
-                    event.setDamage(event.getDamage() * 1.25D); // Critical Roll 6 相当のボーナス
+                if (luck >= 12 && attacker.getFallDistance() > 0.0F) {
+                    int roll = ThreadLocalRandom.current().nextInt(1, 7);
+                    if (roll == 6) event.setDamage(event.getDamage() * 1.25D);
+                    else if (roll == 1) event.setDamage(event.getDamage() * 0.75D);
                 }
             }
         }
@@ -211,7 +211,8 @@ public final class LevelingSystemModule implements Listener {
             int magic = getLevel(victim, LevelingAptitude.MAGIC);
             int tiers = LevelingAptitude.MAGIC.passiveTier5(magic);
             if (tiers > 0 && isMagicLike(event.getDamager())) {
-                event.setDamage(event.getDamage() * (1.0D - tiers * 0.10D));
+                // magicResistValue=0.5 / 5 tiers => 10% per tier, maximum 50%.
+                event.setDamage(event.getDamage() * Math.max(0.0D, 1.0D - tiers * 0.10D));
             }
         }
     }
@@ -220,16 +221,21 @@ public final class LevelingSystemModule implements Listener {
     public void onKill(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
         if (killer == null) return;
+
         int magic = getLevel(killer, LevelingAptitude.MAGIC);
-        if (magic >= 20) {
+        if (magic >= 18) {
             AttributeInstance max = killer.getAttribute(Attribute.MAX_HEALTH);
             if (max != null) killer.setHealth(Math.min(max.getValue(), killer.getHealth() + 1.0D)); // Life Eater
         }
+
         int luck = getLevel(killer, LevelingAptitude.LUCK);
-        if (luck >= 20 && Math.random() < 0.10D && !event.getDrops().isEmpty()) {
-            ItemStack extra = event.getDrops().getFirst().clone();
-            extra.setAmount(Math.min(extra.getMaxStackSize(), extra.getAmount() * 2));
-            event.getDrops().add(extra); // Lucky Drop
+        if (luck >= 22 && ThreadLocalRandom.current().nextInt(100) < 10 && !event.getDrops().isEmpty()) {
+            List<ItemStack> original = new ArrayList<>(event.getDrops());
+            for (ItemStack stack : original) {
+                ItemStack extra = stack.clone();
+                extra.setAmount(stack.getAmount());
+                event.getDrops().add(extra); // Lucky Drop x2
+            }
         }
     }
 
@@ -257,7 +263,7 @@ public final class LevelingSystemModule implements Listener {
         int intelligence = getLevel(player, LevelingAptitude.INTELLIGENCE);
         int luck = getLevel(player, LevelingAptitude.LUCK);
 
-        // 本家デフォルト値を passive level 数に分割して適用する。
+        // Forgeの設定値は最大値。Passive#getValue() / tier数 が1段階あたりの増加量。
         setBase(player, Attribute.ATTACK_DAMAGE, 1.0D + LevelingAptitude.STRENGTH.passiveTier10(strength) * 0.15D);
         setBase(player, Attribute.MAX_HEALTH, 20.0D + LevelingAptitude.CONSTITUTION.passiveTier10(constitution) * 2.0D);
         setBase(player, Attribute.KNOCKBACK_RESISTANCE, LevelingAptitude.CONSTITUTION.passiveTier5(constitution) * 0.10D);
