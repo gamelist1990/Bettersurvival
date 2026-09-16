@@ -14,9 +14,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -55,14 +53,16 @@ public final class OtherworldDatapackBootstrap {
                     return;
                 }
 
+                DatapackFormatResolver.PackFormat packFormat = DatapackFormatResolver.resolve(context);
                 Path generated = context.getDataDirectory().resolve(GENERATED_DIR);
-                rebuildGeneratedPack(generated, config.groups(), dimensions);
+                rebuildGeneratedPack(generated, config.groups(), dimensions, packFormat);
                 event.registrar().discoverPack(generated, GENERATED_PACK_ID, options -> options
                         .autoEnableOnServerStart(true)
                         .position(true, Datapack.Position.TOP));
 
-                context.getLogger().info("Otherworld datapack bootstrap: generated {} dimension mirrors for {} groups",
-                        dimensions.size(), config.groups().size());
+                context.getLogger().info(
+                        "Otherworld datapack bootstrap: generated {} dimension mirrors for {} groups (data-pack format={})",
+                        dimensions.size(), config.groups().size(), packFormat);
             } catch (Exception ex) {
                 context.getLogger().error("Failed to generate Otherworld dimension datapack", ex);
             }
@@ -184,17 +184,18 @@ public final class OtherworldDatapackBootstrap {
     }
 
     private static void rebuildGeneratedPack(Path generated, Map<String, Long> groups,
-                                             Map<String, byte[]> dimensions) throws IOException {
+                                             Map<String, byte[]> dimensions,
+                                             DatapackFormatResolver.PackFormat packFormat) throws IOException {
         deleteRecursively(generated);
         Files.createDirectories(generated);
-        String mcmeta = "{\n" +
-                "  \"pack\": {\n" +
-                "    \"description\": \"Bettersurvival generated Otherworld dimensions\",\n" +
-                "    \"min_format\": [107, 1],\n" +
-                "    \"max_format\": 107\n" +
-                "  }\n" +
-                "}\n";
-        Files.writeString(generated.resolve("pack.mcmeta"), mcmeta, StandardCharsets.UTF_8);
+
+        JsonObject pack = new JsonObject();
+        pack.addProperty("description", "Bettersurvival generated Otherworld dimensions");
+        pack.add("min_format", JsonParser.parseString(packFormat.minFormatJson()));
+        pack.add("max_format", JsonParser.parseString(packFormat.maxFormatJson()));
+        JsonObject root = new JsonObject();
+        root.add("pack", pack);
+        Files.writeString(generated.resolve("pack.mcmeta"), GSON.toJson(root) + System.lineSeparator(), StandardCharsets.UTF_8);
 
         for (String group : groups.keySet()) {
             for (var dimension : dimensions.entrySet()) {
