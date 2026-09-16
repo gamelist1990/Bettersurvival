@@ -22,6 +22,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
+import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -36,14 +37,14 @@ import java.util.UUID;
 /**
  * Manages isolated Otherworld groups.
  *
- * Besides the vanilla NORMAL/NETHER/THE_END worlds, every extra loaded world/dimension is
- * automatically treated as a custom dimension template. Each non-default Otherworld group gets
- * its own physical mirror of that template, so chunks/entities/blocks never share state between
- * groups.
+ * Every group owns one persistent base seed shared by its Overworld/Nether/End and mirrored
+ * custom dimensions. Custom dimension JSONs are duplicated during Paper bootstrap; at runtime
+ * this module binds those generated dimension keys to physical worlds and routes teleports to the
+ * correct group.
  */
 public class OtherworldModule implements Listener {
     private static final String CONFIG_PATH = "Otherworld/config.json";
-    private static final String MIRROR_PREFIX = "owdim_";
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final Loader plugin;
     private final ConfigManager configManager;
@@ -86,12 +87,11 @@ public class OtherworldModule implements Listener {
                 Object rawCustom = values.get("customWorlds");
                 if (rawCustom instanceof Map<?, ?> customMap) {
                     for (var custom : customMap.entrySet()) {
-                        if (custom.getValue() != null) {
-                            customWorlds.put(custom.getKey().toString(), custom.getValue().toString());
-                        }
+                        if (custom.getValue() != null) customWorlds.put(custom.getKey().toString(), custom.getValue().toString());
                     }
                 }
-                groups.put(name, new Group(name, worlds, customWorlds));
+                long seed = readSeed(values.get("seed"), name, worlds);
+                groups.put(name, new Group(name, seed, worlds, customWorlds));
             }
         }
         if (!groups.containsKey("default")) {
@@ -99,7 +99,8 @@ public class OtherworldModule implements Listener {
             worlds.put(Environment.NORMAL, "world");
             worlds.put(Environment.NETHER, "world_nether");
             worlds.put(Environment.THE_END, "world_the_end");
-            groups.put("default", new Group("default", worlds, new LinkedHashMap<>()));
+            World primary = Bukkit.getWorld("world");
+            groups.put("default", new Group("default", primary == null ? 0L : primary.getSeed(), worlds, new LinkedHashMap<>()));
         }
         Object rawMembers = config.get("members");
         if (rawMembers instanceof Map<?, ?> map) {
@@ -116,6 +117,16 @@ public class OtherworldModule implements Listener {
         save();
     }
 
+    private long readSeed(Object raw, String groupName, Map<Environment, String> worlds) {
+        if (raw instanceof Number number) return number.longValue();
+        if (groupName.equals("default")) {
+            World primary = resolveWorldId(worlds.get(Environment.NORMAL));
+            return primary == null ? 0L : primary.getSeed();
+        }
+        World existing = resolveWorldId(worlds.get(Environment.NORMAL));
+        return existing == null ? RANDOM.nextLong() : existing.getSeed();
+    }
+
     public synchronized void save() {
         PEXConfig config = new PEXConfig();
         Map<String, Object> groupData = new LinkedHashMap<>();
@@ -123,6 +134,7 @@ public class OtherworldModule implements Listener {
             Map<String, String> worlds = new LinkedHashMap<>();
             group.worlds.forEach((env, name) -> worlds.put(env.name(), name));
             Map<String, Object> values = new LinkedHashMap<>();
+            values.put("seed", group.seed);
             values.put("worlds", worlds);
             values.put("customWorlds", new LinkedHashMap<>(group.customWorlds));
             groupData.put(group.name, values);
@@ -138,7 +150,12 @@ public class OtherworldModule implements Listener {
         return Collections.unmodifiableSet(new LinkedHashSet<>(groups.keySet()));
     }
 
-    /** source-dimension-key -> default physical world name */
+    public synchronized long getGroupSeed(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        return group == null ? 0L : group.seed;
+    }
+
+    /** source-dimension-key -> default physical world id */
     public synchronized Map<String, String> getDetectedCustomDimensions() {
         Group group = groups.get("default");
         return group == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(group.customWorlds));
@@ -156,7 +173,8 @@ public class OtherworldModule implements Listener {
     public synchronized String getGroup(World world) {
         if (world == null) return "default";
         for (Group group : groups.values()) {
-            if (group.worlds.containsValue(world.getName()) || group.customWorlds.containsValue(world.getName())) {
+            if (group.worlds.values().stream().anyMatch(id -> matchesWorldId(world, id))
+                    || group.customWorlds.values().stream().anyMatch(id -> matchesWorldId(world, id))) {
                 return group.name;
             }
         }
@@ -185,12 +203,18 @@ public class OtherworldModule implements Listener {
         worlds.put(Environment.NORMAL, name);
         worlds.put(Environment.NETHER, name + "_nether");
         worlds.put(Environment.THE_END, name + "_the_end");
-        Group group = new Group(name, worlds, new LinkedHashMap<>());
+        Group group = new Group(name, RANDOM.nextLong(), worlds, new LinkedHashMap<>());
         groups.put(name, group);
+
+        Group defaults = groups.get("default");
         for (var entry : worlds.entrySet()) {
-            if (Bukkit.getWorld(entry.getValue()) == null) {
-                Bukkit.createWorld(new WorldCreator(entry.getValue()).environment(entry.getKey()));
-            }
+            if (resolveWorldId(entry.getValue()) != null) continue;
+            World source = defaults == null ? null : world(defaults, entry.getKey());
+            WorldCreator creator = WorldCreator.name(entry.getValue());
+            if (source != null) creator.copy(source);
+            else creator.environment(entry.getKey());
+            creator.seed(group.seed);
+            Bukkit.createWorld(creator);
         }
         mirrorAllKnownCustomDimensions(group);
         save();
@@ -206,8 +230,8 @@ public class OtherworldModule implements Listener {
     }
 
     private World world(Group group, Environment environment) {
-        String name = group.worlds.get(environment);
-        return name == null ? null : Bukkit.getWorld(name);
+        String id = group.worlds.get(environment);
+        return resolveWorldId(id);
     }
 
     public synchronized boolean setWhitelist(String group, boolean enabled) {
@@ -278,12 +302,10 @@ public class OtherworldModule implements Listener {
                 .size(Math.min(54, Math.max(9, ((accessible.size() + 8) / 9) * 9)));
         for (int i = 0; i < accessible.size(); i++) {
             String name = accessible.get(i);
-            builder.addButtonAt(i, name, Material.GRASS_BLOCK, "移動");
+            builder.addButtonAt(i, name, Material.GRASS_BLOCK, "移動\n§7Seed: §f" + groups.get(name).seed);
         }
         builder.then((result, p) -> {
-            if (result.success && result.slot != null && result.slot < accessible.size()) {
-                move(p, accessible.get(result.slot));
-            }
+            if (result.success && result.slot != null && result.slot < accessible.size()) move(p, accessible.get(result.slot));
         }).show(player);
     }
 
@@ -341,8 +363,6 @@ public class OtherworldModule implements Listener {
             }
         }
 
-        // A custom dimension's return portal usually points at the default vanilla dimension.
-        // Redirect it to the same vanilla environment inside the current Otherworld group.
         if (!sourceGroupName.equals("default") && isCustomWorldOfGroup(event.getFrom().getWorld(), sourceGroup)) {
             String requestedGroup = getGroup(requestedWorld);
             if (requestedGroup.equals("default")) {
@@ -355,9 +375,7 @@ public class OtherworldModule implements Listener {
         }
 
         String targetGroupName = getGroup(event.getTo().getWorld());
-        if (!sourceGroupName.equals(targetGroupName) && !canAccess(player, targetGroupName)) {
-            event.setCancelled(true);
-        }
+        if (!sourceGroupName.equals(targetGroupName) && !canAccess(player, targetGroupName)) event.setCancelled(true);
     }
 
     @EventHandler
@@ -366,25 +384,23 @@ public class OtherworldModule implements Listener {
         String key = loaded.getKey().toString();
         synchronized (this) {
             if (creatingMirrorKeys.remove(key)) return;
-            if (isKnownPhysicalWorld(loaded.getName())) return;
+            if (isKnownPhysicalWorld(loaded)) return;
         }
         Bukkit.getScheduler().runTask(plugin, () -> detectAndMirrorCustomDimension(loaded));
     }
 
     public void scanAndMirrorCustomDimensions() {
-        for (World world : new java.util.ArrayList<>(Bukkit.getWorlds())) {
-            detectAndMirrorCustomDimension(world);
-        }
+        for (World world : new java.util.ArrayList<>(Bukkit.getWorlds())) detectAndMirrorCustomDimension(world);
     }
 
     private synchronized void detectAndMirrorCustomDimension(World source) {
-        if (source == null || isKnownPhysicalWorld(source.getName())) return;
+        if (source == null || isKnownPhysicalWorld(source)) return;
         String sourceKey = source.getKey().toString();
-        if (isGeneratedMirrorKey(sourceKey)) return;
+        if (OtherworldDimensionKeys.isGenerated(sourceKey)) return;
 
         Group defaults = groups.get("default");
         if (defaults == null) return;
-        boolean changed = !source.getName().equals(defaults.customWorlds.put(sourceKey, source.getName()));
+        boolean changed = !sourceKey.equals(defaults.customWorlds.put(sourceKey, sourceKey));
         for (Group group : groups.values()) {
             if (group.name.equals("default")) continue;
             changed |= ensureCustomMirror(group, sourceKey, source);
@@ -396,37 +412,49 @@ public class OtherworldModule implements Listener {
         Group defaults = groups.get("default");
         if (defaults == null) return;
         for (var entry : defaults.customWorlds.entrySet()) {
-            World source = Bukkit.getWorld(entry.getValue());
+            World source = resolveWorldId(entry.getValue());
             if (source != null) ensureCustomMirror(group, entry.getKey(), source);
         }
     }
 
     private synchronized boolean ensureCustomMirror(Group group, String sourceKey, World source) {
-        String existingName = group.customWorlds.get(sourceKey);
-        if (existingName != null && Bukkit.getWorld(existingName) != null) return false;
+        NamespacedKey mirrorKey = OtherworldDimensionKeys.mirrorKey(group.name, sourceKey);
+        String mirrorId = mirrorKey.toString();
+        String previous = group.customWorlds.put(sourceKey, mirrorId);
+        World existing = resolveWorldId(mirrorId);
+        if (existing != null) return !mirrorId.equals(previous);
 
-        NamespacedKey mirrorKey = mirrorKey(group.name, sourceKey);
-        String mirrorName = mirrorKey.getKey();
-        group.customWorlds.put(sourceKey, mirrorName);
-        World existing = Bukkit.getWorld(mirrorKey);
-        if (existing != null) return true;
-
-        creatingMirrorKeys.add(mirrorKey.toString());
+        creatingMirrorKeys.add(mirrorId);
         try {
-            WorldCreator creator = WorldCreator.ofKey(mirrorKey).copy(source).seed(source.getSeed());
-            World created = Bukkit.createWorld(creator);
+            // Preferred path: the bootstrap-generated datapack defines this exact dimension key.
+            World created = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).seed(group.seed));
+            if (created == null) {
+                // Fallback for Paper/data packs that do not expose the generated dimension stem to WorldCreator.
+                created = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(group.seed));
+            }
             if (created == null) {
                 group.customWorlds.remove(sourceKey);
-                creatingMirrorKeys.remove(mirrorKey.toString());
-                plugin.getLogger().warning("Custom Dimension mirror creation failed: " + sourceKey + " -> " + mirrorKey);
+                creatingMirrorKeys.remove(mirrorId);
+                plugin.getLogger().warning("Custom Dimension mirror creation failed: " + sourceKey + " -> " + mirrorId);
                 return false;
             }
-            plugin.getLogger().info("Otherworld Custom Dimension mirror: " + sourceKey + " -> " + mirrorKey + " (group=" + group.name + ")");
+            plugin.getLogger().info("Otherworld Dimension mirror: " + sourceKey + " -> " + mirrorId
+                    + " (group=" + group.name + ", seed=" + group.seed + ")");
             return true;
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException first) {
+            try {
+                World fallback = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(group.seed));
+                if (fallback != null) {
+                    plugin.getLogger().warning("Dimension registry binding unavailable for " + mirrorId
+                            + "; using runtime generator copy fallback: " + first.getMessage());
+                    return true;
+                }
+            } catch (RuntimeException second) {
+                first.addSuppressed(second);
+            }
             group.customWorlds.remove(sourceKey);
-            creatingMirrorKeys.remove(mirrorKey.toString());
-            plugin.getLogger().warning("Custom Dimension mirror creation failed for " + sourceKey + " / " + group.name + ": " + ex.getMessage());
+            creatingMirrorKeys.remove(mirrorId);
+            plugin.getLogger().warning("Custom Dimension mirror creation failed for " + sourceKey + " / " + group.name + ": " + first.getMessage());
             return false;
         }
     }
@@ -435,50 +463,50 @@ public class OtherworldModule implements Listener {
         if (world == null) return null;
         Group defaults = groups.get("default");
         if (defaults == null) return null;
-        for (var entry : defaults.customWorlds.entrySet()) {
-            if (entry.getValue().equals(world.getName())) return entry.getKey();
-        }
+        for (var entry : defaults.customWorlds.entrySet()) if (matchesWorldId(world, entry.getValue())) return entry.getKey();
         for (Group group : groups.values()) {
-            for (var entry : group.customWorlds.entrySet()) {
-                if (entry.getValue().equals(world.getName())) return entry.getKey();
-            }
+            for (var entry : group.customWorlds.entrySet()) if (matchesWorldId(world, entry.getValue())) return entry.getKey();
         }
-        if (!isKnownPhysicalWorld(world.getName()) && !isGeneratedMirrorKey(world.getKey().toString())) {
-            return world.getKey().toString();
-        }
+        if (!isKnownPhysicalWorld(world) && !OtherworldDimensionKeys.isGenerated(world.getKey().toString())) return world.getKey().toString();
         return null;
     }
 
     private synchronized World customWorld(Group group, String sourceKey) {
         if (group == null || sourceKey == null) return null;
-        String name = group.customWorlds.get(sourceKey);
-        if (name == null && group.name.equals("default")) {
+        String id = group.customWorlds.get(sourceKey);
+        if (id == null && group.name.equals("default")) {
             Group defaults = groups.get("default");
-            name = defaults == null ? null : defaults.customWorlds.get(sourceKey);
+            id = defaults == null ? null : defaults.customWorlds.get(sourceKey);
         }
-        return name == null ? null : Bukkit.getWorld(name);
+        return resolveWorldId(id);
     }
 
     private synchronized boolean isCustomWorldOfGroup(World world, Group group) {
-        return world != null && group != null && group.customWorlds.containsValue(world.getName());
+        return world != null && group != null && group.customWorlds.values().stream().anyMatch(id -> matchesWorldId(world, id));
     }
 
-    private synchronized boolean isKnownPhysicalWorld(String worldName) {
+    private synchronized boolean isKnownPhysicalWorld(World world) {
+        if (world == null) return false;
         for (Group group : groups.values()) {
-            if (group.worlds.containsValue(worldName) || group.customWorlds.containsValue(worldName)) return true;
+            if (group.worlds.values().stream().anyMatch(id -> matchesWorldId(world, id))
+                    || group.customWorlds.values().stream().anyMatch(id -> matchesWorldId(world, id))) return true;
         }
         return false;
     }
 
-    private NamespacedKey mirrorKey(String groupName, String sourceKey) {
-        String path = MIRROR_PREFIX + safe(groupName) + "_" + safe(sourceKey);
-        return new NamespacedKey(plugin, path);
+    private World resolveWorldId(String id) {
+        if (id == null || id.isBlank()) return null;
+        NamespacedKey key = NamespacedKey.fromString(id);
+        if (key != null) {
+            World keyed = Bukkit.getWorld(key);
+            if (keyed != null) return keyed;
+        }
+        return Bukkit.getWorld(id);
     }
 
-    private boolean isGeneratedMirrorKey(String key) {
-        if (key == null) return false;
-        String prefix = plugin.getName().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]", "_") + ":" + MIRROR_PREFIX;
-        return key.toLowerCase(Locale.ROOT).startsWith(prefix);
+    private boolean matchesWorldId(World world, String id) {
+        if (world == null || id == null) return false;
+        return id.equals(world.getName()) || id.equals(world.getKey().toString());
     }
 
     private Location copyLocation(Location source, World world) {
@@ -491,20 +519,15 @@ public class OtherworldModule implements Listener {
         return value == null ? "" : value.toLowerCase(Locale.ROOT).trim();
     }
 
-    private String safe(String value) {
-        String safe = value == null ? "unknown" : value.toLowerCase(Locale.ROOT).replace(':', '_').replace('/', '_');
-        safe = safe.replaceAll("[^a-z0-9._-]", "_");
-        if (safe.length() > 80) safe = safe.substring(0, 80);
-        return safe;
-    }
-
     private static final class Group {
         private final String name;
+        private final long seed;
         private final Map<Environment, String> worlds;
         private final Map<String, String> customWorlds;
 
-        private Group(String name, Map<Environment, String> worlds, Map<String, String> customWorlds) {
+        private Group(String name, long seed, Map<Environment, String> worlds, Map<String, String> customWorlds) {
             this.name = name;
+            this.seed = seed;
             this.worlds = worlds;
             this.customWorlds = customWorlds;
         }
