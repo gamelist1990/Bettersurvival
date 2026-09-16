@@ -161,7 +161,6 @@ jobs:
               raise SystemExit(f'WebMap resolver replacement count={count}')
           p.write_text(s, encoding='utf-8')
 
-          # NMS reflectionが対象3ファイルに残っていないことを確認
           for path in [
               root / 'src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/ParallelFurnace/ParallelFurnaceModule.java',
               root / 'src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/WarpStone/WarpStoneModule.java',
@@ -173,6 +172,8 @@ jobs:
               if found:
                   raise SystemExit(f'{path}: reflection remains: {found}')
 
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
       - name: Build
         run: ./gradlew build --stacktrace
       - name: Commit refactor
