@@ -20,6 +20,7 @@ import org.bukkit.event.entity.EntityPotionEffectEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -57,6 +58,7 @@ public final class JustLevelingRuntime implements Listener {
     private final Map<UUID, CounterState> counterAttack = new HashMap<>();
     private final Map<UUID, Long> pearlTeleports = new HashMap<>();
     private final Set<UUID> potionRewriteGuard = new HashSet<>();
+    private final Map<UUID, MerchantDiscountState> merchantDiscounts = new HashMap<>();
 
     public JustLevelingRuntime(Loader plugin, LevelingSystemModule leveling) {
         this.plugin = plugin;
@@ -76,7 +78,6 @@ public final class JustLevelingRuntime implements Listener {
     private void refreshPersistentSkills(Player player) {
         syncOwnedPotion(player, PotionEffectType.NIGHT_VISION, has(player, LevelingSkill.CAT_EYES), 0);
         syncOwnedPotion(player, PotionEffectType.RESISTANCE, has(player, LevelingSkill.DIAMOND_SKIN), 1);
-
         if (has(player, LevelingSkill.ATHLETICS)) {
             if (player.getMaximumAir() < ATHLETICS_MAX_AIR) player.setMaximumAir(ATHLETICS_MAX_AIR);
         } else if (player.getMaximumAir() == ATHLETICS_MAX_AIR) {
@@ -85,7 +86,6 @@ public final class JustLevelingRuntime implements Listener {
         applyExtendedPassives(player);
     }
 
-    /** このランタイムが付与した見た目なし・ambient効果だけを同期する。 */
     private void syncOwnedPotion(Player player, PotionEffectType type, boolean enabled, int amplifier) {
         PotionEffect current = player.getPotionEffect(type);
         if (enabled) {
@@ -107,6 +107,7 @@ public final class JustLevelingRuntime implements Listener {
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
+        restoreMerchantDiscount(id);
         counterAttack.remove(id);
         pearlTeleports.remove(id);
         potionRewriteGuard.remove(id);
@@ -122,44 +123,32 @@ public final class JustLevelingRuntime implements Listener {
             if (criticalTier > 0 && attacker.getFallDistance() > 0.0F && !attacker.isOnGround()) {
                 event.setDamage(event.getDamage() * (1.0D + 0.25D * criticalTier));
             }
-
             if (event.getDamager() instanceof AbstractArrow) {
-                if (has(attacker, LevelingSkill.QUICK_REPOSITION)) {
-                    attacker.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 60, 1, true, true, true));
-                }
-                if (has(attacker, LevelingSkill.STEALTH_MASTERY) && attacker.isSneaking()) {
-                    event.setDamage(event.getDamage() * 1.25D);
-                }
+                if (has(attacker, LevelingSkill.QUICK_REPOSITION)) attacker.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 60, 1, true, true, true));
+                if (has(attacker, LevelingSkill.STEALTH_MASTERY) && attacker.isSneaking()) event.setDamage(event.getDamage() * 1.25D);
             } else {
                 CounterState state = counterAttack.remove(attacker.getUniqueId());
-                if (state != null && state.expiresAt >= System.currentTimeMillis() && has(attacker, LevelingSkill.COUNTER_ATTACK)) {
-                    event.setDamage(event.getDamage() + state.bonusDamage);
-                }
+                if (state != null && state.expiresAt >= System.currentTimeMillis() && has(attacker, LevelingSkill.COUNTER_ATTACK)) event.setDamage(event.getDamage() + state.bonusDamage);
                 if (has(attacker, LevelingSkill.LIMIT_BREAKER) && ThreadLocalRandom.current().nextInt(10_000) < 100) {
                     event.setDamage(event.getDamage() * 999.0D);
                     attacker.sendActionBar("§6限界突破！");
                 }
             }
         }
-
         if (event.getEntity() instanceof Player victim && has(victim, LevelingSkill.COUNTER_ATTACK)) {
-            counterAttack.put(victim.getUniqueId(), new CounterState(System.currentTimeMillis() + COUNTER_WINDOW_MS,
-                    event.getFinalDamage() * 0.50D));
+            counterAttack.put(victim.getUniqueId(), new CounterState(System.currentTimeMillis() + COUNTER_WINDOW_MS, event.getFinalDamage() * 0.50D));
         }
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onKill(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
-        if (killer != null && has(killer, LevelingSkill.FIGHTING_SPIRIT)) {
-            killer.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 60, 0, true, true, true));
-        }
+        if (killer != null && has(killer, LevelingSkill.FIGHTING_SPIRIT)) killer.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 60, 0, true, true, true));
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onProjectileHit(ProjectileHitEvent event) {
-        if (event.getEntity() instanceof ShulkerBullet && event.getHitEntity() instanceof Player player
-                && has(player, LevelingSkill.TURTLE_SHIELD)) {
+        if (event.getEntity() instanceof ShulkerBullet && event.getHitEntity() instanceof Player player && has(player, LevelingSkill.TURTLE_SHIELD)) {
             Bukkit.getScheduler().runTask(plugin, () -> player.removePotionEffect(PotionEffectType.LEVITATION));
         }
     }
@@ -178,9 +167,7 @@ public final class JustLevelingRuntime implements Listener {
         player.setFreezeTicks(0);
         Material feet = player.getLocation().getBlock().getType();
         Material below = player.getLocation().clone().subtract(0, 0.2D, 0).getBlock().getType();
-        if ((feet == Material.POWDER_SNOW || below == Material.POWDER_SNOW) && player.getVelocity().getY() < 0.0D) {
-            player.setVelocity(player.getVelocity().setY(0.0D));
-        }
+        if ((feet == Material.POWDER_SNOW || below == Material.POWDER_SNOW) && player.getVelocity().getY() < 0.0D) player.setVelocity(player.getVelocity().setY(0.0D));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -189,17 +176,13 @@ public final class JustLevelingRuntime implements Listener {
         UUID id = player.getUniqueId();
         if (potionRewriteGuard.remove(id)) return;
         PotionEffect effect = event.getNewEffect();
-
         if (has(player, LevelingSkill.LION_HEART) && isNegative(effect.getType()) && effect.getDuration() > 1) {
             rewriteEffect(player, effect, Math.max(1, effect.getDuration() / 2), effect.getAmplifier());
             return;
         }
-
         int magic = leveling.getLevel(player, LevelingAptitude.MAGIC);
         int beneficialTier = LevelingAptitude.MAGIC.passiveTier10(magic);
-        if (beneficialTier > 0 && !isNegative(effect.getType()) && effect.getDuration() > 1) {
-            rewriteEffect(player, effect, effect.getDuration() + beneficialTier * 60, effect.getAmplifier());
-        }
+        if (beneficialTier > 0 && !isNegative(effect.getType()) && effect.getDuration() > 1) rewriteEffect(player, effect, effect.getDuration() + beneficialTier * 60, effect.getAmplifier());
     }
 
     private void rewriteEffect(Player player, PotionEffect effect, int duration, int amplifier) {
@@ -207,8 +190,7 @@ public final class JustLevelingRuntime implements Listener {
         Bukkit.getScheduler().runTask(plugin, () -> {
             potionRewriteGuard.add(id);
             player.removePotionEffect(effect.getType());
-            player.addPotionEffect(new PotionEffect(effect.getType(), duration, amplifier,
-                    effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));
+            player.addPotionEffect(new PotionEffect(effect.getType(), duration, amplifier, effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));
         });
     }
 
@@ -218,10 +200,7 @@ public final class JustLevelingRuntime implements Listener {
         if (!has(player, LevelingSkill.ALCHEMY_MANIPULATION) || event.getItem().getType() != Material.POTION) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             for (PotionEffect effect : new ArrayList<>(player.getActivePotionEffects())) {
-                if (!isNegative(effect.getType())) {
-                    player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1,
-                            effect.isAmbient(), effect.hasParticles(), effect.hasIcon()), true);
-                }
+                if (!isNegative(effect.getType())) player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1, effect.isAmbient(), effect.hasParticles(), effect.hasIcon()), true);
             }
         });
     }
@@ -229,10 +208,7 @@ public final class JustLevelingRuntime implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onObsidianDamage(BlockDamageEvent event) {
         Material type = event.getBlock().getType();
-        if (has(event.getPlayer(), LevelingSkill.OBSIDIAN_SMASHER)
-                && (type == Material.OBSIDIAN || type == Material.CRYING_OBSIDIAN)) {
-            event.getPlayer().addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 40, 8, true, false, false));
-        }
+        if (has(event.getPlayer(), LevelingSkill.OBSIDIAN_SMASHER) && (type == Material.OBSIDIAN || type == Material.CRYING_OBSIDIAN)) event.getPlayer().addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 40, 8, true, false, false));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -251,9 +227,7 @@ public final class JustLevelingRuntime implements Listener {
         if (!(event.getWhoClicked() instanceof Player player) || !has(player, LevelingSkill.CONVERGENCE)) return;
         if (ThreadLocalRandom.current().nextInt(100) >= 8) return;
         List<ItemStack> candidates = new ArrayList<>();
-        for (ItemStack item : event.getInventory().getMatrix()) {
-            if (item != null && !item.getType().isAir()) candidates.add(item);
-        }
+        for (ItemStack item : event.getInventory().getMatrix()) if (item != null && !item.getType().isAir()) candidates.add(item);
         if (candidates.isEmpty()) return;
         ItemStack refund = candidates.get(ThreadLocalRandom.current().nextInt(candidates.size())).clone();
         refund.setAmount(1);
@@ -263,9 +237,7 @@ public final class JustLevelingRuntime implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onPearlTeleport(PlayerTeleportEvent event) {
-        if (event.getCause() == PlayerTeleportEvent.TeleportCause.ENDER_PEARL && has(event.getPlayer(), LevelingSkill.SAFE_PORT)) {
-            pearlTeleports.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
-        }
+        if (event.getCause() == PlayerTeleportEvent.TeleportCause.ENDER_PEARL && has(event.getPlayer(), LevelingSkill.SAFE_PORT)) pearlTeleports.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGHEST)
@@ -296,22 +268,40 @@ public final class JustLevelingRuntime implements Listener {
         if (item == null || item.getEnchantments().isEmpty()) return;
         ItemMeta meta = item.getItemMeta();
         player.sendMessage("§b学者 §7- §f" + (meta != null && meta.hasDisplayName() ? meta.getDisplayName() : item.getType().name()));
-        item.getEnchantments().forEach((enchantment, level) ->
-                player.sendMessage("§7 • §d" + enchantment.getKey().getKey() + " §f" + level));
+        item.getEnchantments().forEach((enchantment, level) -> player.sendMessage("§7 • §d" + enchantment.getKey().getKey() + " §f" + level));
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onMerchantOpen(InventoryOpenEvent event) {
         if (!(event.getPlayer() instanceof Player player) || !has(player, LevelingSkill.HAGGLER)) return;
         if (!(event.getInventory() instanceof MerchantInventory merchantInventory)) return;
+        restoreMerchantDiscount(player.getUniqueId());
         Merchant merchant = merchantInventory.getMerchant();
         List<MerchantRecipe> recipes = merchant.getRecipes();
+        List<Integer> originals = new ArrayList<>(recipes.size());
         for (MerchantRecipe recipe : recipes) {
+            originals.add(recipe.getSpecialPrice());
             List<ItemStack> ingredients = recipe.getIngredients();
             if (ingredients.isEmpty()) continue;
-            recipe.setSpecialPrice(-Math.max(1, (int) Math.ceil(ingredients.getFirst().getAmount() * 0.20D)));
+            int discount = Math.max(1, (int) Math.ceil(ingredients.getFirst().getAmount() * 0.20D));
+            recipe.setSpecialPrice(recipe.getSpecialPrice() - discount);
         }
         merchant.setRecipes(recipes);
+        merchantDiscounts.put(player.getUniqueId(), new MerchantDiscountState(merchant, originals));
+    }
+
+    @EventHandler
+    public void onMerchantClose(InventoryCloseEvent event) {
+        if (event.getPlayer() instanceof Player player) restoreMerchantDiscount(player.getUniqueId());
+    }
+
+    private void restoreMerchantDiscount(UUID playerId) {
+        MerchantDiscountState state = merchantDiscounts.remove(playerId);
+        if (state == null) return;
+        List<MerchantRecipe> recipes = state.merchant.getRecipes();
+        int count = Math.min(recipes.size(), state.originalSpecialPrices.size());
+        for (int i = 0; i < count; i++) recipes.get(i).setSpecialPrice(state.originalSpecialPrices.get(i));
+        state.merchant.setRecipes(recipes);
     }
 
     private void applyExtendedPassives(Player player) {
@@ -350,4 +340,5 @@ public final class JustLevelingRuntime implements Listener {
     }
 
     private record CounterState(long expiresAt, double bonusDamage) {}
+    private record MerchantDiscountState(Merchant merchant, List<Integer> originalSpecialPrices) {}
 }
