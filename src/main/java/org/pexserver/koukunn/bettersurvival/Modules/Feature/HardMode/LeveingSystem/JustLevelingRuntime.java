@@ -6,8 +6,6 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Merchant;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.ShulkerBullet;
 import org.bukkit.event.EventHandler;
@@ -23,13 +21,14 @@ import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
-import org.bukkit.event.inventory.MerchantInventory;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Merchant;
+import org.bukkit.inventory.MerchantInventory;
 import org.bukkit.inventory.MerchantRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
@@ -79,7 +78,7 @@ public final class JustLevelingRuntime implements Listener {
                 player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 220, 1, true, false, false));
             }
             if (has(player, LevelingSkill.ATHLETICS) && player.getMaximumAir() < 450) {
-                player.setMaximumAir(450); // Forge既定 athleticsModifier=1.5
+                player.setMaximumAir(450);
             }
             applyExtendedPassives(player);
         }
@@ -87,16 +86,19 @@ public final class JustLevelingRuntime implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            refreshPersistentSkills();
-            applyExtendedPassives(event.getPlayer());
-        });
+        Bukkit.getScheduler().runTask(plugin, () -> applyExtendedPassives(event.getPlayer()));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event) {
         Player attacker = playerFromDamager(event.getDamager());
         if (attacker != null) {
+            int luck = leveling.getLevel(attacker, LevelingAptitude.LUCK);
+            int criticalTier = LevelingAptitude.LUCK.passiveTier10(luck);
+            if (criticalTier > 0 && attacker.getFallDistance() > 0.0F && !attacker.isOnGround()) {
+                event.setDamage(event.getDamage() * (1.0D + 0.25D * criticalTier));
+            }
+
             if (event.getDamager() instanceof AbstractArrow) {
                 if (has(attacker, LevelingSkill.QUICK_REPOSITION)) {
                     attacker.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 60, 1, true, true, true));
@@ -125,25 +127,24 @@ public final class JustLevelingRuntime implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onKill(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
-        if (killer == null) return;
-        if (has(killer, LevelingSkill.FIGHTING_SPIRIT)) {
+        if (killer != null && has(killer, LevelingSkill.FIGHTING_SPIRIT)) {
             killer.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 60, 0, true, true, true));
         }
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onProjectileHit(ProjectileHitEvent event) {
-        if (!(event.getEntity() instanceof ShulkerBullet) || !(event.getHitEntity() instanceof Player player)) return;
-        if (!has(player, LevelingSkill.TURTLE_SHIELD)) return;
-        Bukkit.getScheduler().runTask(plugin, () -> player.removePotionEffect(PotionEffectType.LEVITATION));
+        if (event.getEntity() instanceof ShulkerBullet && event.getHitEntity() instanceof Player player
+                && has(player, LevelingSkill.TURTLE_SHIELD)) {
+            Bukkit.getScheduler().runTask(plugin, () -> player.removePotionEffect(PotionEffectType.LEVITATION));
+        }
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onTarget(EntityTargetLivingEntityEvent event) {
         if (!(event.getTarget() instanceof Player player) || !has(player, LevelingSkill.STEALTH_MASTERY)) return;
-        double distanceSquared = event.getEntity().getLocation().distanceSquared(player.getLocation());
-        double normalRange = player.isSneaking() ? 8.0D : 20.0D;
-        if (distanceSquared > normalRange * normalRange) event.setCancelled(true);
+        double range = player.isSneaking() ? 8.0D : 20.0D;
+        if (event.getEntity().getLocation().distanceSquared(player.getLocation()) > range * range) event.setCancelled(true);
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -164,26 +165,35 @@ public final class JustLevelingRuntime implements Listener {
         UUID id = player.getUniqueId();
         if (potionRewriteGuard.remove(id)) return;
         PotionEffect effect = event.getNewEffect();
+
         if (has(player, LevelingSkill.LION_HEART) && isNegative(effect.getType()) && effect.getDuration() > 1) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                potionRewriteGuard.add(id);
-                player.removePotionEffect(effect.getType());
-                player.addPotionEffect(new PotionEffect(effect.getType(), Math.max(1, effect.getDuration() / 2),
-                        effect.getAmplifier(), effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));
-            });
+            rewriteEffect(player, effect, Math.max(1, effect.getDuration() / 2), effect.getAmplifier());
+            return;
         }
+
+        int magic = leveling.getLevel(player, LevelingAptitude.MAGIC);
+        int beneficialTier = LevelingAptitude.MAGIC.passiveTier10(magic);
+        if (beneficialTier > 0 && !isNegative(effect.getType()) && effect.getDuration() > 1) {
+            rewriteEffect(player, effect, effect.getDuration() + beneficialTier * 60, effect.getAmplifier());
+        }
+    }
+
+    private void rewriteEffect(Player player, PotionEffect effect, int duration, int amplifier) {
+        UUID id = player.getUniqueId();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            potionRewriteGuard.add(id);
+            player.removePotionEffect(effect.getType());
+            player.addPotionEffect(new PotionEffect(effect.getType(), duration, amplifier,
+                    effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));
+        });
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onConsume(PlayerItemConsumeEvent event) {
         Player player = event.getPlayer();
-        if (!has(player, LevelingSkill.ALCHEMY_MANIPULATION)) return;
-        Material type = event.getItem().getType();
-        if (type != Material.POTION && type != Material.MILK_BUCKET && type != Material.HONEY_BOTTLE) return;
-        if (type != Material.POTION) return;
+        if (!has(player, LevelingSkill.ALCHEMY_MANIPULATION) || event.getItem().getType() != Material.POTION) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
-            List<PotionEffect> current = new ArrayList<>(player.getActivePotionEffects());
-            for (PotionEffect effect : current) {
+            for (PotionEffect effect : new ArrayList<>(player.getActivePotionEffects())) {
                 if (!isNegative(effect.getType())) {
                     player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1,
                             effect.isAmbient(), effect.hasParticles(), effect.hasIcon()), true);
@@ -194,9 +204,9 @@ public final class JustLevelingRuntime implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onObsidianDamage(BlockDamageEvent event) {
-        if (!has(event.getPlayer(), LevelingSkill.OBSIDIAN_SMASHER)) return;
         Material type = event.getBlock().getType();
-        if (type == Material.OBSIDIAN || type == Material.CRYING_OBSIDIAN) {
+        if (has(event.getPlayer(), LevelingSkill.OBSIDIAN_SMASHER)
+                && (type == Material.OBSIDIAN || type == Material.CRYING_OBSIDIAN)) {
             event.getPlayer().addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 40, 8, true, false, false));
         }
     }
@@ -205,21 +215,19 @@ public final class JustLevelingRuntime implements Listener {
     public void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
         if (!has(player, LevelingSkill.TREASURE_HUNTER) || !isDirt(event.getBlock().getType())) return;
-        // Forge既定 treasureHunterProbability=500 / 10000 = 5%
         if (ThreadLocalRandom.current().nextInt(10_000) >= 500) return;
         Material[] loot = {Material.IRON_NUGGET, Material.GOLD_NUGGET, Material.EMERALD, Material.LAPIS_LAZULI, Material.DIAMOND};
         Material reward = loot[ThreadLocalRandom.current().nextInt(loot.length)];
-        event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation(), new ItemStack(reward, 1));
+        event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation(), new ItemStack(reward));
         player.sendActionBar("§6Treasure Hunter!");
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onCraft(CraftItemEvent event) {
         if (!(event.getWhoClicked() instanceof Player player) || !has(player, LevelingSkill.CONVERGENCE)) return;
-        if (ThreadLocalRandom.current().nextInt(100) >= 8) return; // Forge既定 8%
-        ItemStack[] matrix = event.getInventory().getMatrix();
+        if (ThreadLocalRandom.current().nextInt(100) >= 8) return;
         List<ItemStack> candidates = new ArrayList<>();
-        for (ItemStack item : matrix) {
+        for (ItemStack item : event.getInventory().getMatrix()) {
             if (item != null && !item.getType().isAir()) candidates.add(item);
         }
         if (candidates.isEmpty()) return;
@@ -240,8 +248,7 @@ public final class JustLevelingRuntime implements Listener {
     public void onPearlDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player) || !has(player, LevelingSkill.SAFE_PORT)) return;
         Long at = pearlTeleports.get(player.getUniqueId());
-        if (at == null || System.currentTimeMillis() - at > PEARL_WINDOW_MS) return;
-        if (event.getCause() == EntityDamageEvent.DamageCause.FALL) {
+        if (at != null && System.currentTimeMillis() - at <= PEARL_WINDOW_MS && event.getCause() == EntityDamageEvent.DamageCause.FALL) {
             event.setCancelled(true);
             pearlTeleports.remove(player.getUniqueId());
         }
@@ -251,10 +258,10 @@ public final class JustLevelingRuntime implements Listener {
     public void onWormhole(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         ItemStack item = event.getItem();
-        if (!player.isSneaking() || item == null || item.getType() != Material.ENDER_CHEST) return;
-        if (!has(player, LevelingSkill.WORMHOLE_STORAGE)) return;
-        event.setCancelled(true);
-        player.openInventory(player.getEnderChest());
+        if (player.isSneaking() && item != null && item.getType() == Material.ENDER_CHEST && has(player, LevelingSkill.WORMHOLE_STORAGE)) {
+            event.setCancelled(true);
+            player.openInventory(player.getEnderChest());
+        }
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -278,8 +285,7 @@ public final class JustLevelingRuntime implements Listener {
         for (MerchantRecipe recipe : recipes) {
             List<ItemStack> ingredients = recipe.getIngredients();
             if (ingredients.isEmpty()) continue;
-            int base = ingredients.getFirst().getAmount();
-            recipe.setSpecialPrice(-Math.max(1, (int) Math.ceil(base * 0.20D)));
+            recipe.setSpecialPrice(-Math.max(1, (int) Math.ceil(ingredients.getFirst().getAmount() * 0.20D)));
         }
         merchant.setRecipes(recipes);
     }
@@ -288,18 +294,10 @@ public final class JustLevelingRuntime implements Listener {
         int strength = leveling.getLevel(player, LevelingAptitude.STRENGTH);
         int intelligence = leveling.getLevel(player, LevelingAptitude.INTELLIGENCE);
         int building = leveling.getLevel(player, LevelingAptitude.BUILDING);
-        int luck = leveling.getLevel(player, LevelingAptitude.LUCK);
-
-        // Forge既定: attack knockback 0.4 x 5 tiers
         setBaseMinimum(player, Attribute.ATTACK_KNOCKBACK, LevelingAptitude.STRENGTH.passiveTier5(strength) * 0.4D);
-        // PaperではForge独自reach属性を標準のinteraction rangeへ写像する。
         setBaseMinimum(player, Attribute.ENTITY_INTERACTION_RANGE, 3.0D + LevelingAptitude.INTELLIGENCE.passiveTier5(intelligence));
         setBaseMinimum(player, Attribute.BLOCK_INTERACTION_RANGE, 4.5D + LevelingAptitude.BUILDING.passiveTier5(building) * 1.5D);
         setBaseMinimum(player, Attribute.BLOCK_BREAK_SPEED, 1.0D + LevelingAptitude.BUILDING.passiveTier5(building) * 0.5D);
-        // critical damage は独自Forge属性のため、実ダメージ補正は攻撃イベント側で近似。
-        if (LevelingAptitude.LUCK.passiveTier10(luck) > 0) {
-            // 値の保持先として標準Luckも本体側で設定される。ここでは追加処理不要。
-        }
     }
 
     private void setBaseMinimum(Player player, Attribute attribute, double value) {
@@ -314,16 +312,11 @@ public final class JustLevelingRuntime implements Listener {
     }
 
     private boolean isNegative(PotionEffectType type) {
-        return type.equals(PotionEffectType.POISON)
-                || type.equals(PotionEffectType.WITHER)
-                || type.equals(PotionEffectType.SLOWNESS)
-                || type.equals(PotionEffectType.WEAKNESS)
-                || type.equals(PotionEffectType.BLINDNESS)
-                || type.equals(PotionEffectType.DARKNESS)
-                || type.equals(PotionEffectType.MINING_FATIGUE)
-                || type.equals(PotionEffectType.HUNGER)
-                || type.equals(PotionEffectType.NAUSEA)
-                || type.equals(PotionEffectType.LEVITATION);
+        return type.equals(PotionEffectType.POISON) || type.equals(PotionEffectType.WITHER)
+                || type.equals(PotionEffectType.SLOWNESS) || type.equals(PotionEffectType.WEAKNESS)
+                || type.equals(PotionEffectType.BLINDNESS) || type.equals(PotionEffectType.DARKNESS)
+                || type.equals(PotionEffectType.MINING_FATIGUE) || type.equals(PotionEffectType.HUNGER)
+                || type.equals(PotionEffectType.NAUSEA) || type.equals(PotionEffectType.LEVITATION);
     }
 
     private boolean isDirt(Material material) {
