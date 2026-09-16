@@ -4,6 +4,7 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
+import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,19 +19,19 @@ public class HomeStore {
     public static final int DEFAULT_HOME_SLOTS = 1;
     public static final int MAX_HOME_SLOTS = 10;
 
+    private final Loader plugin;
     private final ConfigManager configManager;
 
-    public HomeStore(ConfigManager configManager) {
-        this.configManager = configManager;
+    public HomeStore(Loader plugin) {
+        this.plugin = plugin;
+        this.configManager = plugin.getConfigManager();
     }
 
     public List<HomePoint> getHomes(Player player) {
         PEXConfig config = configManager.loadConfig(path(player)).orElseGet(PEXConfig::new);
         List<HomePoint> homes = new ArrayList<>();
         for (Map.Entry<String, Object> entry : config.getData().entrySet()) {
-            if (entry.getValue() instanceof Map) {
-                homes.add(HomePoint.deserialize(entry.getKey(), (Map<String, Object>) entry.getValue()));
-            }
+            if (entry.getValue() instanceof Map) homes.add(HomePoint.deserialize(entry.getKey(), (Map<String, Object>) entry.getValue()));
         }
         homes.sort(Comparator.comparing(home -> home.getName().toLowerCase(Locale.ROOT)));
         return homes;
@@ -38,11 +39,7 @@ public class HomeStore {
 
     public Optional<HomePoint> getHome(Player player, String name) {
         String normalized = normalizeName(name);
-        for (HomePoint home : getHomes(player)) {
-            if (home.getName().equalsIgnoreCase(normalized)) {
-                return Optional.of(home);
-            }
-        }
+        for (HomePoint home : getHomes(player)) if (home.getName().equalsIgnoreCase(normalized)) return Optional.of(home);
         return Optional.empty();
     }
 
@@ -54,12 +51,8 @@ public class HomeStore {
         String normalized = normalizeName(name);
         PEXConfig config = configManager.loadConfig(path(player)).orElseGet(PEXConfig::new);
         String existingKey = findExistingKey(config, normalized);
-        if (existingKey == null && countHomes(config) >= Math.max(DEFAULT_HOME_SLOTS, Math.min(MAX_HOME_SLOTS, maxSlots))) {
-            return SaveResult.LIMIT;
-        }
-        if (existingKey != null && !existingKey.equals(normalized)) {
-            config.getData().remove(existingKey);
-        }
+        if (existingKey == null && countHomes(config) >= Math.max(DEFAULT_HOME_SLOTS, Math.min(MAX_HOME_SLOTS, maxSlots))) return SaveResult.LIMIT;
+        if (existingKey != null && !existingKey.equals(normalized)) config.getData().remove(existingKey);
         config.put(normalized, new HomePoint(normalized, location).serialize());
         return configManager.saveConfig(path(player), config) ? SaveResult.SAVED : SaveResult.FAILED;
     }
@@ -73,9 +66,7 @@ public class HomeStore {
         return configManager.saveConfig(path(player), config);
     }
 
-    public String normalizeName(String name) {
-        return name == null ? "" : name.trim();
-    }
+    public String normalizeName(String name) { return name == null ? "" : name.trim(); }
 
     public int getUnlockedSlots(Player player) {
         PEXConfig cfg = configManager.loadConfig(slotPath(player)).orElseGet(PEXConfig::new);
@@ -98,36 +89,35 @@ public class HomeStore {
         return configManager.saveConfig(slotPath(player), cfg);
     }
 
+    private String group(Player player) {
+        if (plugin.getOtherworldModule() == null) return "default";
+        String group = plugin.getOtherworldModule().getGroup(player);
+        return group == null || group.isBlank() ? "default" : group.toLowerCase(Locale.ROOT);
+    }
+
     private String slotPath(Player player) {
-        return "homes/slots/" + player.getUniqueId() + ".json";
+        String group = group(player);
+        String file = player.getUniqueId() + ".json";
+        // defaultは既存データ互換。Otherworldはグループごとに完全分離する。
+        return group.equals("default") ? "homes/slots/" + file : "homes/otherworld/" + group + "/slots/" + file;
     }
 
     private String findExistingKey(PEXConfig config, String name) {
-        for (String key : config.getData().keySet()) {
-            if (key.equalsIgnoreCase(name)) {
-                return key;
-            }
-        }
+        for (String key : config.getData().keySet()) if (key.equalsIgnoreCase(name)) return key;
         return null;
     }
 
     private int countHomes(PEXConfig config) {
         int count = 0;
-        for (Object value : config.getData().values()) {
-            if (value instanceof LinkedHashMap || value instanceof Map) {
-                count++;
-            }
-        }
+        for (Object value : config.getData().values()) if (value instanceof LinkedHashMap || value instanceof Map) count++;
         return count;
     }
 
     private String path(Player player) {
-        return "homes/" + player.getUniqueId() + ".json";
+        String group = group(player);
+        String file = player.getUniqueId() + ".json";
+        return group.equals("default") ? "homes/" + file : "homes/otherworld/" + group + "/" + file;
     }
 
-    public enum SaveResult {
-        SAVED,
-        LIMIT,
-        FAILED
-    }
+    public enum SaveResult { SAVED, LIMIT, FAILED }
 }
