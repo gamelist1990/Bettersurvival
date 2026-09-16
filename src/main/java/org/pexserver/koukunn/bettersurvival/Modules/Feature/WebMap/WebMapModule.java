@@ -1,5 +1,8 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.material.MapColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
@@ -10,6 +13,7 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Biome;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.craftbukkit.block.data.CraftBlockData;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
@@ -38,9 +42,6 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.Party;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyRank;
 
 import java.io.IOException;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -904,77 +905,34 @@ public class WebMapModule implements Listener {
     }
 
     private static final class NmsMapColorResolver {
-        private static final NmsMapColorResolver DISABLED = new NmsMapColorResolver(null, null, null, null, null, null);
+    public static NmsMapColorResolver create() {
+        return new NmsMapColorResolver();
+    }
 
-        private final Class<?> craftBlockDataClass;
-        private final MethodHandle getState;
-        private final MethodHandle getMapColor;
-        private final MethodHandle getColorValue;
-        private final Object emptyBlockGetter;
-        private final Object blockPosZero;
-
-        private NmsMapColorResolver(
-                Class<?> craftBlockDataClass,
-                MethodHandle getState,
-                MethodHandle getMapColor,
-                MethodHandle getColorValue,
-                Object emptyBlockGetter,
-                Object blockPosZero
-        ) {
-            this.craftBlockDataClass = craftBlockDataClass;
-            this.getState = getState;
-            this.getMapColor = getMapColor;
-            this.getColorValue = getColorValue;
-            this.emptyBlockGetter = emptyBlockGetter;
-            this.blockPosZero = blockPosZero;
+    public int[] color(BlockData blockData) {
+        if (!(blockData instanceof CraftBlockData craftBlockData)) {
+            return null;
         }
-
-        public static NmsMapColorResolver create() {
-            try {
-                // NMS v26.1.2 時点の実装。リフレクションで呼び出すメソッドは、CraftBlockData#getState() -> BlockState#getMapColor(BlockGetter, BlockPos) -> MapColor.col の順。
-                MethodHandles.Lookup lookup = MethodHandles.publicLookup();
-                Class<?> craftBlockDataClass = Class.forName("org.bukkit.craftbukkit.block.data.CraftBlockData");
-                Class<?> blockStateClass = Class.forName("net.minecraft.world.level.block.state.BlockState");
-                Class<?> blockGetterClass = Class.forName("net.minecraft.world.level.BlockGetter");
-                Class<?> blockPosClass = Class.forName("net.minecraft.core.BlockPos");
-                Class<?> mapColorClass = Class.forName("net.minecraft.world.level.material.MapColor");
-                Class<?> emptyBlockGetterClass = Class.forName("net.minecraft.world.level.EmptyBlockGetter");
-                MethodHandle getState = lookup.findVirtual(craftBlockDataClass, "getState", MethodType.methodType(blockStateClass));
-                MethodHandle getMapColor = lookup.findVirtual(blockStateClass, "getMapColor", MethodType.methodType(mapColorClass, blockGetterClass, blockPosClass));
-                MethodHandle getColorValue = lookup.findGetter(mapColorClass, "col", int.class);
-                Object emptyBlockGetter = lookup.findStaticGetter(emptyBlockGetterClass, "INSTANCE", emptyBlockGetterClass).invoke();
-                Object blockPosZero = lookup.findStaticGetter(blockPosClass, "ZERO", blockPosClass).invoke();
-                return new NmsMapColorResolver(craftBlockDataClass, getState, getMapColor, getColorValue, emptyBlockGetter, blockPosZero);
-            } catch (Throwable ignored) {
-                return DISABLED;
-            }
-        }
-
-        public int[] color(BlockData blockData) {
-            if (craftBlockDataClass == null || blockData == null || !craftBlockDataClass.isInstance(blockData)) {
+        try {
+            MapColor mapColor = craftBlockData.getState().getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
+            int color = mapColor.col;
+            if (color == 0) {
                 return null;
             }
-            try {
-                Object state = getState.invoke(blockData);
-                Object mapColor = getMapColor.invoke(state, emptyBlockGetter, blockPosZero);
-                int color = (int) getColorValue.invoke(mapColor);
-                if (color == 0) {
-                    return null;
-                }
-                return new int[]{
-                        (color >> 16) & 0xFF,
-                        (color >> 8) & 0xFF,
-                        color & 0xFF
-                };
-            } catch (Throwable ignored) {
-                return null;
-            }
-        }
-
-        public boolean isEnabled() {
-            return craftBlockDataClass != null;
+            return new int[]{
+                    (color >> 16) & 0xFF,
+                    (color >> 8) & 0xFF,
+                    color & 0xFF
+            };
+        } catch (Throwable ignored) {
+            return null;
         }
     }
+
+    public boolean isEnabled() {
+        return true;
+    }
+}
 
     private int[] mix(int[] from, int[] to, double amount) {
         double clamped = Math.max(0D, Math.min(1D, amount));

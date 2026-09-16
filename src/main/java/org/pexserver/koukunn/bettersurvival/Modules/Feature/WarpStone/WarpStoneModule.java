@@ -1,5 +1,7 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.WarpStone;
 
+import net.minecraft.network.protocol.game.ClientboundSetCameraPacket;
+import net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -11,6 +13,8 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import org.bukkit.entity.ArmorStand;
+import org.bukkit.craftbukkit.entity.CraftEntity;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Mannequin;
 import org.bukkit.entity.Player;
@@ -917,7 +921,7 @@ public class WarpStoneModule implements Listener {
      * クライアントのカメラ対象を直接指定する。
      * Bukkit API の setSpectatorTarget(null) は「解除」扱いで1フレームずれることがあるため、
      * ロードパルス時は NMS の ClientboundSetCameraPacket で player 本人を camera にする。
-     * バージョン差を避けるため reflection で呼び、失敗時だけ Bukkit API にフォールバックする。
+     * paperweight-userdev のNMS packetを直接送り、失敗時だけ Bukkit API にフォールバックする。
      */
     private void setClientCamera(Player viewer, org.bukkit.entity.Entity target) {
         if (sendSetCameraPacket(viewer, target)) {
@@ -932,26 +936,13 @@ public class WarpStoneModule implements Listener {
 
     private boolean sendSetCameraPacket(Player viewer, org.bukkit.entity.Entity target) {
         try {
-            Object serverPlayer = viewer.getClass().getMethod("getHandle").invoke(viewer);
-            Object connection = serverPlayer.getClass().getField("connection").get(serverPlayer);
-            Object nmsTarget = target.getClass().getMethod("getHandle").invoke(target);
-
-            Class<?> packetClass = Class.forName("net.minecraft.network.protocol.game.ClientboundSetCameraPacket");
-            Object packet = null;
-            for (java.lang.reflect.Constructor<?> constructor : packetClass.getConstructors()) {
-                Class<?>[] parameterTypes = constructor.getParameterTypes();
-                if (parameterTypes.length == 1 && parameterTypes[0].isAssignableFrom(nmsTarget.getClass())) {
-                    packet = constructor.newInstance(nmsTarget);
-                    break;
-                }
-            }
-            if (packet == null) {
-                return false;
-            }
-            return sendPacketByReflection(connection, packet);
+            CraftPlayer craftViewer = (CraftPlayer) viewer;
+            CraftEntity craftTarget = (CraftEntity) target;
+            craftViewer.getHandle().connection.send(new ClientboundSetCameraPacket(craftTarget.getHandle()));
+            return true;
         } catch (Throwable ignored) {
+            return false;
         }
-        return false;
     }
 
     /**
@@ -960,44 +951,14 @@ public class WarpStoneModule implements Listener {
      */
     private boolean sendChunkCacheCenterPacket(Player viewer, Location center) {
         try {
-            Object serverPlayer = viewer.getClass().getMethod("getHandle").invoke(viewer);
-            Object connection = serverPlayer.getClass().getField("connection").get(serverPlayer);
             int chunkX = center.getBlockX() >> 4;
             int chunkZ = center.getBlockZ() >> 4;
-
-            Class<?> packetClass = Class.forName("net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket");
-            Object packet = packetClass.getConstructor(int.class, int.class).newInstance(chunkX, chunkZ);
-            return sendPacketByReflection(connection, packet);
+            ((CraftPlayer) viewer).getHandle().connection.send(
+                    new ClientboundSetChunkCacheCenterPacket(chunkX, chunkZ));
+            return true;
         } catch (Throwable ignored) {
+            return false;
         }
-        return false;
-    }
-
-    /**
-     * Paper 26.2 では対象パケットクラス自体は存在するが、javap上 ServerGamePacketListenerImpl の
-     * public send メソッドが見えない場合がある。継承元/非publicの declared method まで探索して送る。
-     */
-    private boolean sendPacketByReflection(Object connection, Object packet) {
-        Class<?> type = connection.getClass();
-        while (type != null) {
-            for (java.lang.reflect.Method method : type.getDeclaredMethods()) {
-                if (!method.getName().equals("send") || method.getParameterCount() != 1) {
-                    continue;
-                }
-                Class<?> parameterType = method.getParameterTypes()[0];
-                if (!parameterType.isAssignableFrom(packet.getClass())) {
-                    continue;
-                }
-                try {
-                    method.setAccessible(true);
-                    method.invoke(connection, packet);
-                    return true;
-                } catch (Throwable ignored) {
-                }
-            }
-            type = type.getSuperclass();
-        }
-        return false;
     }
 
     /**
