@@ -69,7 +69,7 @@ public final class LevelingExtras {
 
     public void sendTop(Player viewer) {
         String scope = leveling.dataScope(viewer);
-        List<Player> ranking = Bukkit.getOnlinePlayers().stream()
+        List<? extends Player> ranking = Bukkit.getOnlinePlayers().stream()
                 .filter(player -> leveling.dataScope(player).equals(scope))
                 .sorted(Comparator.comparingInt(this::totalLevel).reversed()
                         .thenComparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
