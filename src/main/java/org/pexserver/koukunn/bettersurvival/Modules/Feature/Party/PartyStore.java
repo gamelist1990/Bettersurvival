@@ -53,6 +53,7 @@ public class PartyStore {
         map.put("friendlyFire", party.isFriendlyFire());
         map.put("nameTagColor", party.isNameTagColor());
         map.put("nameTagPrefix", party.isNameTagPrefix());
+        map.put("public", party.isPublicParty());
         return map;
     }
 
@@ -79,6 +80,8 @@ public class PartyStore {
         if (map.get("friendlyFire") instanceof Boolean b) party.setFriendlyFire(b);
         if (map.get("nameTagColor") instanceof Boolean b) party.setNameTagColor(b);
         if (map.get("nameTagPrefix") instanceof Boolean b) party.setNameTagPrefix(b);
+        // 既存Partyは互換性・安全性のため必ずプライベートとして移行。
+        if (map.get("public") instanceof Boolean b) party.setPublicParty(b);
         return party;
     }
 
