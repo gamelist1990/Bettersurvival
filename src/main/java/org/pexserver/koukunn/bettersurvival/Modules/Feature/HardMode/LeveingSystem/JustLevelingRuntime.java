@@ -21,6 +21,7 @@ import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -44,13 +45,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Forge版 Just Leveling v1.7 のクライアント/Mixin依存機能を、可能な範囲で
- * Paperイベントへ置き換えるランタイム。
- */
+/** Forge版 Just Leveling v1.7 のクライアント/Mixin依存機能を Paper イベントへ置き換える。 */
 public final class JustLevelingRuntime implements Listener {
     private static final long COUNTER_WINDOW_MS = 3_000L;
     private static final long PEARL_WINDOW_MS = 1_500L;
+    private static final int VANILLA_MAX_AIR = 300;
+    private static final int ATHLETICS_MAX_AIR = 450;
 
     private final Loader plugin;
     private final LevelingSystemModule leveling;
@@ -70,23 +70,48 @@ public final class JustLevelingRuntime implements Listener {
     }
 
     private void refreshPersistentSkills() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (has(player, LevelingSkill.CAT_EYES)) {
-                player.addPotionEffect(new PotionEffect(PotionEffectType.NIGHT_VISION, 220, 0, true, false, false));
-            }
-            if (has(player, LevelingSkill.DIAMOND_SKIN)) {
-                player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 220, 1, true, false, false));
-            }
-            if (has(player, LevelingSkill.ATHLETICS) && player.getMaximumAir() < 450) {
-                player.setMaximumAir(450);
-            }
-            applyExtendedPassives(player);
+        for (Player player : Bukkit.getOnlinePlayers()) refreshPersistentSkills(player);
+    }
+
+    private void refreshPersistentSkills(Player player) {
+        syncOwnedPotion(player, PotionEffectType.NIGHT_VISION, has(player, LevelingSkill.CAT_EYES), 0);
+        syncOwnedPotion(player, PotionEffectType.RESISTANCE, has(player, LevelingSkill.DIAMOND_SKIN), 1);
+
+        if (has(player, LevelingSkill.ATHLETICS)) {
+            if (player.getMaximumAir() < ATHLETICS_MAX_AIR) player.setMaximumAir(ATHLETICS_MAX_AIR);
+        } else if (player.getMaximumAir() == ATHLETICS_MAX_AIR) {
+            player.setMaximumAir(VANILLA_MAX_AIR);
+        }
+        applyExtendedPassives(player);
+    }
+
+    /** このランタイムが付与した見た目なし・ambient効果だけを同期する。 */
+    private void syncOwnedPotion(Player player, PotionEffectType type, boolean enabled, int amplifier) {
+        PotionEffect current = player.getPotionEffect(type);
+        if (enabled) {
+            player.addPotionEffect(new PotionEffect(type, 220, amplifier, true, false, false));
+            return;
+        }
+        if (current != null && current.isAmbient() && !current.hasParticles() && !current.hasIcon()
+                && current.getAmplifier() == amplifier) {
+            player.removePotionEffect(type);
         }
     }
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        Bukkit.getScheduler().runTask(plugin, () -> applyExtendedPassives(event.getPlayer()));
+        Bukkit.getScheduler().runTask(plugin, () -> refreshPersistentSkills(event.getPlayer()));
+    }
+
+    @EventHandler
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+        UUID id = player.getUniqueId();
+        // 数秒だけ保持する戦闘/テレポート状態もOtherworldを跨がせない。
+        counterAttack.remove(id);
+        pearlTeleports.remove(id);
+        potionRewriteGuard.remove(id);
+        refreshPersistentSkills(player);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -113,7 +138,7 @@ public final class JustLevelingRuntime implements Listener {
                 }
                 if (has(attacker, LevelingSkill.LIMIT_BREAKER) && ThreadLocalRandom.current().nextInt(10_000) < 100) {
                     event.setDamage(event.getDamage() * 999.0D);
-                    attacker.sendActionBar("§6LIMIT BREAK!");
+                    attacker.sendActionBar("§6限界突破！");
                 }
             }
         }
@@ -219,7 +244,7 @@ public final class JustLevelingRuntime implements Listener {
         Material[] loot = {Material.IRON_NUGGET, Material.GOLD_NUGGET, Material.EMERALD, Material.LAPIS_LAZULI, Material.DIAMOND};
         Material reward = loot[ThreadLocalRandom.current().nextInt(loot.length)];
         event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation(), new ItemStack(reward));
-        player.sendActionBar("§6Treasure Hunter!");
+        player.sendActionBar("§6お宝を発見！");
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -234,7 +259,7 @@ public final class JustLevelingRuntime implements Listener {
         ItemStack refund = candidates.get(ThreadLocalRandom.current().nextInt(candidates.size())).clone();
         refund.setAmount(1);
         player.getInventory().addItem(refund);
-        player.sendActionBar("§aConvergence: material refunded");
+        player.sendActionBar("§a収束: 素材を1個還元しました");
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -271,7 +296,7 @@ public final class JustLevelingRuntime implements Listener {
         ItemStack item = event.getItem();
         if (item == null || item.getEnchantments().isEmpty()) return;
         ItemMeta meta = item.getItemMeta();
-        player.sendMessage("§bScholar §7- §f" + (meta != null && meta.hasDisplayName() ? meta.getDisplayName() : item.getType().name()));
+        player.sendMessage("§b学者 §7- §f" + (meta != null && meta.hasDisplayName() ? meta.getDisplayName() : item.getType().name()));
         item.getEnchantments().forEach((enchantment, level) ->
                 player.sendMessage("§7 • §d" + enchantment.getKey().getKey() + " §f" + level));
     }
@@ -294,15 +319,15 @@ public final class JustLevelingRuntime implements Listener {
         int strength = leveling.getLevel(player, LevelingAptitude.STRENGTH);
         int intelligence = leveling.getLevel(player, LevelingAptitude.INTELLIGENCE);
         int building = leveling.getLevel(player, LevelingAptitude.BUILDING);
-        setBaseMinimum(player, Attribute.ATTACK_KNOCKBACK, LevelingAptitude.STRENGTH.passiveTier5(strength) * 0.4D);
-        setBaseMinimum(player, Attribute.ENTITY_INTERACTION_RANGE, 3.0D + LevelingAptitude.INTELLIGENCE.passiveTier5(intelligence));
-        setBaseMinimum(player, Attribute.BLOCK_INTERACTION_RANGE, 4.5D + LevelingAptitude.BUILDING.passiveTier5(building) * 1.5D);
-        setBaseMinimum(player, Attribute.BLOCK_BREAK_SPEED, 1.0D + LevelingAptitude.BUILDING.passiveTier5(building) * 0.5D);
+        setBase(player, Attribute.ATTACK_KNOCKBACK, LevelingAptitude.STRENGTH.passiveTier5(strength) * 0.4D);
+        setBase(player, Attribute.ENTITY_INTERACTION_RANGE, 3.0D + LevelingAptitude.INTELLIGENCE.passiveTier5(intelligence));
+        setBase(player, Attribute.BLOCK_INTERACTION_RANGE, 4.5D + LevelingAptitude.BUILDING.passiveTier5(building) * 1.5D);
+        setBase(player, Attribute.BLOCK_BREAK_SPEED, 1.0D + LevelingAptitude.BUILDING.passiveTier5(building) * 0.5D);
     }
 
-    private void setBaseMinimum(Player player, Attribute attribute, double value) {
+    private void setBase(Player player, Attribute attribute, double value) {
         AttributeInstance instance = player.getAttribute(attribute);
-        if (instance != null && instance.getBaseValue() < value) instance.setBaseValue(value);
+        if (instance != null) instance.setBaseValue(value);
     }
 
     private Player playerFromDamager(Entity entity) {
