@@ -77,7 +77,6 @@ public class PartyModule implements Listener {
 
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
-        // A player can have completely different membership in the destination group.
         refreshPlayerParty(event.getPlayer(), false);
     }
 
@@ -126,6 +125,14 @@ public class PartyModule implements Listener {
         return parties.values().stream().filter(p -> p.getScope().equals(normalized)).toList();
     }
 
+    /** 現在のOtherworldグループで検索・自由参加できる公開Party。 */
+    public List<Party> getPublicParties(Player player) {
+        return getParties(player).stream()
+                .filter(Party::isPublicParty)
+                .sorted((a, b) -> Integer.compare(b.getAllMembers().size(), a.getAllMembers().size()))
+                .toList();
+    }
+
     public boolean isNameUsed(String name) { return isNameUsed("default", name, null); }
     public boolean isNameUsed(Player player, String name) { return isNameUsed(scope(player), name, null); }
     private boolean isNameUsed(String scope, String name, Party except) {
@@ -159,17 +166,19 @@ public class PartyModule implements Listener {
 
     // ================= operations =================
 
+    /** 新規Partyは安全側でプライベートから開始する。 */
     public String createParty(Player leader, String name, PartyColor color, String description) {
-        String scope = scope(leader);
-        if (getPartyOf(leader.getUniqueId(), scope) != null) return "このワールドグループでは既にパーティーに所属しています";
+        String currentScope = scope(leader);
+        if (getPartyOf(leader.getUniqueId(), currentScope) != null) return "このワールドグループでは既にパーティーに所属しています";
         String sanitized = sanitizeName(name);
         if (sanitized == null) return "パーティー名は2〜" + MAX_NAME_LENGTH + "文字で指定してください";
-        if (isNameUsed(scope, sanitized, null)) return "このワールドグループではその名前は既に使われています";
-        if (isColorUsed(scope, color, null)) return "このワールドグループではそのカラーは他のパーティーが使用中です";
-        Party party = new Party(UUID.randomUUID(), scope, sanitized, color.name(), description, leader.getUniqueId());
+        if (isNameUsed(currentScope, sanitized, null)) return "このワールドグループではその名前は既に使われています";
+        if (isColorUsed(currentScope, color, null)) return "このワールドグループではそのカラーは他のパーティーが使用中です";
+        Party party = new Party(UUID.randomUUID(), currentScope, sanitized, color.name(), description, leader.getUniqueId());
+        party.setPublicParty(false);
         party.rememberName(leader.getUniqueId(), leader.getName());
         parties.put(party.getId(), party);
-        index(scope).put(leader.getUniqueId(), party.getId());
+        index(currentScope).put(leader.getUniqueId(), party.getId());
         updateDisplayName(leader, party);
         save();
         return null;
@@ -228,12 +237,24 @@ public class PartyModule implements Listener {
         if (expiry == null || expiry < System.currentTimeMillis()) return "有効な招待がありません";
         if (getPartyOf(player.getUniqueId(), party.getScope()) != null) return "このワールドグループでは既にパーティーに所属しています";
         map.remove(party.getId());
+        return addMember(player, party, "§d[パーティー] §e" + player.getName() + " §fが招待から加入しました");
+    }
+
+    /** 公開Partyへ検索画面から参加。プライベートPartyでは必ず拒否する。 */
+    public String joinPublicParty(Player player, Party party) {
+        if (party == null || !party.isPublicParty()) return "このパーティーは現在プライベートです";
+        if (!scope(player).equals(party.getScope())) return "別のワールドグループのパーティーには加入できません";
+        if (getPartyOf(player.getUniqueId(), party.getScope()) != null) return "このワールドグループでは既にパーティーに所属しています";
+        return addMember(player, party, "§d[パーティー] §e" + player.getName() + " §fが公開検索から加入しました");
+    }
+
+    private String addMember(Player player, Party party, String joinMessage) {
         party.getMembers().add(player.getUniqueId());
         party.rememberName(player.getUniqueId(), player.getName());
         index(party.getScope()).put(player.getUniqueId(), party.getId());
         updateDisplayName(player, party);
         save();
-        broadcast(party, "§d[パーティー] §e" + player.getName() + " §fが加入しました");
+        broadcast(party, joinMessage);
         return null;
     }
 
@@ -318,6 +339,19 @@ public class PartyModule implements Listener {
         PartyRank rank = party.rankOf(actor.getUniqueId());
         if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) return "説明変更はサブリーダー以上のみ実行できます";
         party.setDescription(description == null ? "" : description.trim()); save(); return null;
+    }
+
+    /** 公開/プライベート切替。サブリーダー以上が変更可能。 */
+    public String setPublicParty(Player actor, Party party, boolean publicParty) {
+        if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
+        PartyRank rank = party.rankOf(actor.getUniqueId());
+        if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) return "公開設定の変更はサブリーダー以上のみ実行できます";
+        party.setPublicParty(publicParty);
+        save();
+        broadcast(party, publicParty
+                ? "§d[パーティー] §a公開パーティーになりました §7(同じワールドグループから検索・参加できます)"
+                : "§d[パーティー] §eプライベートパーティーになりました §7(参加は招待制です)");
+        return null;
     }
 
     public void broadcast(Party party, String message) {
