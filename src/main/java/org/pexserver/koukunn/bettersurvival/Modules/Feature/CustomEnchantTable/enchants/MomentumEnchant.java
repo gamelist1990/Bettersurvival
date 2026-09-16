@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
@@ -30,15 +31,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class MomentumEnchant extends CustomEnchant {
 
-    /** この時間掘らないとスタックリセット */
     private static final long RESET_MS = 3_000L;
-    /** 何ブロック連続で掘るごとに速度が1段階上がるか */
     private static final int BLOCKS_PER_TIER = 1;
-    /** Lv5 最大時のブロック破壊速度倍率 */
     private static final double MAX_SPEED_MULTIPLIER = 10.0D;
-    /** 1レベルごとの最大段階数 */
     private static final int TIERS_PER_LEVEL = 2;
-    /** 1段階ごとの適正ツール採掘速度加算 */
     private static final double MINING_EFFICIENCY_BONUS_PER_TIER = 3.0D;
 
     private final Map<UUID, State> states = new ConcurrentHashMap<>();
@@ -49,15 +45,8 @@ public class MomentumEnchant extends CustomEnchant {
         tickTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
     }
 
-    @Override
-    public String id() {
-        return "momentum";
-    }
-
-    @Override
-    public String displayName() {
-        return "採掘加速";
-    }
+    @Override public String id() { return "momentum"; }
+    @Override public String displayName() { return "採掘加速"; }
 
     @Override
     public String description() {
@@ -68,25 +57,10 @@ public class MomentumEnchant extends CustomEnchant {
                 + "\n§7ポーション効果ではなく採掘属性そのものを上げる";
     }
 
-    @Override
-    public Material icon() {
-        return Material.GOLDEN_PICKAXE;
-    }
-
-    @Override
-    public String vanillaParentName() {
-        return "効率強化";
-    }
-
-    @Override
-    public int maxLevel() {
-        return 5;
-    }
-
-    @Override
-    public boolean supports(Material type) {
-        return isMiningTool(type);
-    }
+    @Override public Material icon() { return Material.GOLDEN_PICKAXE; }
+    @Override public String vanillaParentName() { return "効率強化"; }
+    @Override public int maxLevel() { return 5; }
+    @Override public boolean supports(Material type) { return isMiningTool(type); }
 
     @Override
     public List<ItemStack> upgradeCost(int nextLevel) {
@@ -122,11 +96,9 @@ public class MomentumEnchant extends CustomEnchant {
         state.lastBreakMs = now;
 
         int cappedLevel = Math.min(level, maxLevel());
-        int tierCap = tierCap(cappedLevel); // Lv1→2段階 / Lv2→4段階 / Lv3→6段階 / Lv4→8段階 / Lv5→10段階
+        int tierCap = tierCap(cappedLevel);
         int tier = Math.min(state.stacks / BLOCKS_PER_TIER, tierCap);
-        if (tier <= 0) {
-            return;
-        }
+        if (tier <= 0) return;
         applySpeed(player, state, cappedLevel, tier);
         if (tier != state.lastTier) {
             state.lastTier = tier;
@@ -135,9 +107,7 @@ public class MomentumEnchant extends CustomEnchant {
         }
     }
 
-    private int tierCap(int level) {
-        return Math.max(1, Math.min(maxLevel(), level) * TIERS_PER_LEVEL);
-    }
+    private int tierCap(int level) { return Math.max(1, Math.min(maxLevel(), level) * TIERS_PER_LEVEL); }
 
     private double maxSpeedMultiplier(int level) {
         int cappedLevel = Math.max(1, Math.min(maxLevel(), level));
@@ -153,22 +123,12 @@ public class MomentumEnchant extends CustomEnchant {
     private void applySpeed(Player player, State state, int level, int tier) {
         AttributeInstance blockBreakSpeed = player.getAttribute(Attribute.BLOCK_BREAK_SPEED);
         AttributeInstance miningEfficiency = player.getAttribute(Attribute.MINING_EFFICIENCY);
-        if (blockBreakSpeed == null && miningEfficiency == null) {
-            return;
-        }
-        if (blockBreakSpeed != null && Double.isNaN(state.originalBlockBreakSpeed)) {
-            state.originalBlockBreakSpeed = blockBreakSpeed.getBaseValue();
-        }
-        if (miningEfficiency != null && Double.isNaN(state.originalMiningEfficiency)) {
-            state.originalMiningEfficiency = miningEfficiency.getBaseValue();
-        }
+        if (blockBreakSpeed == null && miningEfficiency == null) return;
+        if (blockBreakSpeed != null && Double.isNaN(state.originalBlockBreakSpeed)) state.originalBlockBreakSpeed = blockBreakSpeed.getBaseValue();
+        if (miningEfficiency != null && Double.isNaN(state.originalMiningEfficiency)) state.originalMiningEfficiency = miningEfficiency.getBaseValue();
         double multiplier = speedMultiplier(level, tier);
-        if (blockBreakSpeed != null) {
-            blockBreakSpeed.setBaseValue(state.originalBlockBreakSpeed * multiplier);
-        }
-        if (miningEfficiency != null) {
-            miningEfficiency.setBaseValue(state.originalMiningEfficiency + MINING_EFFICIENCY_BONUS_PER_TIER * tier);
-        }
+        if (blockBreakSpeed != null) blockBreakSpeed.setBaseValue(state.originalBlockBreakSpeed * multiplier);
+        if (miningEfficiency != null) miningEfficiency.setBaseValue(state.originalMiningEfficiency + MINING_EFFICIENCY_BONUS_PER_TIER * tier);
         state.speedApplied = true;
     }
 
@@ -180,13 +140,9 @@ public class MomentumEnchant extends CustomEnchant {
             return;
         }
         AttributeInstance blockBreakSpeed = player.getAttribute(Attribute.BLOCK_BREAK_SPEED);
-        if (blockBreakSpeed != null && !Double.isNaN(state.originalBlockBreakSpeed)) {
-            blockBreakSpeed.setBaseValue(state.originalBlockBreakSpeed);
-        }
+        if (blockBreakSpeed != null && !Double.isNaN(state.originalBlockBreakSpeed)) blockBreakSpeed.setBaseValue(state.originalBlockBreakSpeed);
         AttributeInstance miningEfficiency = player.getAttribute(Attribute.MINING_EFFICIENCY);
-        if (miningEfficiency != null && !Double.isNaN(state.originalMiningEfficiency)) {
-            miningEfficiency.setBaseValue(state.originalMiningEfficiency);
-        }
+        if (miningEfficiency != null && !Double.isNaN(state.originalMiningEfficiency)) miningEfficiency.setBaseValue(state.originalMiningEfficiency);
         state.originalBlockBreakSpeed = Double.NaN;
         state.originalMiningEfficiency = Double.NaN;
         state.speedApplied = false;
@@ -196,15 +152,23 @@ public class MomentumEnchant extends CustomEnchant {
     public void onItemSwitch(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
         State state = states.get(player.getUniqueId());
-        if (state == null || !state.speedApplied) {
-            return;
-        }
+        if (state == null || !state.speedApplied) return;
         ItemStack newItem = player.getInventory().getItem(event.getNewSlot());
         if (newItem == null || levelOf(newItem) <= 0) {
             resetSpeed(player, state);
             state.stacks = 0;
             state.lastTier = 0;
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        /*
+         * Leveling は Otherworld グループごとに BLOCK_BREAK_SPEED を持つ。
+         * 移動前に保存した original 値を数秒後に復元すると、旧グループの速度が新グループへ漏れる。
+         * WorldChange 時は Momentum の一時状態だけ破棄し、属性値は先に実行される各プロフィール同期へ委ねる。
+         */
+        states.remove(event.getPlayer().getUniqueId());
     }
 
     private void tick() {
@@ -225,21 +189,15 @@ public class MomentumEnchant extends CustomEnchant {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         State state = states.remove(event.getPlayer().getUniqueId());
-        if (state != null) {
-            resetSpeed(event.getPlayer(), state);
-        }
+        if (state != null) resetSpeed(event.getPlayer(), state);
     }
 
     @Override
     public void shutdown() {
-        if (tickTask != null) {
-            tickTask.cancel();
-        }
+        if (tickTask != null) tickTask.cancel();
         for (Map.Entry<UUID, State> entry : states.entrySet()) {
             Player player = Bukkit.getPlayer(entry.getKey());
-            if (player != null) {
-                resetSpeed(player, entry.getValue());
-            }
+            if (player != null) resetSpeed(player, entry.getValue());
         }
         states.clear();
     }
