@@ -6,6 +6,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSystem.JustLevelingRuntime;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSystem.LevelingExtras;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSystem.LevelingSystemModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSystem.LevelingTitle;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSystem.LevelingTitleSystem;
@@ -20,6 +21,7 @@ public final class HardModeCommand extends BaseCommand {
     @SuppressWarnings("unused")
     private final JustLevelingRuntime levelingRuntime;
     private final LevelingTitleSystem titleSystem;
+    private final LevelingExtras levelingExtras;
 
     public HardModeCommand(TrueCrafterModeModule trueCrafter) {
         this.trueCrafter = trueCrafter;
@@ -27,12 +29,13 @@ public final class HardModeCommand extends BaseCommand {
         this.levelingSystem = new LevelingSystemModule(plugin);
         this.levelingRuntime = new JustLevelingRuntime(plugin, levelingSystem);
         this.titleSystem = new LevelingTitleSystem(plugin, levelingSystem);
+        this.levelingExtras = new LevelingExtras(levelingSystem);
     }
 
     @Override public String getName() { return "hardmode"; }
     @Override public String getDescription() { return "サバイバル高難易度機能を管理"; }
     @Override public PermissionLevel getPermissionLevel() { return PermissionLevel.ADMIN_OR_CONSOLE; }
-    @Override public String getUsage() { return "/hardmode <list|truecrafter enabled|disabled|heat 1-5|leveling enabled|disabled|open|book|titles|title>"; }
+    @Override public String getUsage() { return "/hardmode <list|truecrafter enabled|disabled|heat 1-5|leveling enabled|disabled|open|book|profile|skills|top|titles|title>"; }
 
     @Override
     public boolean execute(CommandSender sender, String[] args) {
@@ -70,6 +73,18 @@ public final class HardModeCommand extends BaseCommand {
             if (args[1].equalsIgnoreCase("book")) {
                 player.getInventory().addItem(levelingSystem.createLevelingBook());
                 sender.sendMessage("§dLeveling Book §6を付与しました");
+                return true;
+            }
+            if (args[1].equalsIgnoreCase("profile") || args[1].equalsIgnoreCase("stats")) {
+                levelingExtras.sendProfile(player);
+                return true;
+            }
+            if (args[1].equalsIgnoreCase("skills")) {
+                levelingExtras.sendSkills(player);
+                return true;
+            }
+            if (args[1].equalsIgnoreCase("top") || args[1].equalsIgnoreCase("ranking")) {
+                levelingExtras.sendTop(player);
                 return true;
             }
             if (args[1].equalsIgnoreCase("titles")) {
@@ -123,6 +138,9 @@ public final class HardModeCommand extends BaseCommand {
         sender.sendMessage("§e/hardmode leveling <enabled|disabled>");
         sender.sendMessage("§e/hardmode leveling open");
         sender.sendMessage("§e/hardmode leveling book");
+        sender.sendMessage("§e/hardmode leveling profile");
+        sender.sendMessage("§e/hardmode leveling skills");
+        sender.sendMessage("§e/hardmode leveling top");
         sender.sendMessage("§e/hardmode leveling titles");
         sender.sendMessage("§e/hardmode leveling title <key>");
         return true;
@@ -132,7 +150,9 @@ public final class HardModeCommand extends BaseCommand {
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         if (args.length == 1) return List.of("list", "truecrafter", "leveling");
         if (args.length == 2 && args[0].equalsIgnoreCase("truecrafter")) return List.of("enabled", "disabled", "heat");
-        if (args.length == 2 && args[0].equalsIgnoreCase("leveling")) return List.of("enabled", "disabled", "open", "book", "titles", "title");
+        if (args.length == 2 && args[0].equalsIgnoreCase("leveling")) {
+            return List.of("enabled", "disabled", "open", "book", "profile", "skills", "top", "titles", "title");
+        }
         if (args.length == 3 && args[0].equalsIgnoreCase("truecrafter") && args[1].equalsIgnoreCase("heat")) return List.of("1", "2", "3", "4", "5");
         if (args.length == 3 && args[0].equalsIgnoreCase("leveling") && args[1].equalsIgnoreCase("title")) {
             return sender instanceof Player player ? titleSystem.unlocked(player).stream().map(LevelingTitle::key).toList() : List.of();
