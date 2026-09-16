@@ -9,15 +9,24 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Party 表示と Leveling 称号の競合を避けるため、プレイヤー表示名を一箇所で合成する。
- */
+/** Party と Leveling 称号を一つの表示名へ安全に合成する共通サービス。 */
 public final class PlayerDisplayFormatter {
+    private static volatile PlayerDisplayFormatter instance;
+
     private final Loader plugin;
     private final Map<UUID, String> levelingTitles = new ConcurrentHashMap<>();
 
-    public PlayerDisplayFormatter(Loader plugin) {
+    private PlayerDisplayFormatter(Loader plugin) {
         this.plugin = plugin;
+    }
+
+    public static PlayerDisplayFormatter get(Loader plugin) {
+        PlayerDisplayFormatter current = instance;
+        if (current != null) return current;
+        synchronized (PlayerDisplayFormatter.class) {
+            if (instance == null) instance = new PlayerDisplayFormatter(plugin);
+            return instance;
+        }
     }
 
     public void setLevelingTitle(Player player, String title) {
