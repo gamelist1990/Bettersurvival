@@ -112,7 +112,7 @@ public class HomeModule {
         ChestUI.Builder builder = ChestUI.builder().title(UI_TITLE).size(54)
                 .addButtonAt(4, unlocked >= HomeStore.MAX_HOME_SLOTS ? "§bHome管理 §7(最大)" : "§eHome管理 §7(クリックで枠解放)",
                         unlocked >= HomeStore.MAX_HOME_SLOTS ? Material.NETHER_STAR : Material.GLOWSTONE_DUST,
-                        buildUnlockLore(unlocked, nextUnlockCost))
+                        String.join("\n", buildUnlockLore(unlocked, nextUnlockCost)))
                 .addButtonAt(ACTION_ADD_SLOT, "§a現在地を登録", Material.LIME_DYE, "§7空きがあるときに自動名(homeX)で登録")
                 .addButtonAt(ACTION_REMOVE_SLOT, "§cHomeを削除", Material.RED_DYE, "§7登録済みHomeを選んで削除")
                 .addButtonAt(ACTION_CLOSE_SLOT, "§7閉じる", Material.BARRIER, "§7GUIを閉じます");
@@ -125,7 +125,8 @@ public class HomeModule {
             } else if (index < unlocked) {
                 builder.addButtonAt(slot, "§a開放済みスロット #" + (index + 1), Material.LIME_STAINED_GLASS_PANE, "§7この枠は使えます\n§7下段の『現在地を登録』で追加");
             } else {
-                builder.addButtonAt(slot, "§8未開放スロット #" + (index + 1), Material.RED_STAINED_GLASS_PANE, buildLockedSlotLore(index + 1, unlocked, nextUnlockCost));
+                builder.addButtonAt(slot, "§8未開放スロット #" + (index + 1), Material.RED_STAINED_GLASS_PANE,
+                        String.join("\n", buildLockedSlotLore(index + 1, unlocked, nextUnlockCost)));
             }
             index++;
         }
