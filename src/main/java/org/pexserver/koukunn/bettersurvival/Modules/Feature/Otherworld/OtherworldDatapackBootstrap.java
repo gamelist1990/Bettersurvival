@@ -32,6 +32,7 @@ import java.util.zip.ZipFile;
  *
  * The JSON body is copied byte-for-byte. References to dimension_type, noise_settings,
  * biome_source and other registries therefore keep pointing at the exact source definitions.
+ * pack.mcmeta is generated from the running Minecraft server's own SERVER_DATA PackFormat.
  */
 public final class OtherworldDatapackBootstrap {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
