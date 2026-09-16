@@ -25,6 +25,8 @@ public class Party {
     private boolean friendlyFire = false;
     private boolean nameTagColor = true;
     private boolean nameTagPrefix = true;
+    /** false=招待制のプライベート、true=同じOtherworldグループから検索して自由参加可能。 */
+    private boolean publicParty = false;
 
     public Party(UUID id, String name, String colorKey, String description, UUID leader) {
         this(id, "default", name, colorKey, description, leader);
@@ -66,6 +68,8 @@ public class Party {
     public void setNameTagColor(boolean nameTagColor) { this.nameTagColor = nameTagColor; }
     public boolean isNameTagPrefix() { return nameTagPrefix; }
     public void setNameTagPrefix(boolean nameTagPrefix) { this.nameTagPrefix = nameTagPrefix; }
+    public boolean isPublicParty() { return publicParty; }
+    public void setPublicParty(boolean publicParty) { this.publicParty = publicParty; }
 
     public List<UUID> getAllMembers() {
         List<UUID> all = new ArrayList<>();
