@@ -17,12 +17,12 @@ import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.MerchantInventory;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.raid.RaidFinishEvent;
+import org.bukkit.inventory.MerchantInventory;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.io.File;
@@ -30,7 +30,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
 
 /** Just Leveling v1.7 の称号条件をサーバー側で永続追跡する。 */
 public final class LevelingTitleSystem implements Listener {
