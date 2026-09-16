@@ -29,7 +29,7 @@ public final class HardModeCommand extends BaseCommand {
         this.levelingSystem = new LevelingSystemModule(plugin);
         this.levelingRuntime = new JustLevelingRuntime(plugin, levelingSystem);
         this.titleSystem = new LevelingTitleSystem(plugin, levelingSystem);
-        this.levelingExtras = new LevelingExtras(levelingSystem);
+        this.levelingExtras = new LevelingExtras(plugin, levelingSystem);
     }
 
     @Override public String getName() { return "hardmode"; }
