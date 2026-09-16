@@ -1,0 +1,128 @@
+name: One-shot Warning Cleanup
+
+on:
+  push:
+    branches:
+      - feature/otherworld-custom-dimension-context
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/otherworld-custom-dimension-context
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: WebSite/package-lock.json
+      - name: Modernize deprecated Java APIs
+        shell: python
+        run: |
+          from pathlib import Path
+
+          root = Path('src/main/java/org/pexserver/koukunn/bettersurvival')
+
+          p = root / 'Modules/Feature/HardMode/LeveingSystem/LevelingSystemModule.java'
+          s = p.read_text(encoding='utf-8')
+          if 'Core.Util.ComponentUtils' not in s:
+              s = s.replace('import org.pexserver.koukunn.bettersurvival.Loader;\n', 'import org.pexserver.koukunn.bettersurvival.Loader;\nimport org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;\n')
+          s = s.replace('meta.setDisplayName("§dレベリングの書");', 'ComponentUtils.setDisplayName(meta, "§dレベリングの書");')
+          s = s.replace('meta.setLore(List.of("§7能力値画面を開きます", "§7右クリックで使用", "§8Just Leveling - Paper版"));', 'ComponentUtils.setLore(meta, List.of("§7能力値画面を開きます", "§7右クリックで使用", "§8Just Leveling - Paper版"));')
+          s = s.replace('Inventory inventory = Bukkit.createInventory(player, 27, GUI_TITLE);', 'Inventory inventory = ComponentUtils.createInventory(player, 27, GUI_TITLE);')
+          s = s.replace('meta.setDisplayName("§e" + aptitude.displayName() + " §7[" + aptitude.abbreviation() + "]");', 'ComponentUtils.setDisplayName(meta, "§e" + aptitude.displayName() + " §7[" + aptitude.abbreviation() + "]");')
+          s = s.replace('meta.setLore(lore);', 'ComponentUtils.setLore(meta, lore);')
+          s = s.replace('infoMeta.setDisplayName("§a経験値");', 'ComponentUtils.setDisplayName(infoMeta, "§a経験値");')
+          s = s.replace('infoMeta.setLore(List.of("§7現在の経験値レベル: §f" + player.getLevel(), "§7能力強化時に経験値レベルを消費します。"));', 'ComponentUtils.setLore(infoMeta, List.of("§7現在の経験値レベル: §f" + player.getLevel(), "§7能力強化時に経験値レベルを消費します。"));')
+          s = s.replace('if (!GUI_TITLE.equals(event.getView().getTitle())) return;', 'if (!GUI_TITLE.equals(ComponentUtils.legacyText(event.getView().title()))) return;')
+          p.write_text(s, encoding='utf-8')
+
+          p = root / 'Modules/Feature/HardMode/LeveingSystem/JustLevelingRuntime.java'
+          s = p.read_text(encoding='utf-8')
+          if 'Core.Util.ComponentUtils' not in s:
+              s = s.replace('import org.pexserver.koukunn.bettersurvival.Loader;\n', 'import org.pexserver.koukunn.bettersurvival.Loader;\nimport org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;\n')
+          s = s.replace(' && !attacker.isOnGround()', '')
+          s = s.replace('attacker.sendActionBar("§6限界突破！");', 'attacker.sendActionBar(ComponentUtils.legacy("§6限界突破！"));')
+          s = s.replace('player.sendActionBar("§6お宝を発見！");', 'player.sendActionBar(ComponentUtils.legacy("§6お宝を発見！"));')
+          s = s.replace('player.sendActionBar("§a収束: 素材を1個還元しました");', 'player.sendActionBar(ComponentUtils.legacy("§a収束: 素材を1個還元しました"));')
+          s = s.replace('player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1, effect.isAmbient(), effect.hasParticles(), effect.hasIcon()), true);', 'player.addPotionEffect(new PotionEffect(effect.getType(), effect.getDuration(), effect.getAmplifier() + 1, effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));')
+          s = s.replace('(meta != null && meta.hasDisplayName() ? meta.getDisplayName() : item.getType().name())', '(meta != null && meta.hasDisplayName() ? ComponentUtils.getDisplayName(meta) : item.getType().name())')
+          p.write_text(s, encoding='utf-8')
+
+          p = root / 'Modules/Feature/HardMode/LeveingSystem/LevelingExtras.java'
+          s = p.read_text(encoding='utf-8')
+          if 'Core.Util.ComponentUtils' not in s:
+              s = s.replace('import org.pexserver.koukunn.bettersurvival.Loader;\n', 'import org.pexserver.koukunn.bettersurvival.Loader;\nimport org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;\n')
+          s = s.replace('player.sendActionBar("§dスキル解放: §f" + skill.displayName());', 'player.sendActionBar(ComponentUtils.legacy("§dスキル解放: §f" + skill.displayName()));')
+          p.write_text(s, encoding='utf-8')
+
+          p = root / 'Modules/Feature/SharedStorage/SharedStorageNamespaceListener.java'
+          s = p.read_text(encoding='utf-8')
+          if 'Core.Util.ComponentUtils' not in s:
+              s = s.replace('import org.pexserver.koukunn.bettersurvival.Loader;\n', 'import org.pexserver.koukunn.bettersurvival.Loader;\nimport org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;\n')
+          s = s.replace('String display = meta.getDisplayName();', 'String display = ComponentUtils.getDisplayName(meta);')
+          s = s.replace('meta.setDisplayName(scoped);', 'ComponentUtils.setDisplayName(meta, scoped);')
+          s = s.replace('String name = minecart.getCustomName();', 'String name = ComponentUtils.legacyText(minecart.customName());')
+          s = s.replace('if (!name.equals(scoped)) minecart.setCustomName(scoped);', 'if (!name.equals(scoped)) minecart.customName(ComponentUtils.legacy(scoped));')
+          s = s.replace('String name = barrel.getCustomName();', 'String name = ComponentUtils.legacyText(barrel.customName());')
+          s = s.replace('barrel.setCustomName(prefix + scoped);', 'barrel.customName(ComponentUtils.legacy(prefix + scoped));')
+          p.write_text(s, encoding='utf-8')
+
+          p = root / 'Modules/Feature/OfflineAccess/LoginInterceptor.java'
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('    private GameProfile callPlayerPreLoginEvents(', '    @SuppressWarnings("deprecation")\n    private GameProfile callPlayerPreLoginEvents(')
+          s = s.replace('            if (asyncEvent.getResult() != PlayerPreLoginEvent.Result.ALLOWED) {\n                syncEvent.disallow(asyncEvent.getResult(), asyncEvent.kickMessage());\n            }', '            if (asyncEvent.getLoginResult() != AsyncPlayerPreLoginEvent.Result.ALLOWED) {\n                syncEvent.disallow(PlayerPreLoginEvent.Result.valueOf(asyncEvent.getLoginResult().name()), asyncEvent.kickMessage());\n            }')
+          s = s.replace('    private PlayerPreLoginEvent callSyncPreLoginEvent(', '    @SuppressWarnings("deprecation")\n    private PlayerPreLoginEvent callSyncPreLoginEvent(')
+          p.write_text(s, encoding='utf-8')
+
+      - name: Refresh frontend dependencies and security fixes
+        working-directory: WebSite
+        run: |
+          npm update
+          npm audit fix
+      - name: Split frontend vendor chunks
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('WebSite/vite.config.js')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('    outDir: "dist"\n', '''    outDir: "dist",
+              rollupOptions: {
+                output: {
+                  manualChunks(id) {
+                    if (!id.includes("node_modules")) return;
+                    if (id.includes("leaflet")) return "leaflet";
+                    if (id.includes("react")) return "react";
+                    return "vendor";
+                  }
+                }
+              }
+          ''')
+          p.write_text(s, encoding='utf-8')
+      - name: Build and audit
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build --stacktrace
+          cd WebSite
+          npm audit --audit-level=high
+      - name: Commit cleanup
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java WebSite/package.json WebSite/package-lock.json WebSite/vite.config.js
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'refactor: resolve build warnings and frontend audit findings'
+          git push origin HEAD:feature/otherworld-custom-dimension-context
