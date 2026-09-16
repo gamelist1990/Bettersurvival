@@ -4,7 +4,6 @@ import org.bukkit.Location;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 public class SharedNetwork {
@@ -20,7 +19,6 @@ public class SharedNetwork {
     private static final boolean DEFAULT_ENABLE_SUB_FRAME_FILTER = false;
     private static final boolean DEFAULT_ENABLE_CHEST_PAGE = false;
 
-    private final String scope;
     private final String id;
     private Location main;
     private final List<Location> subs = new ArrayList<>();
@@ -36,18 +34,8 @@ public class SharedNetwork {
     private SubFrameFilterMode subFrameFilterMode = SubFrameFilterMode.EXACT;
     private boolean enableChestPage = DEFAULT_ENABLE_CHEST_PAGE;
 
-    public SharedNetwork(String id) {
-        this("default", id);
-    }
-
-    public SharedNetwork(String scope, String id) {
-        this.scope = scope == null || scope.isBlank() ? "default" : scope.toLowerCase(Locale.ROOT);
-        this.id = id;
-    }
-
-    public String scope() { return scope; }
+    public SharedNetwork(String id) { this.id = id; }
     public String id() { return id; }
-    public String key() { return scope + "\u001f" + id; }
     public Location main() { return main; }
     public void setMain(Location main) { this.main = main; }
     public List<Location> subs() { return subs; }
@@ -69,26 +57,26 @@ public class SharedNetwork {
         return false;
     }
     public boolean allowSubInsert() { return allowSubInsert; }
-    public void setAllowSubInsert(boolean allowSubInsert) { this.allowSubInsert = allowSubInsert; }
+    public void setAllowSubInsert(boolean value) { allowSubInsert = value; }
     public boolean allowSubExtract() { return allowSubExtract; }
-    public void setAllowSubExtract(boolean allowSubExtract) { this.allowSubExtract = allowSubExtract; }
+    public void setAllowSubExtract(boolean value) { allowSubExtract = value; }
     public boolean allowSubHopperInsert() { return allowSubHopperInsert; }
-    public void setAllowSubHopperInsert(boolean allowSubHopperInsert) { this.allowSubHopperInsert = allowSubHopperInsert; }
+    public void setAllowSubHopperInsert(boolean value) { allowSubHopperInsert = value; }
     public boolean allowSubHopperExtract() { return allowSubHopperExtract; }
-    public void setAllowSubHopperExtract(boolean allowSubHopperExtract) { this.allowSubHopperExtract = allowSubHopperExtract; }
+    public void setAllowSubHopperExtract(boolean value) { allowSubHopperExtract = value; }
     public boolean allowMainInsert() { return allowMainInsert; }
-    public void setAllowMainInsert(boolean allowMainInsert) { this.allowMainInsert = allowMainInsert; }
+    public void setAllowMainInsert(boolean value) { allowMainInsert = value; }
     public boolean allowMainExtract() { return allowMainExtract; }
-    public void setAllowMainExtract(boolean allowMainExtract) { this.allowMainExtract = allowMainExtract; }
+    public void setAllowMainExtract(boolean value) { allowMainExtract = value; }
     public boolean enableTransferParticles() { return enableTransferParticles; }
-    public void setEnableTransferParticles(boolean enableTransferParticles) { this.enableTransferParticles = enableTransferParticles; }
+    public void setEnableTransferParticles(boolean value) { enableTransferParticles = value; }
     public int subRange() { return subRange; }
-    public void setSubRange(int subRange) { this.subRange = clampSubRange(subRange); }
+    public void setSubRange(int value) { subRange = clampSubRange(value); }
     public boolean enableSubFrameFilter() { return enableSubFrameFilter; }
-    public void setEnableSubFrameFilter(boolean enableSubFrameFilter) { this.enableSubFrameFilter = enableSubFrameFilter; }
+    public void setEnableSubFrameFilter(boolean value) { enableSubFrameFilter = value; }
     public SubFrameFilterMode subFrameFilterMode() { return subFrameFilterMode; }
-    public void setSubFrameFilterMode(SubFrameFilterMode mode) { this.subFrameFilterMode = mode == null ? SubFrameFilterMode.EXACT : mode; }
+    public void setSubFrameFilterMode(SubFrameFilterMode value) { subFrameFilterMode = value == null ? SubFrameFilterMode.EXACT : value; }
     public boolean enableChestPage() { return enableChestPage; }
-    public void setEnableChestPage(boolean enableChestPage) { this.enableChestPage = enableChestPage; }
+    public void setEnableChestPage(boolean value) { enableChestPage = value; }
     private static int clampSubRange(int range) { return Math.max(1, Math.min(MAX_SUB_DISTANCE_LIMIT, range)); }
 }
