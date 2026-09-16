@@ -25,7 +25,7 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** SharedStorage の旧raw IDをロード/設置時にOtherworld scope付き内部IDへ透過移行する。 */
+/** SharedStorage IDを設置先/存在場所のOtherworld scopeへ透過的に正規化する。 */
 public final class SharedStorageNamespaceListener implements Listener {
     private static final AtomicBoolean REGISTERED = new AtomicBoolean(false);
     private final Loader plugin;
@@ -70,18 +70,12 @@ public final class SharedStorageNamespaceListener implements Listener {
     }
 
     private void scanLoadedChunks() {
-        for (var world : Bukkit.getWorlds()) {
-            for (Chunk chunk : world.getLoadedChunks()) scanChunk(chunk);
-        }
+        for (var world : Bukkit.getWorlds()) for (Chunk chunk : world.getLoadedChunks()) scanChunk(chunk);
     }
 
     private void scanChunk(Chunk chunk) {
-        for (BlockState state : chunk.getTileEntities()) {
-            if (state instanceof Barrel barrel) scopeBarrel(barrel);
-        }
-        for (Entity entity : chunk.getEntities()) {
-            if (entity instanceof StorageMinecart minecart) scopeMinecartEntity(minecart);
-        }
+        for (BlockState state : chunk.getTileEntities()) if (state instanceof Barrel barrel) scopeBarrel(barrel);
+        for (Entity entity : chunk.getEntities()) if (entity instanceof StorageMinecart minecart) scopeMinecartEntity(minecart);
     }
 
     private boolean scopePdcItem(ItemStack stack, Location location) {
@@ -89,8 +83,10 @@ public final class SharedStorageNamespaceListener implements Listener {
         ItemMeta meta = stack.getItemMeta();
         String role = meta.getPersistentDataContainer().get(roleKey, PersistentDataType.STRING);
         String id = meta.getPersistentDataContainer().get(idKey, PersistentDataType.STRING);
-        if (role == null || id == null || SharedStorageScopedId.isScoped(id)) return false;
-        String scoped = SharedStorageScopedId.encode(id, SharedStorageScopedId.scopeFor(plugin, location));
+        if (role == null || id == null) return false;
+        String desiredScope = SharedStorageScopedId.scopeFor(plugin, location);
+        if (desiredScope.equals(SharedStorageScopedId.scope(id))) return false;
+        String scoped = SharedStorageScopedId.encode(SharedStorageScopedId.raw(id), desiredScope);
         meta.getPersistentDataContainer().set(idKey, PersistentDataType.STRING, scoped);
         stack.setItemMeta(meta);
         return true;
@@ -124,20 +120,23 @@ public final class SharedStorageNamespaceListener implements Listener {
         int end = display.indexOf(']', idStart);
         if (end < 0) end = display.length();
         String id = display.substring(idStart, end).trim();
-        if (id.isEmpty() || SharedStorageScopedId.isScoped(id)) return display;
-        String scopedId = SharedStorageScopedId.encode(id, SharedStorageScopedId.scopeFor(plugin, location));
+        if (id.isEmpty()) return display;
+        String desiredScope = SharedStorageScopedId.scopeFor(plugin, location);
+        if (desiredScope.equals(SharedStorageScopedId.scope(id))) return display;
+        String scopedId = SharedStorageScopedId.encode(SharedStorageScopedId.raw(id), desiredScope);
         return display.substring(0, idStart) + scopedId + display.substring(end);
     }
 
     private void scopeBarrel(Barrel barrel) {
         String name = barrel.getCustomName();
         if (name == null || name.isBlank()) return;
-        String lower = name.toLowerCase(Locale.ROOT);
         String prefix = "chestget-";
-        if (!lower.startsWith(prefix)) return;
+        if (!name.toLowerCase(Locale.ROOT).startsWith(prefix)) return;
         String id = name.substring(prefix.length()).trim();
-        if (id.isEmpty() || SharedStorageScopedId.isScoped(id)) return;
-        String scoped = SharedStorageScopedId.encode(id, SharedStorageScopedId.scopeFor(plugin, barrel.getLocation()));
+        if (id.isEmpty()) return;
+        String desiredScope = SharedStorageScopedId.scopeFor(plugin, barrel.getLocation());
+        if (desiredScope.equals(SharedStorageScopedId.scope(id))) return;
+        String scoped = SharedStorageScopedId.encode(SharedStorageScopedId.raw(id), desiredScope);
         barrel.setCustomName(prefix + scoped);
         barrel.update(true, false);
     }
