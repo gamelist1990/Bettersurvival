@@ -44,15 +44,42 @@ public final class LevelingSystemModule implements Listener {
     private final File dataFile;
     private final YamlConfiguration data;
     private final NamespacedKey bookKey;
+    private final NamespacedKey recipeKey;
 
     public LevelingSystemModule(Loader plugin) {
         this.plugin = plugin;
         this.dataFile = new File(plugin.getDataFolder(), "leveling-data.yml");
         this.data = YamlConfiguration.loadConfiguration(dataFile);
         this.bookKey = new NamespacedKey(plugin, "just_leveling_book");
+        this.recipeKey = new NamespacedKey(plugin, "leveling_book");
+
+        if (!data.contains("settings.enabled")) {
+            data.set("settings.enabled", true);
+            save();
+        }
+
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        registerBookRecipe();
+        if (isEnabled()) registerBookRecipe();
+        else removeBookRecipe();
         Bukkit.getOnlinePlayers().forEach(this::applyPassives);
+    }
+
+    public boolean isEnabled() {
+        return data.getBoolean("settings.enabled", true);
+    }
+
+    public void setEnabled(boolean enabled) {
+        if (isEnabled() == enabled) return;
+        data.set("settings.enabled", enabled);
+        save();
+
+        if (enabled) {
+            registerBookRecipe();
+            Bukkit.getOnlinePlayers().forEach(this::applyPassives);
+        } else {
+            removeBookRecipe();
+            Bukkit.getOnlinePlayers().forEach(this::resetPassives);
+        }
     }
 
     public ItemStack createLevelingBook() {
@@ -70,6 +97,11 @@ public final class LevelingSystemModule implements Listener {
     }
 
     public void open(Player player) {
+        if (!isEnabled()) {
+            player.sendMessage("§cJust Leveling は現在無効です。");
+            return;
+        }
+
         Inventory inventory = Bukkit.createInventory(player, 27, GUI_TITLE);
         int[] slots = {9, 10, 11, 12, 14, 15, 16, 17};
         LevelingAptitude[] values = LevelingAptitude.values();
@@ -102,11 +134,17 @@ public final class LevelingSystemModule implements Listener {
     }
 
     public int getLevel(Player player, LevelingAptitude aptitude) {
+        if (!isEnabled()) return 0;
         return Math.max(0, Math.min(LevelingAptitude.MAX_LEVEL,
                 data.getInt(path(player.getUniqueId(), aptitude), 0)));
     }
 
     public boolean levelUp(Player player, LevelingAptitude aptitude) {
+        if (!isEnabled()) {
+            player.sendMessage("§cJust Leveling は現在無効です。");
+            return false;
+        }
+
         int current = getLevel(player, aptitude);
         if (current >= LevelingAptitude.MAX_LEVEL) {
             player.sendMessage("§c" + aptitude.displayName() + " は最大レベルです。");
@@ -139,7 +177,6 @@ public final class LevelingSystemModule implements Listener {
 
     private void registerBookRecipe() {
         try {
-            NamespacedKey recipeKey = new NamespacedKey(plugin, "leveling_book");
             Bukkit.removeRecipe(recipeKey);
             ShapedRecipe recipe = new ShapedRecipe(recipeKey, createLevelingBook());
             recipe.shape(" E ", "LBL", " E ");
@@ -152,6 +189,10 @@ public final class LevelingSystemModule implements Listener {
         }
     }
 
+    private void removeBookRecipe() {
+        Bukkit.removeRecipe(recipeKey);
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         applyPassives(event.getPlayer());
@@ -162,6 +203,10 @@ public final class LevelingSystemModule implements Listener {
         if (event.getHand() != EquipmentSlot.HAND) return;
         if (!isLevelingBook(event.getItem())) return;
         event.setCancelled(true);
+        if (!isEnabled()) {
+            event.getPlayer().sendMessage("§cJust Leveling は現在無効です。");
+            return;
+        }
         open(event.getPlayer());
     }
 
@@ -170,6 +215,11 @@ public final class LevelingSystemModule implements Listener {
         if (!GUI_TITLE.equals(event.getView().getTitle())) return;
         event.setCancelled(true);
         if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (!isEnabled()) {
+            player.closeInventory();
+            player.sendMessage("§cJust Leveling は現在無効です。");
+            return;
+        }
         int raw = event.getRawSlot();
         int[] slots = {9, 10, 11, 12, 14, 15, 16, 17};
         for (int i = 0; i < slots.length; i++) {
@@ -182,6 +232,8 @@ public final class LevelingSystemModule implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
     public void onDamage(EntityDamageByEntityEvent event) {
+        if (!isEnabled()) return;
+
         Player attacker = attackingPlayer(event.getDamager());
         if (attacker != null) {
             if (event.getDamager() instanceof Projectile) {
@@ -219,6 +271,8 @@ public final class LevelingSystemModule implements Listener {
 
     @EventHandler
     public void onKill(EntityDeathEvent event) {
+        if (!isEnabled()) return;
+
         Player killer = event.getEntity().getKiller();
         if (killer == null) return;
 
@@ -256,6 +310,11 @@ public final class LevelingSystemModule implements Listener {
     }
 
     private void applyPassives(Player player) {
+        if (!isEnabled()) {
+            resetPassives(player);
+            return;
+        }
+
         int strength = getLevel(player, LevelingAptitude.STRENGTH);
         int constitution = getLevel(player, LevelingAptitude.CONSTITUTION);
         int dexterity = getLevel(player, LevelingAptitude.DEXTERITY);
@@ -272,6 +331,24 @@ public final class LevelingSystemModule implements Listener {
         setBase(player, Attribute.ARMOR_TOUGHNESS, LevelingAptitude.DEFENSE.passiveTier5(defense) * 0.20D);
         setBase(player, Attribute.ATTACK_SPEED, 4.0D + LevelingAptitude.INTELLIGENCE.passiveTier10(intelligence) * 0.04D);
         setBase(player, Attribute.LUCK, LevelingAptitude.LUCK.passiveTier10(luck) * 0.20D);
+
+        AttributeInstance max = player.getAttribute(Attribute.MAX_HEALTH);
+        if (max != null && player.getHealth() > max.getValue()) player.setHealth(max.getValue());
+    }
+
+    private void resetPassives(Player player) {
+        setBase(player, Attribute.ATTACK_DAMAGE, 1.0D);
+        setBase(player, Attribute.MAX_HEALTH, 20.0D);
+        setBase(player, Attribute.KNOCKBACK_RESISTANCE, 0.0D);
+        setBase(player, Attribute.MOVEMENT_SPEED, 0.10D);
+        setBase(player, Attribute.ARMOR, 0.0D);
+        setBase(player, Attribute.ARMOR_TOUGHNESS, 0.0D);
+        setBase(player, Attribute.ATTACK_SPEED, 4.0D);
+        setBase(player, Attribute.LUCK, 0.0D);
+        setBase(player, Attribute.ATTACK_KNOCKBACK, 0.0D);
+        setBase(player, Attribute.ENTITY_INTERACTION_RANGE, 3.0D);
+        setBase(player, Attribute.BLOCK_INTERACTION_RANGE, 4.5D);
+        setBase(player, Attribute.BLOCK_BREAK_SPEED, 1.0D);
 
         AttributeInstance max = player.getAttribute(Attribute.MAX_HEALTH);
         if (max != null && player.getHealth() > max.getValue()) player.setHealth(max.getValue());
