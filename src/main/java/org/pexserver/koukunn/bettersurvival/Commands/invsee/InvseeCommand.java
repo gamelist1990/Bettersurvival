@@ -12,12 +12,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeUI;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * InvSee コマンド - プレイヤーのインベントリを閲覧・編集する
- * 
- * /invsee - プレイヤー選択UIを表示
- * /invsee <username> - 指定プレイヤーのインベントリを直接表示
- */
+/** InvSee コマンド - プレイヤーのインベントリを閲覧・編集する。 */
 public class InvseeCommand extends BaseCommand {
 
     private final Loader plugin;
@@ -26,44 +21,24 @@ public class InvseeCommand extends BaseCommand {
         this.plugin = plugin;
     }
 
-    @Override
-    public String getName() {
-        return "invsee";
-    }
-
-    @Override
-    public String getDescription() {
-        return "プレイヤーのインベントリを閲覧・編集します（OP専用）";
-    }
-
-    @Override
-    public PermissionLevel getPermissionLevel() {
-        return PermissionLevel.ADMIN;
-    }
-
-    @Override
-    public String getUsage() {
-        return "/invsee [player]";
-    }
+    @Override public String getName() { return "invsee"; }
+    @Override public String getDescription() { return "プレイヤーのインベントリを閲覧・編集します（OP専用）"; }
+    @Override public PermissionLevel getPermissionLevel() { return PermissionLevel.ADMIN; }
+    @Override public String getUsage() { return "/invsee [player]"; }
 
     @Override
     public boolean execute(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player)) {
+        if (!(sender instanceof Player p)) {
             sendError(sender, "プレイヤーのみ使用できます");
             return true;
         }
 
-        Player p = (Player) sender;
-
         if (args.length == 0) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                InvseeUI.openPlayerSelectUI(p, plugin, 0);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openPlayerSelectUI(p, plugin, 0));
             return true;
         }
 
         String targetName = args[0];
-        
         Player onlineTarget = null;
         for (Player pl : Bukkit.getOnlinePlayers()) {
             if (pl.getName().equalsIgnoreCase(targetName)) {
@@ -73,19 +48,18 @@ public class InvseeCommand extends BaseCommand {
         }
 
         if (onlineTarget != null) {
+            if (plugin.getOtherworldModule() != null && !plugin.getOtherworldModule().sameGroup(p, onlineTarget)) {
+                sendError(sender, "異なるOtherworldグループのプレイヤーはInvSeeできません");
+                return true;
+            }
             final Player target = onlineTarget;
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                InvseeUI.openInventoryUI(p, target, plugin);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openInventoryUI(p, target, plugin));
             return true;
         }
 
         OfflinePlayer offlineTarget = Bukkit.getOfflinePlayer(targetName);
-        
         if (offlineTarget.hasPlayedBefore() || offlineTarget.isOnline()) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                InvseeUI.openInventoryUI(p, offlineTarget, plugin);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openInventoryUI(p, offlineTarget, plugin));
             return true;
         }
 
@@ -96,26 +70,24 @@ public class InvseeCommand extends BaseCommand {
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
         List<String> completions = new ArrayList<>();
+        if (args.length != 1) return completions;
+        String partial = args[0].toLowerCase();
+        Player viewer = sender instanceof Player player ? player : null;
 
-        if (args.length == 1) {
-            String partial = args[0].toLowerCase();
-            
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                if (p.getName().toLowerCase().startsWith(partial)) {
-                    completions.add(p.getName());
-                }
-            }
-            
-            for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
-                if (op.getName() != null && op.getName().toLowerCase().startsWith(partial)) {
-                    if (!completions.contains(op.getName())) {
-                        completions.add(op.getName());
-                    }
-                }
-                if (completions.size() >= 20) break;
-            }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (viewer != null && plugin.getOtherworldModule() != null
+                    && !plugin.getOtherworldModule().sameGroup(viewer, player)) continue;
+            if (player.getName().toLowerCase().startsWith(partial)) completions.add(player.getName());
         }
 
+        // オフラインプレイヤーは現在のOtherworldグループを確実に判定できないため候補には残す。
+        for (OfflinePlayer op : Bukkit.getOfflinePlayers()) {
+            if (op.getName() != null && op.getName().toLowerCase().startsWith(partial)
+                    && !completions.contains(op.getName())) {
+                completions.add(op.getName());
+            }
+            if (completions.size() >= 20) break;
+        }
         return completions;
     }
 }
