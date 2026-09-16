@@ -1,6 +1,7 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld;
 
 import net.minecraft.SharedConstants;
+import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.metadata.pack.PackFormat;
 
 /** Resolves the active Minecraft data-pack format directly from the running NMS version. */
@@ -8,7 +9,7 @@ final class DatapackFormatResolver {
     private DatapackFormatResolver() { }
 
     static ResolvedPackFormat resolve() {
-        PackFormat format = SharedConstants.getCurrentVersion().datapackVersion();
+        PackFormat format = SharedConstants.getCurrentVersion().packVersion(PackType.SERVER_DATA);
         return new ResolvedPackFormat(format.major(), format.minor());
     }
 
