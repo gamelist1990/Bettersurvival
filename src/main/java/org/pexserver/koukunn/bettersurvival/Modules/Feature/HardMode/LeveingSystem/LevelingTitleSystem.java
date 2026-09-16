@@ -31,7 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Just Leveling v1.7 の称号条件をサーバー側で永続追跡する。 */
+/** Just Leveling v1.7 の称号条件をOtherworldグループ単位で永続追跡する。 */
 public final class LevelingTitleSystem implements Listener {
     private static final double TRAVEL_REQUIREMENT = 10_000.0D;
     private static final long SURVIVOR_TICKS = 100L * 24_000L;
@@ -100,19 +100,14 @@ public final class LevelingTitleSystem implements Listener {
         if (changed) save();
     }
 
-    @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        initialize(event.getPlayer());
-    }
+    @EventHandler public void onJoin(PlayerJoinEvent event) { initialize(event.getPlayer()); }
 
-    @EventHandler
-    public void onDeath(PlayerDeathEvent event) {
+    @EventHandler public void onDeath(PlayerDeathEvent event) {
         data.set(path(event.getEntity(), "stats.survival_ticks"), 0L);
         save();
     }
 
-    @EventHandler
-    public void onEntityDeath(EntityDeathEvent event) {
+    @EventHandler public void onEntityDeath(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
         if (killer == null) return;
         increment(killer, "mob_kills", 1L);
@@ -122,15 +117,13 @@ public final class LevelingTitleSystem implements Listener {
         checkCounterTitles(killer);
     }
 
-    @EventHandler
-    public void onFish(PlayerFishEvent event) {
+    @EventHandler public void onFish(PlayerFishEvent event) {
         if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH) return;
         increment(event.getPlayer(), "fish", 1L);
         checkCounterTitles(event.getPlayer());
     }
 
-    @EventHandler
-    public void onEnchant(EnchantItemEvent event) {
+    @EventHandler public void onEnchant(EnchantItemEvent event) {
         increment(event.getEnchanter(), "enchants", 1L);
         checkCounterTitles(event.getEnchanter());
     }
@@ -144,17 +137,16 @@ public final class LevelingTitleSystem implements Listener {
         checkCounterTitles(player);
     }
 
-    @EventHandler
-    public void onRaidFinish(RaidFinishEvent event) {
+    @EventHandler public void onRaidFinish(RaidFinishEvent event) {
         for (Player player : event.getWinners()) {
             increment(player, "raids", 1L);
             checkCounterTitles(player);
         }
     }
 
-    @EventHandler
-    public void onWorldChange(PlayerChangedWorldEvent event) {
-        checkWorldTitles(event.getPlayer());
+    @EventHandler public void onWorldChange(PlayerChangedWorldEvent event) {
+        // グループを跨いだ直後に、そのグループ専用の称号セットへ切り替える。
+        initialize(event.getPlayer());
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -190,14 +182,9 @@ public final class LevelingTitleSystem implements Listener {
     }
 
     private void checkCounterTitles(Player player) {
-        long dragons = stat(player, "dragon_kills");
-        long players = stat(player, "player_kills");
-        long mobs = stat(player, "mob_kills");
-        long villagers = stat(player, "villager_kills");
-        long raids = stat(player, "raids");
-        long fish = stat(player, "fish");
-        long enchants = stat(player, "enchants");
-        long trades = stat(player, "trades");
+        long dragons = stat(player, "dragon_kills"), players = stat(player, "player_kills"), mobs = stat(player, "mob_kills");
+        long villagers = stat(player, "villager_kills"), raids = stat(player, "raids"), fish = stat(player, "fish");
+        long enchants = stat(player, "enchants"), trades = stat(player, "trades");
         if (dragons >= 10) unlock(player, LevelingTitle.DRAGON_SLAYER);
         if (players >= 100) unlock(player, LevelingTitle.PLAYER_KILLER);
         if (mobs >= 100) unlock(player, LevelingTitle.MOB_KILLER);
@@ -223,7 +210,7 @@ public final class LevelingTitleSystem implements Listener {
         String key = path(player, "unlocked." + title.key());
         if (data.getBoolean(key, false)) return;
         data.set(key, true);
-        player.sendMessage("§6✦ Title Unlocked: §e" + title.displayName());
+        player.sendMessage("§6✦ Title Unlocked: §e" + title.displayName() + " §7[" + leveling.dataScope(player) + "]");
         save();
     }
 
@@ -233,9 +220,7 @@ public final class LevelingTitleSystem implements Listener {
         else player.setPlayerListName("§7[§6" + title.displayName() + "§7] §f" + player.getName());
     }
 
-    private long stat(Player player, String stat) {
-        return data.getLong(path(player, "stats." + stat), 0L);
-    }
+    private long stat(Player player, String stat) { return data.getLong(path(player, "stats." + stat), 0L); }
 
     private void increment(Player player, String stat, long amount) {
         data.set(path(player, "stats." + stat), stat(player, stat) + amount);
@@ -262,7 +247,9 @@ public final class LevelingTitleSystem implements Listener {
     }
 
     private String path(Player player, String suffix) {
-        return "players." + player.getUniqueId() + "." + suffix.toLowerCase(Locale.ROOT);
+        String base = "players." + player.getUniqueId() + "." + suffix.toLowerCase(Locale.ROOT);
+        String scope = leveling.dataScope(player);
+        return scope.equals("default") ? base : "otherworld." + scope + "." + base;
     }
 
     private void save() {
