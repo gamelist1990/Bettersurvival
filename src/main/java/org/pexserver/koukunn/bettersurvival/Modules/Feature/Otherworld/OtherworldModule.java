@@ -326,7 +326,6 @@ public class OtherworldModule implements Listener {
         String target = getGroup(player.getWorld());
         if (source.equals(target)) return;
         playerDataStore.ensureDefaultMigration(player);
-        playerDataStore.save(player, source);
         playerDataStore.load(player, target);
     }
 
@@ -417,7 +416,13 @@ public class OtherworldModule implements Listener {
         }
 
         String targetGroupName = getGroup(event.getTo().getWorld());
-        if (!sourceGroupName.equals(targetGroupName) && !canAccess(player, targetGroupName)) event.setCancelled(true);
+        if (!sourceGroupName.equals(targetGroupName)) {
+            if (!canAccess(player, targetGroupName)) {
+                event.setCancelled(true);
+                return;
+            }
+            playerDataStore.save(player, sourceGroupName);
+        }
     }
 
     @EventHandler

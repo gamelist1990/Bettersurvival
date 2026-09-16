@@ -1,6 +1,7 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
@@ -27,6 +28,12 @@ public final class OtherworldPlayerDataStore {
     private static final String KEY_LEVEL = "level";
     private static final String KEY_EXP = "exp";
     private static final String KEY_TOTAL_EXP = "totalExp";
+    private static final String KEY_WORLD = "world";
+    private static final String KEY_X = "x";
+    private static final String KEY_Y = "y";
+    private static final String KEY_Z = "z";
+    private static final String KEY_YAW = "yaw";
+    private static final String KEY_PITCH = "pitch";
 
     private final Loader plugin;
     private final File root;
@@ -60,6 +67,15 @@ public final class OtherworldPlayerDataStore {
         properties.setProperty(KEY_LEVEL, Integer.toString(player.getLevel()));
         properties.setProperty(KEY_EXP, Float.toString(player.getExp()));
         properties.setProperty(KEY_TOTAL_EXP, Integer.toString(player.getTotalExperience()));
+        Location location = player.getLocation();
+        if (location.getWorld() != null) {
+            properties.setProperty(KEY_WORLD, location.getWorld().getName());
+            properties.setProperty(KEY_X, Double.toString(location.getX()));
+            properties.setProperty(KEY_Y, Double.toString(location.getY()));
+            properties.setProperty(KEY_Z, Double.toString(location.getZ()));
+            properties.setProperty(KEY_YAW, Float.toString(location.getYaw()));
+            properties.setProperty(KEY_PITCH, Float.toString(location.getPitch()));
+        }
         saveProperties(player.getUniqueId(), scope, properties);
     }
 
@@ -93,7 +109,20 @@ public final class OtherworldPlayerDataStore {
         player.setLevel(Math.max(0, level));
         player.setExp(Math.max(0.0F, Math.min(0.999999F, exp)));
         player.setTotalExperience(Math.max(0, totalExp));
+        restoreLocation(player, properties);
         player.updateInventory();
+    }
+
+    private void restoreLocation(Player player, Properties properties) {
+        String worldName = properties.getProperty(KEY_WORLD);
+        org.bukkit.World world = worldName == null ? null : Bukkit.getWorld(worldName);
+        if (world == null) return;
+        double x = parseDouble(properties.getProperty(KEY_X), world.getSpawnLocation().getX());
+        double y = parseDouble(properties.getProperty(KEY_Y), world.getSpawnLocation().getY());
+        double z = parseDouble(properties.getProperty(KEY_Z), world.getSpawnLocation().getZ());
+        float yaw = parseFloat(properties.getProperty(KEY_YAW), 0.0F);
+        float pitch = parseFloat(properties.getProperty(KEY_PITCH), 0.0F);
+        player.teleport(new Location(world, x, y, z, yaw, pitch));
     }
 
     private void clear(Player player) {
@@ -178,5 +207,9 @@ public final class OtherworldPlayerDataStore {
 
     private static float parseFloat(String value, float fallback) {
         try { return Float.parseFloat(value); } catch (Exception ignored) { return fallback; }
+    }
+
+    private static double parseDouble(String value, double fallback) {
+        try { return Double.parseDouble(value); } catch (Exception ignored) { return fallback; }
     }
 }
