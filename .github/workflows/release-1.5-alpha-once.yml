@@ -1,0 +1,199 @@
+name: Publish 1.5 Alpha
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/release-1.5-alpha-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v5
+        with:
+          ref: 949207ec59e91e84ad91f704ee32d5cd467a2f24
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Build release JAR
+        run: |
+          chmod +x gradlew
+          ./gradlew clean build --stacktrace
+          cp build/libs/Bettersurvival-1.5.jar Bettersurvival-1.5-ALPHA.jar
+
+      - name: Write release notes
+        run: |
+          cat > RELEASE_NOTES.md <<'EOF'
+          # BetterSurvival 1.5 Alpha
+
+          > **Alpha release / テスト版**
+          >
+          > 1.5 は 1.4 から大幅に内部構造・対応Minecraft/Paper・Otherworld・UI・Web機能を拡張した大型更新です。
+          > 本リリースは Alpha のため、特に Custom Dimension / DataPack / 複数Otherworldを使用するサーバーではバックアップを取ったうえで検証してください。
+
+          ## 1.4 からの大きな変更
+
+          1.4 から 1.5 Alpha までは **206 commits** の差分があります。単純な機能追加だけでなく、Paper 26系への移行、NMSアクセス方式、Otherworldのデータ分離、Web UIなどを広範囲に再設計しています。
+
+          ### Paper 26.1 / 26.2・Java 25 対応
+
+          - Paper 26系への対応を進め、現在は **Paper 26.2 / Java 25** を中心にビルドしています。
+          - Gradleを `paperweight-userdev` + Paper dev bundleへ移行しました。
+          - 旧来のリフレクション依存NMS処理を可能な範囲で直接NMS参照へ変更しました。
+          - NMSの変更は実行時ではなくコンパイル時に検知しやすくなりました。
+          - Java側のdeprecated warningを整理し、最新PRビルドでは警告を大幅に削減しています。
+
+          ### Otherworldを大幅強化
+
+          1.5 AlphaではOtherworldを単なる追加ワールドではなく、**独立したワールドグループ**として扱う方向へ大きく強化しました。
+
+          - `default` / Otherworld A / Otherworld B... を別グループとして管理。
+          - 同一グループ内の Overworld / Nether / End は同じプレイヤーデータを共有。
+          - 異なるOtherworldグループ間では状態を分離。
+          - Inventory / Armor / Offhand / XP / EnderChestをOtherworldグループごとに保存・復元。
+          - Home、Leveling、Party、InvSee、SharedStorageなどのOtherworld境界処理を強化。
+          - Party表示とLeveling称号を中央Formatterで統合し、表示の上書き競合を改善。
+
+          ### DataPack / Custom Dimension 対応
+
+          1.4ではOtherworldは通常のOverworld / Nether / Endを前提とした部分が多く、DataPackなどで追加されたDimensionとの互換性が限定的でした。
+
+          1.5 Alphaでは次の仕組みを追加しています。
+
+          - 起動時・WorldLoad時にCustom Dimensionを自動検出。
+          - `data/<namespace>/dimension/**/*.json` をBootstrap段階で検出。
+          - 元のDimension JSONをOtherworldグループ用に複製し、`generator` / `biome_source` / `dimension_type` 等の参照を維持。
+          - `default` と各OtherworldでCustom Dimensionを物理的に別Worldとして扱う設計。
+          - Custom DimensionへのPortal/Teleportを、現在いるOtherworldグループ側へ自動ルーティング。
+          - Custom DimensionからOverworld / Nether / Endへ戻る場合も同じグループへ戻す。
+          - 各Otherworldグループに固定base seedを保存し、通常3次元とCustom Dimensionで利用。
+          - DataPackの `pack.mcmeta` formatは固定値ではなく、実行中MinecraftのNMSから動的取得。
+          - Registry bindingが利用できないケースではruntime側のWorld copyへフォールバック。
+          - `/otherworld dimensions` でseedとDimension対応を確認可能。
+
+          ### Just Leveling をPaper版として追加
+
+          Forge版 Just Leveling v1.7 をベースに、Paperサーバー側で成立する形へ再構成しました。
+
+          - 8種類の能力値、最大Lv.32。
+          - 16パッシブ、24スキル、41称号。
+          - 「レベリングの書」とGUI。
+          - Vanilla経験値レベルを利用した能力強化。
+          - プロフィール、スキル一覧、ランキング、称号選択。
+          - Otherworldグループごとに能力値・称号・進行を分離。
+          - PartyのプレフィックスとLeveling称号を同時表示可能に改善。
+
+          ※ Forge固有のMixin、クライアントGUI、独自Attribute等はPaper API/NMSで可能なサーバー側挙動へ置換しているため、Forge版との完全な1:1再現ではありません。
+
+          ### Partyシステム強化
+
+          - PartyをOtherworldグループ単位で扱えるよう改善。
+          - 同じプレイヤーでもOtherworldごとに別Partyへ所属可能。
+          - Public / Private Partyを追加。
+          - 公開Partyの検索・参加UIを追加。
+          - Party名、色、権限、表示更新処理を改善。
+
+          ### InvSee / SharedStorage / Player Data の分離改善
+
+          - Offline InvSee snapshotをOtherworldグループ + UUID単位へ分離。
+          - 異なるOtherworldのoffline inventoryを誤って編集しにくい構造へ変更。
+          - SharedStorageのnetwork IDへ内部的にOtherworld scopeを付与。
+          - 同じ表示IDでも別Otherworldでは別ネットワークとして利用可能。
+          - 旧データについてはdefault互換・移行処理を維持。
+
+          ### 新しいゲームプレイ機能・モジュール
+
+          1.4以降、多数の機能を追加・再構成しています。代表例:
+
+          - Copper Golem関連機能と複数の作業モード。
+          - Custom Enchant Table / カスタムエンチャント関連。
+          - Chunk Loader。
+          - Air Dash。
+          - Auto Fishing。
+          - BetterMenu。
+          - Land / Party / Pet / Home / OfflineAccess / Performanceなどのコマンド・管理機能拡張。
+          - ChestLock / ChestShop / SharedStorage / Recycler / ParallelFurnace等、既存機能の改善。
+
+          ### WebSite / WebMap を大幅拡張
+
+          - React + ViteベースのWebフロントエンドを追加・拡張。
+          - WebMapページを追加。
+          - Wiki、機能説明、コマンド説明、ステータス、プロフィール、Feed等のUIを追加。
+          - モバイル向けUIやPWA用アセットを追加。
+          - frontend依存関係を更新し、リリース前確認では `npm audit` の既知脆弱性を0件まで整理。
+          - bundleをReact / Leaflet / vendorへ分割し、大きなchunk警告を改善。
+
+          ### Build / CI の変更
+
+          - 旧 `just-leveling-build.yml` を廃止。
+          - PR作成・更新時にPR Headを自動ビルドする汎用 `Pull Request Build` workflowへ変更。
+          - Java 25 + Gradle buildでPRのコンパイルを自動確認。
+          - 1.5 Alpha直前のPR Buildは成功済みです。
+
+          ## 互換性・移行について
+
+          - 既存defaultデータはできるだけ従来形式を読み込めるよう互換処理を入れています。
+          - Otherworld関連の新しい分離データは初回利用時に自動生成されます。
+          - SharedStorage / InvSee等、一部データは旧形式をdefaultとして読み込み、新形式へ段階的に移行します。
+          - **アップデート前にplugins/Bettersurvivalとワールドデータのバックアップを推奨します。**
+
+          ## Alpha版としての注意点
+
+          このリリースは大規模変更を含むため **Alpha** 扱いです。
+
+          特に以下は実サーバーで重点的に確認してください。
+
+          - DataPackで既存Overworld / Nether / Endのworldgenを大きく変更している環境。
+          - 独自Custom Dimensionを多数追加するDataPack。
+          - 他プラグインがBootstrap後に動的Dimensionを生成する環境。
+          - 複数プレイヤーが複数Otherworld間を頻繁に移動する環境。
+          - Inventory / XP / EnderChest / InvSee / SharedStorageの移行。
+          - 他プラグインがPlayer display nameやinventoryへ同時介入する環境。
+
+          ## 動作確認
+
+          - Java 25
+          - Paper 26.2 dev bundle
+          - `./gradlew clean build --stacktrace`
+          - PR #3最終HeadでPull Request Build成功
+          - Java compile warning整理済み
+          - Web frontend build成功
+          - `npm audit`: 0 vulnerabilities（リリース準備時確認）
+
+          ## 1.4との完全な差分
+
+          https://github.com/gamelist1990/Bettersurvival/compare/release-1.4-SNAPSHOT...release-1.5-ALPHA
+
+          ---
+
+          不具合を見つけた場合は、使用しているPaper build、Java version、DataPack/Plugin構成、再現手順とログを添えて報告してください。
+          EOF
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="release-1.5-ALPHA"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+          gh release create "$TAG" \
+            Bettersurvival-1.5-ALPHA.jar \
+            --repo "$GITHUB_REPOSITORY" \
+            --target 949207ec59e91e84ad91f704ee32d5cd467a2f24 \
+            --title "1.5 Alpha" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
