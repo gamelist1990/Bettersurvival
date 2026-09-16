@@ -6,14 +6,14 @@ import org.bukkit.Material;
  * Just Leveling の8能力値を Paper 側で表現する。
  */
 public enum LevelingAptitude {
-    STRENGTH("strength", "Strength", "STR", Material.IRON_SWORD),
-    CONSTITUTION("constitution", "Constitution", "CON", Material.GOLDEN_APPLE),
-    DEXTERITY("dexterity", "Dexterity", "DEX", Material.BOW),
-    DEFENSE("defense", "Defense", "DEF", Material.SHIELD),
-    INTELLIGENCE("intelligence", "Intelligence", "INT", Material.ENCHANTING_TABLE),
-    BUILDING("building", "Building", "BLD", Material.DIAMOND_PICKAXE),
-    MAGIC("magic", "Magic", "MAG", Material.BREWING_STAND),
-    LUCK("luck", "Luck", "LCK", Material.EMERALD);
+    STRENGTH("strength", "筋力", "STR", Material.IRON_SWORD),
+    CONSTITUTION("constitution", "体力", "CON", Material.GOLDEN_APPLE),
+    DEXTERITY("dexterity", "敏捷", "DEX", Material.BOW),
+    DEFENSE("defense", "防御", "DEF", Material.SHIELD),
+    INTELLIGENCE("intelligence", "知力", "INT", Material.ENCHANTING_TABLE),
+    BUILDING("building", "建築", "BLD", Material.DIAMOND_PICKAXE),
+    MAGIC("magic", "魔力", "MAG", Material.BREWING_STAND),
+    LUCK("luck", "幸運", "LCK", Material.EMERALD);
 
     public static final int MAX_LEVEL = 32;
 
@@ -29,32 +29,21 @@ public enum LevelingAptitude {
         this.icon = icon;
     }
 
-    public String key() {
-        return key;
-    }
-
-    public String displayName() {
-        return displayName;
-    }
-
-    public String abbreviation() {
-        return abbreviation;
-    }
-
-    public Material icon() {
-        return icon;
-    }
+    public String key() { return key; }
+    public String displayName() { return displayName; }
+    public String abbreviation() { return abbreviation; }
+    public Material icon() { return icon; }
 
     public String rank(int level) {
-        if (level >= 32) return "Ascendant";
-        if (level >= 28) return "Master";
-        if (level >= 24) return "Expert";
-        if (level >= 20) return "Skilled";
-        if (level >= 16) return "Adept";
-        if (level >= 12) return "Journeyman";
-        if (level >= 8) return "Apprentice";
-        if (level >= 4) return "Fledgling";
-        return "Novice";
+        if (level >= 32) return "超越者";
+        if (level >= 28) return "達人";
+        if (level >= 24) return "熟練者";
+        if (level >= 20) return "上級者";
+        if (level >= 16) return "中級者";
+        if (level >= 12) return "一人前";
+        if (level >= 8) return "見習い";
+        if (level >= 4) return "駆け出し";
+        return "初心者";
     }
 
     public int passiveTier10(int level) {
@@ -67,9 +56,7 @@ public enum LevelingAptitude {
 
     private static int thresholdCount(int level, int... thresholds) {
         int count = 0;
-        for (int threshold : thresholds) {
-            if (level >= threshold) count++;
-        }
+        for (int threshold : thresholds) if (level >= threshold) count++;
         return count;
     }
 }
