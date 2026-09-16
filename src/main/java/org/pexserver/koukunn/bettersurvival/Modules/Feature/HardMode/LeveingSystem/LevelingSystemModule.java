@@ -13,6 +13,7 @@ import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -27,6 +28,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 
 import java.io.File;
 import java.io.IOException;
@@ -45,6 +47,7 @@ public final class LevelingSystemModule implements Listener {
     private final YamlConfiguration data;
     private final NamespacedKey bookKey;
     private final NamespacedKey recipeKey;
+    private LevelingTitleSystem titleSystem;
 
     public LevelingSystemModule(Loader plugin) {
         this.plugin = plugin;
@@ -82,6 +85,10 @@ public final class LevelingSystemModule implements Listener {
         return group == null || group.isBlank() ? "default" : group.toLowerCase(Locale.ROOT);
     }
 
+    public void setTitleSystem(LevelingTitleSystem titleSystem) {
+        this.titleSystem = titleSystem;
+    }
+
     public ItemStack createLevelingBook() {
         ItemStack item = new ItemStack(Material.ENCHANTED_BOOK);
         ItemMeta meta = item.getItemMeta();
@@ -94,36 +101,58 @@ public final class LevelingSystemModule implements Listener {
 
     public void open(Player player) {
         if (!isEnabled()) { player.sendMessage("§cJust Leveling は現在無効です。"); return; }
-        Inventory inventory = ComponentUtils.createInventory(player, 27, GUI_TITLE);
-        int[] slots = {9, 10, 11, 12, 14, 15, 16, 17};
+        ChestUI.Builder builder = ChestUI.builder().title(GUI_TITLE).size(54).type("leveling-main");
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 19};
         LevelingAptitude[] values = LevelingAptitude.values();
         for (int i = 0; i < values.length; i++) {
             LevelingAptitude aptitude = values[i];
             int level = getLevel(player, aptitude);
-            ItemStack icon = new ItemStack(aptitude.icon());
-            ItemMeta meta = icon.getItemMeta();
-            ComponentUtils.setDisplayName(meta, "§e" + aptitude.displayName() + " §7[" + aptitude.abbreviation() + "]");
-            List<String> lore = new ArrayList<>();
-            lore.add("§fワールドグループ: §b" + dataScope(player));
-            lore.add("§fレベル: §a" + level + "§7/§a" + LevelingAptitude.MAX_LEVEL);
-            lore.add("§fランク: §b" + aptitude.rank(level));
-            lore.add("§f次の強化コスト: §6" + levelCost(level) + " 経験値レベル");
-            lore.add("");
-            lore.add("§7パッシブI: " + aptitude.passiveTier10(level) + "/10");
-            lore.add("§7パッシブII: " + aptitude.passiveTier5(level) + "/5");
-            lore.add("");
-            lore.add(level >= LevelingAptitude.MAX_LEVEL ? "§a最大レベル" : "§eクリックでレベルアップ");
-            ComponentUtils.setLore(meta, lore);
-            icon.setItemMeta(meta);
-            inventory.setItem(slots[i], icon);
+            List<String> lore = List.of(
+                    "§7レベル: §a" + level + "§7/§a" + LevelingAptitude.MAX_LEVEL,
+                    "§7ランク: §b" + aptitude.rank(level),
+                    "§7パッシブ: §f" + aptitude.passiveTier10(level) + "/10 §7/ §f" + aptitude.passiveTier5(level) + "/5",
+                    "§7必要経験値レベル: §6" + levelCost(level),
+                    level >= LevelingAptitude.MAX_LEVEL ? "§a最大レベル" : "§eクリックでレベルアップ");
+            builder.addButtonAt(slots[i], "§e" + aptitude.displayName() + " §7[" + aptitude.abbreviation() + "]", aptitude.icon(), String.join("\n", lore));
         }
         ItemStack info = new ItemStack(Material.EXPERIENCE_BOTTLE);
         ItemMeta infoMeta = info.getItemMeta();
-        ComponentUtils.setDisplayName(infoMeta, "§a経験値");
-        ComponentUtils.setLore(infoMeta, List.of("§7現在の経験値レベル: §f" + player.getLevel(), "§7能力強化時に経験値レベルを消費します。"));
+        ComponentUtils.setDisplayName(infoMeta, "§a経験値レベル: §f" + player.getLevel());
         info.setItemMeta(infoMeta);
-        inventory.setItem(22, info);
-        player.openInventory(inventory);
+        builder.addCustomItemAt(22, "§a経験値", info, "現在の経験値レベルを表示");
+        builder.addButtonAt(31, "§d称号一覧", Material.NAME_TAG, titleSystem == null ? "§7称号システム準備中" : "§7クリックで称号を選択");
+        builder.addButtonAt(49, "§c閉じる", Material.BARRIER, "§7メニューを閉じる");
+        builder.then((result, clicked) -> {
+            if (result.slot == 49) { ChestUI.closeMenu(clicked); return; }
+            if (result.slot == 31) { openTitles(clicked); return; }
+            for (int i = 0; i < slots.length; i++) if (result.slot == slots[i]) {
+                levelUp(clicked, values[i]);
+                open(clicked);
+                return;
+            }
+        }).show(player);
+    }
+
+    private void openTitles(Player player) {
+        if (titleSystem == null) { player.sendMessage("§c称号システムを初期化中です。"); return; }
+        ChestUI.Builder builder = ChestUI.builder().title("§8Just Leveling - 称号").size(54).type("leveling-titles");
+        List<LevelingTitle> unlocked = titleSystem.unlocked(player);
+        LevelingTitle selected = titleSystem.selected(player);
+        int slot = 0;
+        for (LevelingTitle title : LevelingTitle.values()) {
+            boolean available = unlocked.contains(title);
+            List<String> lore = List.of(available ? (title == selected ? "§a現在選択中" : "§eクリックで装備") : "§c未解放");
+            builder.addButtonAt(slot++, title == selected ? "§a▶ " + title.displayName() : "§e" + title.displayName(), available ? Material.NAME_TAG : Material.GRAY_DYE, String.join("\n", lore));
+        }
+        builder.addButtonAt(49, "§b能力値へ戻る", Material.ARROW, "§7クリックで戻る");
+        builder.then((result, clicked) -> {
+            if (result.slot == 49) { open(clicked); return; }
+            if (result.slot >= 0 && result.slot < LevelingTitle.values().length) {
+                LevelingTitle title = LevelingTitle.values()[result.slot];
+                if (titleSystem.select(clicked, title.key())) openTitles(clicked);
+                else clicked.sendMessage("§cその称号は未解放です。");
+            }
+        }).show(player);
     }
 
     public int getLevel(Player player, LevelingAptitude aptitude) {
@@ -183,21 +212,11 @@ public final class LevelingSystemModule implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onUseBook(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) return;
+        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         if (!isLevelingBook(event.getItem())) return;
         event.setCancelled(true);
         if (!isEnabled()) { event.getPlayer().sendMessage("§cJust Leveling は現在無効です。"); return; }
         open(event.getPlayer());
-    }
-
-    @EventHandler(ignoreCancelled = true)
-    public void onGuiClick(InventoryClickEvent event) {
-        if (!GUI_TITLE.equals(ComponentUtils.legacyText(event.getView().title()))) return;
-        event.setCancelled(true);
-        if (!(event.getWhoClicked() instanceof Player player)) return;
-        if (!isEnabled()) { player.closeInventory(); player.sendMessage("§cJust Leveling は現在無効です。"); return; }
-        int raw = event.getRawSlot();
-        int[] slots = {9, 10, 11, 12, 14, 15, 16, 17};
-        for (int i = 0; i < slots.length; i++) if (raw == slots[i]) { if (levelUp(player, LevelingAptitude.values()[i])) open(player); return; }
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)

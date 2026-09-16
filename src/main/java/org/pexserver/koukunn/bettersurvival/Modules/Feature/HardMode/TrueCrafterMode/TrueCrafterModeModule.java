@@ -74,7 +74,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /** TrueCrafterModeの戦闘システムをPaper APIだけで再現する。 */
 public final class TrueCrafterModeModule implements Listener {
-    private static final float SKELETON_SHEATH_SCALE = 1.3F;
+    private static final float SKELETON_SHEATH_SCALE = 0.5F;
 
     private final Loader plugin;
     private final TrueCrafterSettings settings;

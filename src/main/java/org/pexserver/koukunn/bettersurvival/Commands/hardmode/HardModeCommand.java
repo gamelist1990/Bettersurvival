@@ -29,6 +29,7 @@ public final class HardModeCommand extends BaseCommand {
         this.levelingSystem = new LevelingSystemModule(plugin);
         this.levelingRuntime = new JustLevelingRuntime(plugin, levelingSystem);
         this.titleSystem = new LevelingTitleSystem(plugin, levelingSystem);
+        this.levelingSystem.setTitleSystem(this.titleSystem);
         this.levelingExtras = new LevelingExtras(plugin, levelingSystem);
     }
 

@@ -403,7 +403,7 @@ public final class WitherBossSystem {
         sheath.getPersistentDataContainer().set(new org.bukkit.NamespacedKey(plugin, "truecrafter_sheath_owner"), org.bukkit.persistence.PersistentDataType.STRING, skeleton.getUniqueId().toString());
         sheath.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
         sheath.setTransformation(new org.bukkit.util.Transformation(new Vector3f(0.0F, -1.1F, -0.3F), new Quaternionf(),
-                new Vector3f(1.3F, 1.3F, 1.3F), new Quaternionf(0.0F, 0.0F, 1.0F, 1.0F)));
+                new Vector3f(0.5F, 0.5F, 0.5F), new Quaternionf(0.0F, 0.0F, 1.0F, 1.0F)));
         skeleton.addPassenger(sheath);
     }
 

@@ -28,7 +28,8 @@ Just Leveling Forge 1.20.x v1.7 を Paper Plugin で可能な範囲まで再現�
 - Dragon/Mob/Player/Villager kill、Raid、釣り、エンチャント、取引、生存日数を追跡
 - Boat / Minecart / Horse / Pig / Strider の移動距離称号
 - Nether / End 到達称号
-- Leveling Book とチェストGUI
+- Leveling Book とラージチェスト式ChestUI
+- 能力値のレベルアップ、経験値表示、称号一覧・解放状態表示・称号装備を同一UIで操作
 - `leveling-data.yml` と `leveling-titles.yml` による永続保存
 - `/hardmode leveling open`
 - `/hardmode leveling book`
