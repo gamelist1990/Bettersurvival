@@ -1,8 +1,11 @@
 package org.pexserver.koukunn.bettersurvival.Commands.hardmode;
 
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.LeveingSystem.LevelingSystemModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.HardMode.TrueCrafterMode.TrueCrafterModeModule;
 
 import java.util.List;
@@ -10,22 +13,44 @@ import java.util.List;
 /** サバイバル高難易度機能を簡単なON/OFF形式で管理する。 */
 public final class HardModeCommand extends BaseCommand {
     private final TrueCrafterModeModule trueCrafter;
+    private final LevelingSystemModule levelingSystem;
 
     public HardModeCommand(TrueCrafterModeModule trueCrafter) {
         this.trueCrafter = trueCrafter;
+        this.levelingSystem = new LevelingSystemModule(Loader.getPlugin(Loader.class));
     }
 
     @Override public String getName() { return "hardmode"; }
     @Override public String getDescription() { return "サバイバル高難易度機能を管理"; }
     @Override public PermissionLevel getPermissionLevel() { return PermissionLevel.ADMIN_OR_CONSOLE; }
-    @Override public String getUsage() { return "/hardmode <list|truecrafter enabled|disabled|heat 1-5>"; }
+    @Override public String getUsage() { return "/hardmode <list|truecrafter enabled|disabled|heat 1-5|leveling open|book>"; }
 
     @Override
     public boolean execute(CommandSender sender, String[] args) {
         if (args.length == 1 && args[0].equalsIgnoreCase("list")) {
             sender.sendMessage("§6HardMode機能一覧");
             sender.sendMessage("§e真クラ §7(truecrafter): " + state() + " §7/ 熱量: §6" + trueCrafter.heatLevel());
+            sender.sendMessage("§dJust Leveling §7(leveling): §aenabled");
             return true;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("leveling")) {
+            if (args[1].equalsIgnoreCase("open")) {
+                if (!(sender instanceof Player player)) {
+                    sendError(sender, "プレイヤーから実行してください");
+                    return true;
+                }
+                levelingSystem.open(player);
+                return true;
+            }
+            if (args[1].equalsIgnoreCase("book")) {
+                if (!(sender instanceof Player player)) {
+                    sendError(sender, "プレイヤーから実行してください");
+                    return true;
+                }
+                player.getInventory().addItem(levelingSystem.createLevelingBook());
+                sender.sendMessage("§dLeveling Book §6を付与しました");
+                return true;
+            }
         }
         if (args.length == 3 && (args[0].equalsIgnoreCase("truecrafter") || args[0].equals("真クラ"))
                 && args[1].equalsIgnoreCase("heat")) {
@@ -57,13 +82,16 @@ public final class HardModeCommand extends BaseCommand {
         sender.sendMessage("§e/hardmode list");
         sender.sendMessage("§e/hardmode truecrafter <enabled|disabled>");
         sender.sendMessage("§e/hardmode truecrafter heat <1-5>");
+        sender.sendMessage("§e/hardmode leveling open");
+        sender.sendMessage("§e/hardmode leveling book");
         return true;
     }
 
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
-        if (args.length == 1) return List.of("list", "truecrafter");
+        if (args.length == 1) return List.of("list", "truecrafter", "leveling");
         if (args.length == 2 && args[0].equalsIgnoreCase("truecrafter")) return List.of("enabled", "disabled", "heat");
+        if (args.length == 2 && args[0].equalsIgnoreCase("leveling")) return List.of("open", "book");
         if (args.length == 3 && args[0].equalsIgnoreCase("truecrafter") && args[1].equalsIgnoreCase("heat")) return List.of("1", "2", "3", "4", "5");
         return List.of();
     }
