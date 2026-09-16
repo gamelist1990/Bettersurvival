@@ -62,7 +62,7 @@ public final class JustLevelingRuntime implements Listener {
         this.plugin = plugin;
         this.leveling = leveling;
         Bukkit.getPluginManager().registerEvents(this, plugin);
-        Bukkit.getScheduler().runTaskTimer(plugin, this::refreshPersistentSkills, 20L, 100L);
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> refreshPersistentSkills(), 20L, 100L);
     }
 
     public boolean has(Player player, LevelingSkill skill) {
@@ -107,7 +107,6 @@ public final class JustLevelingRuntime implements Listener {
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
-        // 数秒だけ保持する戦闘/テレポート状態もOtherworldを跨がせない。
         counterAttack.remove(id);
         pearlTeleports.remove(id);
         potionRewriteGuard.remove(id);
