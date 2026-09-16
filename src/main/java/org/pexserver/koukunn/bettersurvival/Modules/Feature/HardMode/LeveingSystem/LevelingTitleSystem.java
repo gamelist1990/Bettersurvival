@@ -144,10 +144,7 @@ public final class LevelingTitleSystem implements Listener {
         }
     }
 
-    @EventHandler public void onWorldChange(PlayerChangedWorldEvent event) {
-        // グループを跨いだ直後に、そのグループ専用の称号セットへ切り替える。
-        initialize(event.getPlayer());
-    }
+    @EventHandler public void onWorldChange(PlayerChangedWorldEvent event) { initialize(event.getPlayer()); }
 
     @EventHandler(ignoreCancelled = true)
     public void onVehicleTravel(PlayerMoveEvent event) {
@@ -210,7 +207,7 @@ public final class LevelingTitleSystem implements Listener {
         String key = path(player, "unlocked." + title.key());
         if (data.getBoolean(key, false)) return;
         data.set(key, true);
-        player.sendMessage("§6✦ Title Unlocked: §e" + title.displayName() + " §7[" + leveling.dataScope(player) + "]");
+        player.sendMessage("§6✦ 新しい称号を獲得しました: §e" + title.displayName() + " §7[" + leveling.dataScope(player) + "]");
         save();
     }
 
