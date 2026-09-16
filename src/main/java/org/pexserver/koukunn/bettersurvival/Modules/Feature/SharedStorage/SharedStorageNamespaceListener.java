@@ -21,6 +21,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -96,19 +97,19 @@ public final class SharedStorageNamespaceListener implements Listener {
         if (stack == null || stack.getType() != Material.CHEST_MINECART || !stack.hasItemMeta()) return false;
         ItemMeta meta = stack.getItemMeta();
         if (!meta.hasDisplayName()) return false;
-        String display = meta.getDisplayName();
+        String display = ComponentUtils.getDisplayName(meta);
         String scoped = scopeSubDisplay(display, location);
         if (display.equals(scoped)) return false;
-        meta.setDisplayName(scoped);
+        ComponentUtils.setDisplayName(meta, scoped);
         stack.setItemMeta(meta);
         return true;
     }
 
     private void scopeMinecartEntity(StorageMinecart minecart) {
-        String name = minecart.getCustomName();
+        String name = ComponentUtils.legacyText(minecart.customName());
         if (name == null || name.isBlank()) return;
         String scoped = scopeSubDisplay(name, minecart.getLocation());
-        if (!name.equals(scoped)) minecart.setCustomName(scoped);
+        if (!name.equals(scoped)) minecart.customName(ComponentUtils.legacy(scoped));
     }
 
     private String scopeSubDisplay(String display, Location location) {
@@ -128,7 +129,7 @@ public final class SharedStorageNamespaceListener implements Listener {
     }
 
     private void scopeBarrel(Barrel barrel) {
-        String name = barrel.getCustomName();
+        String name = ComponentUtils.legacyText(barrel.customName());
         if (name == null || name.isBlank()) return;
         String prefix = "chestget-";
         if (!name.toLowerCase(Locale.ROOT).startsWith(prefix)) return;
@@ -137,7 +138,7 @@ public final class SharedStorageNamespaceListener implements Listener {
         String desiredScope = SharedStorageScopedId.scopeFor(plugin, barrel.getLocation());
         if (desiredScope.equals(SharedStorageScopedId.scope(id))) return;
         String scoped = SharedStorageScopedId.encode(SharedStorageScopedId.raw(id), desiredScope);
-        barrel.setCustomName(prefix + scoped);
+        barrel.customName(ComponentUtils.legacy(prefix + scoped));
         barrel.update(true, false);
     }
 }

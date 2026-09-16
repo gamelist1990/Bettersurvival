@@ -232,6 +232,7 @@ public class LoginInterceptor extends ChannelDuplexHandler {
      * Paper の ServerLoginPacketListenerImpl#callPlayerPreLoginEvents と同じ順序で
      * AsyncPlayerPreLoginEvent -> PlayerPreLoginEvent を発火する。
      */
+    @SuppressWarnings("deprecation")
     private GameProfile callPlayerPreLoginEvents(ServerLoginPacketListenerImpl loginListener,
                                                   Connection connection,
                                                   GameProfile gameProfile) throws Exception {
@@ -267,8 +268,8 @@ public class LoginInterceptor extends ChannelDuplexHandler {
 
         if (PlayerPreLoginEvent.getHandlerList().getRegisteredListeners().length != 0) {
             PlayerPreLoginEvent syncEvent = new PlayerPreLoginEvent(playerName, address, uniqueId);
-            if (asyncEvent.getResult() != PlayerPreLoginEvent.Result.ALLOWED) {
-                syncEvent.disallow(asyncEvent.getResult(), asyncEvent.kickMessage());
+            if (asyncEvent.getLoginResult() != AsyncPlayerPreLoginEvent.Result.ALLOWED) {
+                syncEvent.disallow(PlayerPreLoginEvent.Result.valueOf(asyncEvent.getLoginResult().name()), asyncEvent.kickMessage());
             }
 
             PlayerPreLoginEvent completed = callSyncPreLoginEvent(syncEvent);
@@ -282,6 +283,7 @@ public class LoginInterceptor extends ChannelDuplexHandler {
         return gameProfile;
     }
 
+    @SuppressWarnings("deprecation")
     private PlayerPreLoginEvent callSyncPreLoginEvent(PlayerPreLoginEvent event) throws Exception {
         if (Bukkit.isPrimaryThread()) {
             Bukkit.getPluginManager().callEvent(event);
