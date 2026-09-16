@@ -36,8 +36,7 @@ public class InvseeOfflineData {
 
     public static String scope(Player player) {
         if (player == null || plugin == null || plugin.getOtherworldModule() == null) return "default";
-        String scope = plugin.getOtherworldModule().getGroup(player);
-        return normalizeScope(scope);
+        return normalizeScope(plugin.getOtherworldModule().getGroup(player));
     }
 
     public static ItemStack[] getInventoryContents(OfflinePlayer player) { return getInventoryContents(player, "default"); }
@@ -63,7 +62,7 @@ public class InvseeOfflineData {
 
     public static boolean hasData(OfflinePlayer player) { return hasData(player, "default"); }
     public static boolean hasData(OfflinePlayer player, String scope) {
-        File file = getDataFile(player, scope);
+        File file = getReadFile(player, scope);
         if (!file.exists()) return false;
         Properties properties = loadProperties(player, scope);
         return properties.containsKey(KEY_INVENTORY) || properties.containsKey(KEY_ARMOR)
@@ -71,42 +70,30 @@ public class InvseeOfflineData {
     }
 
     public static void saveSnapshot(Player player) {
-        if (player == null) return;
-        saveSnapshot(player, scope(player));
+        if (player != null) saveSnapshot(player, scope(player));
     }
 
     public static void saveSnapshot(Player player, String scope) {
         if (player == null) return;
         PlayerInventory inventory = player.getInventory();
-        setAll(player, scope,
-                inventory.getStorageContents(),
-                inventory.getArmorContents(),
-                inventory.getItemInOffHand(),
-                player.getEnderChest().getContents(),
-                false);
+        setAll(player, scope, inventory.getStorageContents(), inventory.getArmorContents(),
+                inventory.getItemInOffHand(), player.getEnderChest().getContents(), false);
     }
 
     public static boolean applyPendingEdits(Player player) {
-        if (player == null) return false;
-        return applyPendingEdits(player, scope(player));
+        return player != null && applyPendingEdits(player, scope(player));
     }
 
     public static boolean applyPendingEdits(Player player, String scope) {
         if (player == null) return false;
         Properties properties = loadProperties(player, scope);
         if (!Boolean.parseBoolean(properties.getProperty(KEY_DIRTY, "false"))) return false;
-
-        ItemStack[] inventory = load(player, scope, properties, KEY_INVENTORY, 36);
-        ItemStack[] armor = load(player, scope, properties, KEY_ARMOR, 4);
-        ItemStack offhand = load(player, scope, properties, KEY_OFFHAND, 1)[0];
-        ItemStack[] enderchest = load(player, scope, properties, KEY_ENDERCHEST, 27);
-
-        PlayerInventory playerInventory = player.getInventory();
-        playerInventory.setStorageContents(inventory);
-        playerInventory.setArmorContents(armor);
-        playerInventory.setItemInOffHand(offhand);
-        player.getEnderChest().setContents(enderchest);
-
+        PlayerInventory inventory = player.getInventory();
+        inventory.setStorageContents(load(player, scope, properties, KEY_INVENTORY, 36));
+        inventory.setArmorContents(load(player, scope, properties, KEY_ARMOR, 4));
+        ItemStack[] offhand = load(player, scope, properties, KEY_OFFHAND, 1);
+        inventory.setItemInOffHand(offhand.length == 0 ? null : offhand[0]);
+        player.getEnderChest().setContents(load(player, scope, properties, KEY_ENDERCHEST, 27));
         properties.setProperty(KEY_DIRTY, "false");
         saveProperties(player, scope, properties);
         return true;
@@ -121,8 +108,7 @@ public class InvseeOfflineData {
         String encoded = properties.getProperty(key);
         if (encoded == null || encoded.isBlank()) return new ItemStack[size];
         try {
-            ItemStack[] loaded = ItemStack.deserializeItemsFromBytes(Base64.getDecoder().decode(encoded));
-            return normalize(loaded, size);
+            return normalize(ItemStack.deserializeItemsFromBytes(Base64.getDecoder().decode(encoded)), size);
         } catch (IllegalArgumentException e) {
             Bukkit.getLogger().warning("[InvSee] オフラインデータの読み込みに失敗: " + player.getUniqueId() + " / " + normalizeScope(scope));
             return new ItemStack[size];
@@ -131,7 +117,7 @@ public class InvseeOfflineData {
 
     private static void save(OfflinePlayer player, String scope, String key, ItemStack[] contents, boolean dirty) {
         Properties properties = loadProperties(player, scope);
-        properties.setProperty(key, Base64.getEncoder().encodeToString(ItemStack.serializeItemsAsBytes(contents)));
+        properties.setProperty(key, encode(contents));
         properties.setProperty(KEY_DIRTY, Boolean.toString(dirty));
         saveProperties(player, scope, properties);
     }
@@ -149,7 +135,7 @@ public class InvseeOfflineData {
 
     private static Properties loadProperties(OfflinePlayer player, String scope) {
         Properties properties = new Properties();
-        File file = getDataFile(player, scope);
+        File file = getReadFile(player, scope);
         if (!file.exists()) return properties;
         try (var reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
             properties.load(reader);
@@ -160,7 +146,7 @@ public class InvseeOfflineData {
     }
 
     private static void saveProperties(OfflinePlayer player, String scope, Properties properties) {
-        File file = getDataFile(player, scope);
+        File file = getWriteFile(player, scope);
         File parent = file.getParentFile();
         if (!parent.exists() && !parent.mkdirs()) {
             Bukkit.getLogger().warning("[InvSee] オフラインデータフォルダを作成できませんでした");
@@ -173,17 +159,20 @@ public class InvseeOfflineData {
         }
     }
 
-    private static File getDataFile(OfflinePlayer player, String scope) {
-        File folder = dataFolder != null ? dataFolder : new File("plugins/Bettersurvival/InvseeOfflineData");
-        String normalized = normalizeScope(scope);
-        if ("default".equals(normalized)) {
-            File scoped = new File(new File(folder, "default"), player.getUniqueId() + ".properties");
-            File legacy = new File(folder, player.getUniqueId() + ".properties");
-            // 旧形式はdefaultとしてそのまま読み込み、次回保存から新形式へ移行する。
-            if (!scoped.exists() && legacy.exists()) return legacy;
-            return scoped;
-        }
-        return new File(new File(folder, safeScope(normalized)), player.getUniqueId() + ".properties");
+    private static File getReadFile(OfflinePlayer player, String scope) {
+        File scoped = getWriteFile(player, scope);
+        if (scoped.exists() || !"default".equals(normalizeScope(scope))) return scoped;
+        File folder = root();
+        File legacy = new File(folder, player.getUniqueId() + ".properties");
+        return legacy.exists() ? legacy : scoped;
+    }
+
+    private static File getWriteFile(OfflinePlayer player, String scope) {
+        return new File(new File(root(), safeScope(scope)), player.getUniqueId() + ".properties");
+    }
+
+    private static File root() {
+        return dataFolder != null ? dataFolder : new File("plugins/Bettersurvival/InvseeOfflineData");
     }
 
     private static String normalizeScope(String scope) {
