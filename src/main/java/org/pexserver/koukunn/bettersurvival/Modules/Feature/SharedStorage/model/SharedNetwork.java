@@ -34,143 +34,49 @@ public class SharedNetwork {
     private SubFrameFilterMode subFrameFilterMode = SubFrameFilterMode.EXACT;
     private boolean enableChestPage = DEFAULT_ENABLE_CHEST_PAGE;
 
-    public SharedNetwork(String id) {
-        this.id = id;
-    }
-
-    public String id() {
-        return id;
-    }
-
-    public Location main() {
-        return main;
-    }
-
-    public void setMain(Location main) {
-        this.main = main;
-    }
-
-    public List<Location> subs() {
-        return subs;
-    }
-
-    public void addSub(Location location) {
-        if (!hasSub(location))
-            subs.add(location);
-    }
-
+    public SharedNetwork(String id) { this.id = id; }
+    public String id() { return id; }
+    public Location main() { return main; }
+    public void setMain(Location main) { this.main = main; }
+    public List<Location> subs() { return subs; }
+    public void addSub(Location location) { if (!hasSub(location)) subs.add(location); }
     public void removeSub(Location location) {
         subs.removeIf(existing -> Objects.equals(existing.getWorld(), location.getWorld())
                 && existing.getBlockX() == location.getBlockX()
                 && existing.getBlockY() == location.getBlockY()
                 && existing.getBlockZ() == location.getBlockZ());
     }
-
-    public void replaceSubs(List<Location> newSubs) {
-        subs.clear();
-        subs.addAll(newSubs);
-    }
-
+    public void replaceSubs(List<Location> newSubs) { subs.clear(); subs.addAll(newSubs); }
     public boolean hasSub(Location location) {
         for (Location existing : subs) {
             if (Objects.equals(existing.getWorld(), location.getWorld())
                     && existing.getBlockX() == location.getBlockX()
                     && existing.getBlockY() == location.getBlockY()
-                    && existing.getBlockZ() == location.getBlockZ())
-                return true;
+                    && existing.getBlockZ() == location.getBlockZ()) return true;
         }
         return false;
     }
-
-    public boolean allowSubInsert() {
-        return allowSubInsert;
-    }
-
-    public void setAllowSubInsert(boolean allowSubInsert) {
-        this.allowSubInsert = allowSubInsert;
-    }
-
-    public boolean allowSubExtract() {
-        return allowSubExtract;
-    }
-
-    public void setAllowSubExtract(boolean allowSubExtract) {
-        this.allowSubExtract = allowSubExtract;
-    }
-
-    public boolean allowSubHopperInsert() {
-        return allowSubHopperInsert;
-    }
-
-    public void setAllowSubHopperInsert(boolean allowSubHopperInsert) {
-        this.allowSubHopperInsert = allowSubHopperInsert;
-    }
-
-    public boolean allowSubHopperExtract() {
-        return allowSubHopperExtract;
-    }
-
-    public void setAllowSubHopperExtract(boolean allowSubHopperExtract) {
-        this.allowSubHopperExtract = allowSubHopperExtract;
-    }
-
-    public boolean allowMainInsert() {
-        return allowMainInsert;
-    }
-
-    public void setAllowMainInsert(boolean allowMainInsert) {
-        this.allowMainInsert = allowMainInsert;
-    }
-
-    public boolean allowMainExtract() {
-        return allowMainExtract;
-    }
-
-    public void setAllowMainExtract(boolean allowMainExtract) {
-        this.allowMainExtract = allowMainExtract;
-    }
-
-    public boolean enableTransferParticles() {
-        return enableTransferParticles;
-    }
-
-    public void setEnableTransferParticles(boolean enableTransferParticles) {
-        this.enableTransferParticles = enableTransferParticles;
-    }
-
-    public int subRange() {
-        return subRange;
-    }
-
-    public void setSubRange(int subRange) {
-        this.subRange = clampSubRange(subRange);
-    }
-
-    public boolean enableSubFrameFilter() {
-        return enableSubFrameFilter;
-    }
-
-    public void setEnableSubFrameFilter(boolean enableSubFrameFilter) {
-        this.enableSubFrameFilter = enableSubFrameFilter;
-    }
-
-    public SubFrameFilterMode subFrameFilterMode() {
-        return subFrameFilterMode;
-    }
-
-    public void setSubFrameFilterMode(SubFrameFilterMode subFrameFilterMode) {
-        this.subFrameFilterMode = subFrameFilterMode == null ? SubFrameFilterMode.EXACT : subFrameFilterMode;
-    }
-
-    public boolean enableChestPage() {
-        return enableChestPage;
-    }
-
-    public void setEnableChestPage(boolean enableChestPage) {
-        this.enableChestPage = enableChestPage;
-    }
-
-    private static int clampSubRange(int range) {
-        return Math.max(1, Math.min(MAX_SUB_DISTANCE_LIMIT, range));
-    }
+    public boolean allowSubInsert() { return allowSubInsert; }
+    public void setAllowSubInsert(boolean value) { allowSubInsert = value; }
+    public boolean allowSubExtract() { return allowSubExtract; }
+    public void setAllowSubExtract(boolean value) { allowSubExtract = value; }
+    public boolean allowSubHopperInsert() { return allowSubHopperInsert; }
+    public void setAllowSubHopperInsert(boolean value) { allowSubHopperInsert = value; }
+    public boolean allowSubHopperExtract() { return allowSubHopperExtract; }
+    public void setAllowSubHopperExtract(boolean value) { allowSubHopperExtract = value; }
+    public boolean allowMainInsert() { return allowMainInsert; }
+    public void setAllowMainInsert(boolean value) { allowMainInsert = value; }
+    public boolean allowMainExtract() { return allowMainExtract; }
+    public void setAllowMainExtract(boolean value) { allowMainExtract = value; }
+    public boolean enableTransferParticles() { return enableTransferParticles; }
+    public void setEnableTransferParticles(boolean value) { enableTransferParticles = value; }
+    public int subRange() { return subRange; }
+    public void setSubRange(int value) { subRange = clampSubRange(value); }
+    public boolean enableSubFrameFilter() { return enableSubFrameFilter; }
+    public void setEnableSubFrameFilter(boolean value) { enableSubFrameFilter = value; }
+    public SubFrameFilterMode subFrameFilterMode() { return subFrameFilterMode; }
+    public void setSubFrameFilterMode(SubFrameFilterMode value) { subFrameFilterMode = value == null ? SubFrameFilterMode.EXACT : value; }
+    public boolean enableChestPage() { return enableChestPage; }
+    public void setEnableChestPage(boolean value) { enableChestPage = value; }
+    private static int clampSubRange(int range) { return Math.max(1, Math.min(MAX_SUB_DISTANCE_LIMIT, range)); }
 }

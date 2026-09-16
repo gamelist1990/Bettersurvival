@@ -23,6 +23,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.raid.RaidFinishEvent;
 import org.bukkit.inventory.MerchantInventory;
+import org.pexserver.koukunn.bettersurvival.Core.Util.PlayerDisplayFormatter;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.io.File;
@@ -213,8 +214,9 @@ public final class LevelingTitleSystem implements Listener {
 
     private void applySelected(Player player) {
         LevelingTitle title = selected(player);
-        if (title == LevelingTitle.TITLELESS) player.setPlayerListName(player.getName());
-        else player.setPlayerListName("§7[§6" + title.displayName() + "§7] §f" + player.getName());
+        PlayerDisplayFormatter formatter = PlayerDisplayFormatter.get(plugin);
+        if (title == LevelingTitle.TITLELESS) formatter.clearLevelingTitle(player);
+        else formatter.setLevelingTitle(player, title.displayName());
     }
 
     private long stat(Player player, String stat) { return data.getLong(path(player, "stats." + stat), 0L); }

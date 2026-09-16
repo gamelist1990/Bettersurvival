@@ -10,6 +10,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
@@ -21,551 +22,272 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeUI.Invs
 
 import java.util.List;
 
-/**
- * InvSee イベントリスナー
- * 
- * UIのクリックイベント処理とアイテム同期を担当
- * オンラインプレイヤーの場合はリアルタイム同期
- * オフラインプレイヤーの場合はUI閉じる時に保存
- */
+/** InvSee UI と Otherworld スコープ別オフライン編集の同期を担当する。 */
 public class InvseeListener implements Listener {
-
     private final Loader plugin;
 
     public InvseeListener(Loader plugin) {
         this.plugin = plugin;
     }
 
-    // ========== プレイヤーログイン・ログアウトイベント ==========
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onWorldChangeBeforeSwap(PlayerChangedWorldEvent event) {
+        if (plugin.getOtherworldModule() == null) return;
+        String source = plugin.getOtherworldModule().getGroup(event.getFrom());
+        String target = plugin.getOtherworldModule().getGroup(event.getPlayer().getWorld());
+        if (!source.equals(target)) InvseeOfflineData.saveSnapshot(event.getPlayer(), source);
+    }
 
-    /**
-     * プレイヤーがログアウトした時、そのプレイヤーを見ているInvSee UIを閉じる
-     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChangeAfterSwap(PlayerChangedWorldEvent event) {
+        if (plugin.getOtherworldModule() == null) return;
+        String source = plugin.getOtherworldModule().getGroup(event.getFrom());
+        String target = plugin.getOtherworldModule().getGroup(event.getPlayer().getWorld());
+        if (source.equals(target)) return;
+        Player player = event.getPlayer();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            InvseeOfflineData.applyPendingEdits(player, target);
+            InvseeOfflineData.saveSnapshot(player, target);
+        });
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player quittingPlayer = event.getPlayer();
-        
-        // 全オンラインプレイヤーをチェック
         for (Player viewer : Bukkit.getOnlinePlayers()) {
             if (viewer.equals(quittingPlayer)) continue;
-            
             Inventory openInv = viewer.getOpenInventory().getTopInventory();
             InvseeHolder holder = InvseeUI.getHolder(openInv);
-            
-            if (holder != null && holder.getTargetPlayer() != null) {
-                // 閲覧対象がログアウトしたプレイヤーの場合、UIを閉じる
-                if (holder.getTargetPlayer().getUniqueId().equals(quittingPlayer.getUniqueId())) {
-                    // オンラインの変更を保存してから閉じる
-                    InvseeUIType uiType = holder.getUIType();
-                    if (uiType == InvseeUIType.MAIN_INVENTORY) {
-                        saveMainInventory(openInv, quittingPlayer);
-                    } else if (uiType == InvseeUIType.EQUIPMENT) {
-                        saveEquipment(openInv, quittingPlayer);
-                    }
-                    // エンダーチェストはオンラインの場合直接開いているので保存不要
-                    
-                    viewer.closeInventory();
-                    viewer.sendMessage("§c[InvSee] §f" + quittingPlayer.getName() + " §7がログアウトしたためUIを閉じました");
-                }
+            if (holder == null || holder.getTargetPlayer() == null
+                    || !holder.getTargetPlayer().getUniqueId().equals(quittingPlayer.getUniqueId())) continue;
+            if (holder.getUIType() == InvseeUIType.MAIN_INVENTORY) {
+                saveMainInventory(openInv, quittingPlayer, holder.getScope());
+            } else if (holder.getUIType() == InvseeUIType.EQUIPMENT) {
+                saveEquipment(openInv, quittingPlayer, holder.getScope());
             }
+            viewer.closeInventory();
+            viewer.sendMessage("§c[InvSee] §f" + quittingPlayer.getName() + " §7がログアウトしたためUIを閉じました");
         }
-
         InvseeOfflineData.saveSnapshot(quittingPlayer);
     }
 
-    /**
-     * プレイヤーがログインした時、そのプレイヤーのオフラインデータを見ているUIを閉じる
-     * （オンラインに変わったためデータ不整合を防ぐ）
-     */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player joiningPlayer = event.getPlayer();
-        
-        // 1tick後に実行（プレイヤー完全参加後）
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             InvseeOfflineData.applyPendingEdits(joiningPlayer);
-
+            InvseeOfflineData.saveSnapshot(joiningPlayer);
             for (Player viewer : Bukkit.getOnlinePlayers()) {
                 if (viewer.equals(joiningPlayer)) continue;
-                
-                Inventory openInv = viewer.getOpenInventory().getTopInventory();
-                InvseeHolder holder = InvseeUI.getHolder(openInv);
-                
-                if (holder != null && holder.getTargetPlayer() != null) {
-                    // 閲覧対象がログインしたプレイヤーの場合、UIを閉じる
-                    if (holder.getTargetPlayer().getUniqueId().equals(joiningPlayer.getUniqueId())) {
-                        viewer.closeInventory();
-                        viewer.sendMessage("§a[InvSee] §f" + joiningPlayer.getName() + " §7がログインしました。UIを再度開いてください");
-                    }
+                InvseeHolder holder = InvseeUI.getHolder(viewer.getOpenInventory().getTopInventory());
+                if (holder != null && holder.getTargetPlayer() != null
+                        && holder.getTargetPlayer().getUniqueId().equals(joiningPlayer.getUniqueId())) {
+                    viewer.closeInventory();
+                    viewer.sendMessage("§a[InvSee] §f" + joiningPlayer.getName() + " §7がログインしました。UIを再度開いてください");
                 }
             }
         }, 1L);
     }
 
-    // ========== インベントリイベント ==========
-
     @EventHandler(priority = EventPriority.HIGH)
     public void onInventoryClick(InventoryClickEvent event) {
-        Inventory inv = event.getInventory();
-        InvseeHolder holder = InvseeUI.getHolder(inv);
-        if (holder == null) return;
-
-        Player viewer = (Player) event.getWhoClicked();
+        InvseeHolder holder = InvseeUI.getHolder(event.getInventory());
+        if (holder == null || !(event.getWhoClicked() instanceof Player viewer)) return;
         int slot = event.getRawSlot();
         ItemStack clicked = event.getCurrentItem();
-
-        InvseeUIType uiType = holder.getUIType();
-
-        switch (uiType) {
-            case PLAYER_SELECT:
-                handlePlayerSelectClick(event, holder, viewer, slot, clicked);
-                break;
-            case MAIN_INVENTORY:
-                handleMainInventoryClick(event, holder, viewer, slot, clicked);
-                break;
-            case EQUIPMENT:
-                handleEquipmentClick(event, holder, viewer, slot, clicked);
-                break;
-            case ENDERCHEST:
-                handleEnderchestClick(event, holder, viewer, slot, clicked);
-                break;
+        switch (holder.getUIType()) {
+            case PLAYER_SELECT -> handlePlayerSelectClick(event, holder, viewer, slot, clicked);
+            case MAIN_INVENTORY -> handleMainInventoryClick(event, holder, viewer, slot, clicked);
+            case EQUIPMENT -> handleEquipmentClick(event, holder, viewer, slot, clicked);
+            case ENDERCHEST -> handleEnderchestClick(event, holder, viewer, slot, clicked);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onInventoryDrag(InventoryDragEvent event) {
-        Inventory inv = event.getInventory();
-        InvseeHolder holder = InvseeUI.getHolder(inv);
+        InvseeHolder holder = InvseeUI.getHolder(event.getInventory());
         if (holder == null) return;
-
         InvseeUIType uiType = holder.getUIType();
-        OfflinePlayer target = holder.getTargetPlayer();
-
-        // プレイヤー選択画面ではドラッグ禁止
         if (uiType == InvseeUIType.PLAYER_SELECT) {
             event.setCancelled(true);
             return;
         }
-
-        // インベントリ/装備/エンダーチェスト画面でのドラッグ
-        // ナビゲーション行へのドラッグは禁止
         for (int slot : event.getRawSlots()) {
-            if (isNavigationSlot(uiType, slot, inv.getSize())) {
+            if (isNavigationSlot(uiType, slot)) {
                 event.setCancelled(true);
                 return;
             }
         }
-        
-        // オンラインプレイヤーへのリアルタイム同期
+        OfflinePlayer target = holder.getTargetPlayer();
         if (target != null && target.isOnline()) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                syncToOnlinePlayer(inv, target, uiType);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> syncToOnlinePlayer(event.getInventory(), target, uiType));
         }
     }
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
-        Inventory inv = event.getInventory();
-        InvseeHolder holder = InvseeUI.getHolder(inv);
+        InvseeHolder holder = InvseeUI.getHolder(event.getInventory());
         if (holder == null) return;
-
         OfflinePlayer target = holder.getTargetPlayer();
-        InvseeUIType uiType = holder.getUIType();
-
-        // オフラインプレイヤーの場合のみ保存（オンラインは既にリアルタイム同期済み）
-        if (target != null && !target.isOnline()) {
-            switch (uiType) {
-                case MAIN_INVENTORY:
-                    saveMainInventory(inv, target);
-                    break;
-                case EQUIPMENT:
-                    saveEquipment(inv, target);
-                    break;
-                case ENDERCHEST:
-                    saveEnderchest(inv, target);
-                    break;
-                default:
-                    break;
-            }
+        if (target == null || target.isOnline()) return;
+        switch (holder.getUIType()) {
+            case MAIN_INVENTORY -> saveMainInventory(event.getInventory(), target, holder.getScope());
+            case EQUIPMENT -> saveEquipment(event.getInventory(), target, holder.getScope());
+            case ENDERCHEST -> saveEnderchest(event.getInventory(), target, holder.getScope());
+            default -> { }
         }
     }
 
-    // ========== プレイヤー選択画面 ==========
-
-    private void handlePlayerSelectClick(InventoryClickEvent event, InvseeHolder holder, 
-                                          Player viewer, int slot, ItemStack clicked) {
+    private void handlePlayerSelectClick(InventoryClickEvent event, InvseeHolder holder,
+                                         Player viewer, int slot, ItemStack clicked) {
         event.setCancelled(true);
-        
-        if (clicked == null || clicked.getType() == Material.AIR) return;
-        if (clicked.getType() == Material.GRAY_STAINED_GLASS_PANE) return;
-
-        int page = holder.getPage();
-        List<OfflinePlayer> playerList = holder.getPlayerList();
-
-        // 閉じるボタン
+        if (clicked == null || clicked.getType().isAir() || clicked.getType() == Material.GRAY_STAINED_GLASS_PANE) return;
         if (slot == 49) {
             viewer.closeInventory();
             return;
         }
-
-        // 前のページ
         if (slot == 45 && clicked.getType() == Material.ARROW) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                InvseeUI.openPlayerSelectUI(viewer, plugin, page - 1);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openPlayerSelectUI(viewer, plugin, holder.getPage() - 1));
             return;
         }
-
-        // 次のページ
         if (slot == 53 && clicked.getType() == Material.ARROW) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                InvseeUI.openPlayerSelectUI(viewer, plugin, page + 1);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openPlayerSelectUI(viewer, plugin, holder.getPage() + 1));
             return;
         }
-
-        // プレイヤーヘッドをクリック
-        if (slot < 45 && clicked.getType() == Material.PLAYER_HEAD) {
-            int index = page * 45 + slot;
-            if (index >= 0 && index < playerList.size()) {
-                OfflinePlayer target = playerList.get(index);
-                viewer.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    InvseeUI.openInventoryUI(viewer, target, plugin);
-                });
-            }
-        }
+        if (slot >= 45 || clicked.getType() != Material.PLAYER_HEAD) return;
+        List<OfflinePlayer> playerList = holder.getPlayerList();
+        int index = holder.getPage() * 45 + slot;
+        if (playerList == null || index < 0 || index >= playerList.size()) return;
+        OfflinePlayer target = playerList.get(index);
+        viewer.closeInventory();
+        Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openInventoryUI(viewer, target, plugin));
     }
-
-    // ========== メインインベントリ画面 ==========
 
     private void handleMainInventoryClick(InventoryClickEvent event, InvseeHolder holder,
-                                           Player viewer, int slot, ItemStack clicked) {
+                                          Player viewer, int slot, ItemStack clicked) {
         OfflinePlayer target = holder.getTargetPlayer();
-        int invSize = event.getInventory().getSize();
-
-        // ナビゲーション行（スロット36-53）のクリック処理
-        if (slot >= 36 && slot < invSize) {
+        if (slot >= 36 && slot < event.getInventory().getSize()) {
             event.setCancelled(true);
-
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            if (clicked.getType() == Material.GRAY_STAINED_GLASS_PANE) return;
-            if (clicked.getType() == Material.BLACK_STAINED_GLASS_PANE) return;
-
-            // 戻る（スロット45）
-            if (slot == 45) {
-                viewer.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    InvseeUI.openPlayerSelectUI(viewer, plugin, 0);
-                });
-                return;
+            if (clicked == null || clicked.getType().isAir()
+                    || clicked.getType() == Material.GRAY_STAINED_GLASS_PANE
+                    || clicked.getType() == Material.BLACK_STAINED_GLASS_PANE) return;
+            switch (slot) {
+                case 45 -> { viewer.closeInventory(); Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openPlayerSelectUI(viewer, plugin, 0)); }
+                case 47 -> { viewer.closeInventory(); Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openEquipmentUI(viewer, target, plugin)); }
+                case 51 -> { viewer.closeInventory(); Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openEnderchestUI(viewer, target, plugin)); }
+                case 53 -> viewer.closeInventory();
+                default -> { }
             }
-
-            // 装備スロット（スロット47）
-            if (slot == 47) {
-                viewer.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    InvseeUI.openEquipmentUI(viewer, target, plugin);
-                });
-                return;
-            }
-
-            // エンダーチェスト（スロット51）
-            if (slot == 51) {
-                viewer.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    InvseeUI.openEnderchestUI(viewer, target, plugin);
-                });
-                return;
-            }
-
-            // 閉じる（スロット53）
-            if (slot == 53) {
-                viewer.closeInventory();
-                return;
-            }
-
             return;
         }
-
-        // メインインベントリ領域（スロット0-35）はアイテム操作を許可
-        // オンラインプレイヤーの場合、クリック後にリアルタイム同期
         if (target != null && target.isOnline()) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                syncToOnlinePlayer(event.getInventory(), target, InvseeUIType.MAIN_INVENTORY);
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> syncToOnlinePlayer(event.getInventory(), target, InvseeUIType.MAIN_INVENTORY));
         }
     }
-
-    // ========== 装備画面 ==========
 
     private void handleEquipmentClick(InventoryClickEvent event, InvseeHolder holder,
-                                       Player viewer, int slot, ItemStack clicked) {
+                                      Player viewer, int slot, ItemStack clicked) {
         OfflinePlayer target = holder.getTargetPlayer();
-
-        // 装備スロット以外はキャンセル
-        boolean isEquipmentSlot = (slot == 10 || slot == 11 || slot == 12 || slot == 13 || slot == 15);
-        boolean isBackButton = slot == 22;
-
-        if (!isEquipmentSlot && slot < 27) {
+        boolean equipmentSlot = slot == 10 || slot == 11 || slot == 12 || slot == 13 || slot == 15;
+        if (!equipmentSlot && slot < 27) {
             event.setCancelled(true);
-
-            // 戻るボタン
-            if (isBackButton && clicked != null && clicked.getType() == Material.ARROW) {
+            if (slot == 22 && clicked != null && clicked.getType() == Material.ARROW) {
                 viewer.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    InvseeUI.openInventoryUI(viewer, target, plugin);
-                });
+                Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openInventoryUI(viewer, target, plugin));
             }
             return;
         }
-
-        // 装備スロットはアイテム操作を許可
-        // ただしプレースホルダーアイテム（GLASS_PANE）の場合は特別処理
-        if (isEquipmentSlot && clicked != null && clicked.getType() == Material.GLASS_PANE) {
-            // プレースホルダーを削除して空きスロットとして扱う
-            event.getInventory().setItem(slot, null);
-        }
-
-        // オンラインプレイヤーの場合、クリック後にリアルタイム同期
-        if (isEquipmentSlot && target != null && target.isOnline()) {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                syncToOnlinePlayer(event.getInventory(), target, InvseeUIType.EQUIPMENT);
-            });
+        if (equipmentSlot && clicked != null && clicked.getType() == Material.GLASS_PANE) event.getInventory().setItem(slot, null);
+        if (equipmentSlot && target != null && target.isOnline()) {
+            Bukkit.getScheduler().runTask(plugin, () -> syncToOnlinePlayer(event.getInventory(), target, InvseeUIType.EQUIPMENT));
         }
     }
-
-    // ========== エンダーチェスト画面 ==========
 
     private void handleEnderchestClick(InventoryClickEvent event, InvseeHolder holder,
-                                        Player viewer, int slot, ItemStack clicked) {
-        OfflinePlayer target = holder.getTargetPlayer();
-
-        // ナビゲーション行（スロット27-35）
-        if (slot >= 27 && slot < 36) {
-            event.setCancelled(true);
-
-            if (clicked == null) return;
-            
-            // 戻るボタン（スロット31）
-            if (slot == 31 && clicked.getType() == Material.ARROW) {
-                viewer.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    InvseeUI.openInventoryUI(viewer, target, plugin);
-                });
-            }
-            return;
+                                       Player viewer, int slot, ItemStack clicked) {
+        if (slot < 27 || slot >= 36) return;
+        event.setCancelled(true);
+        if (slot == 31 && clicked != null && clicked.getType() == Material.ARROW) {
+            OfflinePlayer target = holder.getTargetPlayer();
+            viewer.closeInventory();
+            Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openInventoryUI(viewer, target, plugin));
         }
-
-        // エンダーチェスト領域（スロット0-26）はアイテム操作を許可
     }
 
-    // ========== 保存処理 ==========
-
-    private void saveMainInventory(Inventory inv, OfflinePlayer target) {
+    private void saveMainInventory(Inventory inv, OfflinePlayer target, String scope) {
         ItemStack[] contents = new ItemStack[36];
-        
-        // UIスロットからMinecraftスロットへ変換
         for (int i = 0; i < 36; i++) {
-            int uiSlot;
-            if (i < 9) {
-                uiSlot = i + 27; // ホットバー
-            } else {
-                uiSlot = i - 9;  // メインインベ
-            }
-            
+            int uiSlot = i < 9 ? i + 27 : i - 9;
             ItemStack item = inv.getItem(uiSlot);
-            if (item != null && item.getType() != Material.AIR) {
-                // ナビゲーションアイテムは除外
-                if (item.getType() == Material.BLACK_STAINED_GLASS_PANE ||
-                    item.getType() == Material.GRAY_STAINED_GLASS_PANE) {
-                    continue;
-                }
-                contents[i] = item.clone();
-            }
+            if (item == null || item.getType().isAir()
+                    || item.getType() == Material.BLACK_STAINED_GLASS_PANE
+                    || item.getType() == Material.GRAY_STAINED_GLASS_PANE) continue;
+            contents[i] = item.clone();
         }
-
-        InvseeUI.setPlayerInventoryContents(target, contents);
+        InvseeUI.setPlayerInventoryContents(target, scope, contents);
     }
 
-    private void saveEquipment(Inventory inv, OfflinePlayer target) {
+    private void saveEquipment(Inventory inv, OfflinePlayer target, String scope) {
         ItemStack[] armor = new ItemStack[4];
-        
-        // スロット10: ヘルメット (index 3)
-        ItemStack helmet = inv.getItem(10);
-        if (helmet != null && helmet.getType() != Material.GLASS_PANE && 
-            helmet.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            armor[3] = helmet.clone();
-        }
-        
-        // スロット11: チェストプレート (index 2)
-        ItemStack chestplate = inv.getItem(11);
-        if (chestplate != null && chestplate.getType() != Material.GLASS_PANE && 
-            chestplate.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            armor[2] = chestplate.clone();
-        }
-        
-        // スロット12: レギンス (index 1)
-        ItemStack leggings = inv.getItem(12);
-        if (leggings != null && leggings.getType() != Material.GLASS_PANE && 
-            leggings.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            armor[1] = leggings.clone();
-        }
-        
-        // スロット13: ブーツ (index 0)
-        ItemStack boots = inv.getItem(13);
-        if (boots != null && boots.getType() != Material.GLASS_PANE && 
-            boots.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            armor[0] = boots.clone();
-        }
-
-        InvseeUI.setPlayerArmorContents(target, armor);
-
-        // オフハンド（スロット15）
-        ItemStack offhand = inv.getItem(15);
-        if (offhand != null && offhand.getType() != Material.GLASS_PANE && 
-            offhand.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            InvseeUI.setPlayerOffhand(target, offhand.clone());
-        } else {
-            InvseeUI.setPlayerOffhand(target, null);
-        }
+        armor[3] = usableEquipment(inv.getItem(10));
+        armor[2] = usableEquipment(inv.getItem(11));
+        armor[1] = usableEquipment(inv.getItem(12));
+        armor[0] = usableEquipment(inv.getItem(13));
+        InvseeUI.setPlayerArmorContents(target, scope, armor);
+        InvseeUI.setPlayerOffhand(target, scope, usableEquipment(inv.getItem(15)));
     }
 
-    private void saveEnderchest(Inventory inv, OfflinePlayer target) {
+    private ItemStack usableEquipment(ItemStack item) {
+        if (item == null || item.getType().isAir() || item.getType() == Material.GLASS_PANE
+                || item.getType() == Material.GRAY_STAINED_GLASS_PANE) return null;
+        return item.clone();
+    }
+
+    private void saveEnderchest(Inventory inv, OfflinePlayer target, String scope) {
         ItemStack[] contents = new ItemStack[27];
-        
         for (int i = 0; i < 27; i++) {
             ItemStack item = inv.getItem(i);
-            if (item != null && item.getType() != Material.AIR) {
-                contents[i] = item.clone();
-            }
+            if (item != null && !item.getType().isAir()) contents[i] = item.clone();
         }
-
-        InvseeUI.setPlayerEnderchestContents(target, contents);
+        InvseeUI.setPlayerEnderchestContents(target, scope, contents);
     }
 
-    // ========== ユーティリティ ==========
-
-    private boolean isNavigationSlot(InvseeUIType uiType, int slot, int invSize) {
-        switch (uiType) {
-            case PLAYER_SELECT:
-                return slot >= 45;
-            case MAIN_INVENTORY:
-                return slot >= 36;
-            case EQUIPMENT:
-                return slot != 10 && slot != 11 && slot != 12 && slot != 13 && slot != 15;
-            case ENDERCHEST:
-                return slot >= 27;
-            default:
-                return false;
-        }
+    private boolean isNavigationSlot(InvseeUIType uiType, int slot) {
+        return switch (uiType) {
+            case PLAYER_SELECT -> slot >= 45;
+            case MAIN_INVENTORY -> slot >= 36;
+            case EQUIPMENT -> slot != 10 && slot != 11 && slot != 12 && slot != 13 && slot != 15;
+            case ENDERCHEST -> slot >= 27;
+        };
     }
 
-    /**
-     * オンラインプレイヤーにUIの変更をリアルタイムで同期する
-     */
     private void syncToOnlinePlayer(Inventory inv, OfflinePlayer target, InvseeUIType uiType) {
         if (target == null || !target.isOnline()) return;
-        
         Player player = target.getPlayer();
         if (player == null) return;
-
-        switch (uiType) {
-            case MAIN_INVENTORY:
-                syncMainInventoryToPlayer(inv, player);
-                break;
-            case EQUIPMENT:
-                syncEquipmentToPlayer(inv, player);
-                break;
-            case ENDERCHEST:
-                // エンダーチェストはオンラインの場合、直接開いているので同期不要
-                break;
-            default:
-                break;
-        }
+        if (uiType == InvseeUIType.MAIN_INVENTORY) syncMainInventoryToPlayer(inv, player);
+        else if (uiType == InvseeUIType.EQUIPMENT) syncEquipmentToPlayer(inv, player);
     }
 
-    /**
-     * メインインベントリをオンラインプレイヤーに同期
-     */
     private void syncMainInventoryToPlayer(Inventory inv, Player player) {
         PlayerInventory playerInv = player.getInventory();
-        
-        // UIスロットからプレイヤーインベントリへ変換
         for (int i = 0; i < 36; i++) {
-            int uiSlot;
-            if (i < 9) {
-                uiSlot = i + 27; // ホットバー：UIの27-35 → プレイヤーの0-8
-            } else {
-                uiSlot = i - 9;  // メインインベ：UIの0-26 → プレイヤーの9-35
-            }
-            
+            int uiSlot = i < 9 ? i + 27 : i - 9;
             ItemStack item = inv.getItem(uiSlot);
-            
-            // ナビゲーションアイテムは除外
-            if (item != null && (item.getType() == Material.BLACK_STAINED_GLASS_PANE ||
-                item.getType() == Material.GRAY_STAINED_GLASS_PANE)) {
-                continue;
-            }
-            
+            if (item != null && (item.getType() == Material.BLACK_STAINED_GLASS_PANE
+                    || item.getType() == Material.GRAY_STAINED_GLASS_PANE)) continue;
             playerInv.setItem(i, item);
         }
-        
         player.updateInventory();
     }
 
-    /**
-     * 装備をオンラインプレイヤーに同期
-     */
     private void syncEquipmentToPlayer(Inventory inv, Player player) {
         PlayerInventory playerInv = player.getInventory();
-        
-        // ヘルメット (スロット10)
-        ItemStack helmet = inv.getItem(10);
-        if (helmet != null && helmet.getType() != Material.GLASS_PANE && 
-            helmet.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            playerInv.setHelmet(helmet);
-        } else {
-            playerInv.setHelmet(null);
-        }
-        
-        // チェストプレート (スロット11)
-        ItemStack chestplate = inv.getItem(11);
-        if (chestplate != null && chestplate.getType() != Material.GLASS_PANE && 
-            chestplate.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            playerInv.setChestplate(chestplate);
-        } else {
-            playerInv.setChestplate(null);
-        }
-        
-        // レギンス (スロット12)
-        ItemStack leggings = inv.getItem(12);
-        if (leggings != null && leggings.getType() != Material.GLASS_PANE && 
-            leggings.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            playerInv.setLeggings(leggings);
-        } else {
-            playerInv.setLeggings(null);
-        }
-        
-        // ブーツ (スロット13)
-        ItemStack boots = inv.getItem(13);
-        if (boots != null && boots.getType() != Material.GLASS_PANE && 
-            boots.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            playerInv.setBoots(boots);
-        } else {
-            playerInv.setBoots(null);
-        }
-        
-        // オフハンド (スロット15)
-        ItemStack offhand = inv.getItem(15);
-        if (offhand != null && offhand.getType() != Material.GLASS_PANE && 
-            offhand.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            playerInv.setItemInOffHand(offhand);
-        } else {
-            playerInv.setItemInOffHand(null);
-        }
-        
+        playerInv.setHelmet(usableEquipment(inv.getItem(10)));
+        playerInv.setChestplate(usableEquipment(inv.getItem(11)));
+        playerInv.setLeggings(usableEquipment(inv.getItem(12)));
+        playerInv.setBoots(usableEquipment(inv.getItem(13)));
+        playerInv.setItemInOffHand(usableEquipment(inv.getItem(15)));
         player.updateInventory();
     }
 }

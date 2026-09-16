@@ -3,8 +3,10 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.SharedStorage;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
+import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -13,30 +15,48 @@ import java.util.Map;
 
 @SuppressWarnings("unchecked")
 public class SharedStorageStore {
-
     private static final String CONFIG_PATH = "SharedStorage/networks.json";
-
     private final ConfigManager configManager;
+    private final Loader plugin;
 
     public SharedStorageStore(ConfigManager configManager) {
         this.configManager = configManager;
+        Loader resolved = null;
+        try {
+            resolved = JavaPlugin.getPlugin(Loader.class);
+        } catch (IllegalStateException ignored) { }
+        this.plugin = resolved;
+        if (plugin != null) SharedStorageNamespaceListener.ensureRegistered(plugin);
     }
 
     public Map<String, StoredNetwork> loadAll() {
         Map<String, StoredNetwork> networks = new LinkedHashMap<>();
         PEXConfig config = configManager.loadConfig(CONFIG_PATH).orElseGet(PEXConfig::new);
+        boolean migrated = false;
         for (Map.Entry<String, Object> entry : config.getData().entrySet()) {
-            if (!(entry.getValue() instanceof Map<?, ?> raw))
-                continue;
-            networks.put(entry.getKey(), StoredNetwork.deserialize(entry.getKey(), (Map<String, Object>) raw));
+            if (!(entry.getValue() instanceof Map<?, ?> raw)) continue;
+            StoredNetwork loaded = StoredNetwork.deserialize(entry.getKey(), (Map<String, Object>) raw);
+            if (loaded == null) continue;
+            String id = loaded.getId();
+            if (!SharedStorageScopedId.isScoped(id)) {
+                Location anchor = loaded.getMain();
+                if (anchor == null && !loaded.getSubs().isEmpty()) anchor = loaded.getSubs().getFirst();
+                String scope = SharedStorageScopedId.scopeFor(plugin, anchor);
+                id = SharedStorageScopedId.encode(id, scope);
+                loaded = loaded.withId(id);
+                migrated = true;
+            }
+            networks.put(id, loaded);
         }
+        if (migrated) saveAll(networks);
         return networks;
     }
 
     public boolean saveAll(Map<String, StoredNetwork> networks) {
         PEXConfig config = new PEXConfig();
         for (Map.Entry<String, StoredNetwork> entry : networks.entrySet()) {
-            config.put(entry.getKey(), entry.getValue().serialize());
+            String id = entry.getValue().getId();
+            config.put(id, entry.getValue().serialize());
         }
         return configManager.saveConfig(CONFIG_PATH, config);
     }
@@ -47,11 +67,9 @@ public class SharedStorageStore {
 
     public static Location fromKey(String key) {
         String[] parts = key.split(":");
-        if (parts.length != 4)
-            return null;
+        if (parts.length != 4) return null;
         World world = Bukkit.getWorld(parts[0]);
-        if (world == null)
-            return null;
+        if (world == null) return null;
         try {
             return new Location(world, Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), Integer.parseInt(parts[3]));
         } catch (NumberFormatException ignored) {
@@ -75,10 +93,11 @@ public class SharedStorageStore {
         private final String subFrameFilterMode;
         private final boolean enableChestPage;
 
-        public StoredNetwork(String id, Location main, List<Location> subs, boolean allowSubInsert, boolean allowSubExtract,
-                              boolean allowSubHopperInsert, boolean allowSubHopperExtract,
-                              boolean allowMainInsert, boolean allowMainExtract, boolean enableTransferParticles,
-                              int subRange, boolean enableSubFrameFilter, String subFrameFilterMode, boolean enableChestPage) {
+        public StoredNetwork(String id, Location main, List<Location> subs,
+                             boolean allowSubInsert, boolean allowSubExtract,
+                             boolean allowSubHopperInsert, boolean allowSubHopperExtract,
+                             boolean allowMainInsert, boolean allowMainExtract, boolean enableTransferParticles,
+                             int subRange, boolean enableSubFrameFilter, String subFrameFilterMode, boolean enableChestPage) {
             this.id = id;
             this.main = main;
             this.subs = subs;
@@ -95,70 +114,32 @@ public class SharedStorageStore {
             this.enableChestPage = enableChestPage;
         }
 
-        public String getId() {
-            return id;
+        public StoredNetwork withId(String newId) {
+            return new StoredNetwork(newId, main, new ArrayList<>(subs), allowSubInsert, allowSubExtract,
+                    allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract,
+                    enableTransferParticles, subRange, enableSubFrameFilter, subFrameFilterMode, enableChestPage);
         }
 
-        public Location getMain() {
-            return main;
-        }
-
-        public List<Location> getSubs() {
-            return subs;
-        }
-
-        public boolean isAllowSubInsert() {
-            return allowSubInsert;
-        }
-
-        public boolean isAllowSubExtract() {
-            return allowSubExtract;
-        }
-
-        public boolean isAllowSubHopperInsert() {
-            return allowSubHopperInsert;
-        }
-
-        public boolean isAllowSubHopperExtract() {
-            return allowSubHopperExtract;
-        }
-
-        public boolean isAllowMainInsert() {
-            return allowMainInsert;
-        }
-
-        public boolean isAllowMainExtract() {
-            return allowMainExtract;
-        }
-
-        public boolean isEnableTransferParticles() {
-            return enableTransferParticles;
-        }
-
-        public int getSubRange() {
-            return subRange;
-        }
-
-        public boolean isEnableSubFrameFilter() {
-            return enableSubFrameFilter;
-        }
-
-        public String getSubFrameFilterMode() {
-            return subFrameFilterMode;
-        }
-
-        public boolean isEnableChestPage() {
-            return enableChestPage;
-        }
+        public String getId() { return id; }
+        public Location getMain() { return main; }
+        public List<Location> getSubs() { return subs; }
+        public boolean isAllowSubInsert() { return allowSubInsert; }
+        public boolean isAllowSubExtract() { return allowSubExtract; }
+        public boolean isAllowSubHopperInsert() { return allowSubHopperInsert; }
+        public boolean isAllowSubHopperExtract() { return allowSubHopperExtract; }
+        public boolean isAllowMainInsert() { return allowMainInsert; }
+        public boolean isAllowMainExtract() { return allowMainExtract; }
+        public boolean isEnableTransferParticles() { return enableTransferParticles; }
+        public int getSubRange() { return subRange; }
+        public boolean isEnableSubFrameFilter() { return enableSubFrameFilter; }
+        public String getSubFrameFilterMode() { return subFrameFilterMode; }
+        public boolean isEnableChestPage() { return enableChestPage; }
 
         public Map<String, Object> serialize() {
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("main", main == null ? null : toKey(main));
             List<String> subKeys = new ArrayList<>();
-            for (Location sub : subs) {
-                if (sub != null)
-                    subKeys.add(toKey(sub));
-            }
+            for (Location sub : subs) if (sub != null) subKeys.add(toKey(sub));
             data.put("subs", subKeys);
             data.put("allowSubInsert", allowSubInsert);
             data.put("allowSubExtract", allowSubExtract);
@@ -177,17 +158,14 @@ public class SharedStorageStore {
         public static StoredNetwork deserialize(String id, Map<String, Object> data) {
             Location main = null;
             Object rawMain = data.get("main");
-            if (rawMain instanceof String mainKey)
-                main = fromKey(mainKey);
+            if (rawMain instanceof String mainKey) main = fromKey(mainKey);
             List<Location> subs = new ArrayList<>();
             Object rawSubs = data.get("subs");
             if (rawSubs instanceof List<?> list) {
                 for (Object value : list) {
-                    if (!(value instanceof String key))
-                        continue;
+                    if (!(value instanceof String key)) continue;
                     Location sub = fromKey(key);
-                    if (sub != null)
-                        subs.add(sub);
+                    if (sub != null) subs.add(sub);
                 }
             }
             boolean allowSubInsert = data.get("allowSubInsert") instanceof Boolean allowed && allowed;
@@ -201,7 +179,9 @@ public class SharedStorageStore {
             boolean enableSubFrameFilter = data.get("enableSubFrameFilter") instanceof Boolean allowed && allowed;
             String subFrameFilterMode = data.get("subFrameFilterMode") instanceof String rawMode ? rawMode : "EXACT";
             boolean enableChestPage = data.get("enableChestPage") instanceof Boolean allowed && allowed;
-            return new StoredNetwork(id, main, subs, allowSubInsert, allowSubExtract, allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract, enableTransferParticles, subRange, enableSubFrameFilter, subFrameFilterMode, enableChestPage);
+            return new StoredNetwork(id, main, subs, allowSubInsert, allowSubExtract,
+                    allowSubHopperInsert, allowSubHopperExtract, allowMainInsert, allowMainExtract,
+                    enableTransferParticles, subRange, enableSubFrameFilter, subFrameFilterMode, enableChestPage);
         }
     }
 }

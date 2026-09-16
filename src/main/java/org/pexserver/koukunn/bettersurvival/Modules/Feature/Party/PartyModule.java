@@ -1,6 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Party;
 
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -8,7 +7,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.PlayerDisplayFormatter;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
@@ -29,11 +28,8 @@ public class PartyModule implements Listener {
     private final Loader plugin;
     private final ToggleModule toggle;
     private final PartyStore store;
-    /** Party UUID is globally unique; scope lives on each Party. */
     private final Map<UUID, Party> parties = new LinkedHashMap<>();
-    /** scope -> (player -> party). The same player may belong to one party in every scope. */
     private final Map<String, Map<UUID, UUID>> memberIndex = new LinkedHashMap<>();
-    /** invited player -> (party id -> expiry). Entries are filtered by current scope on read/accept. */
     private final Map<UUID, Map<UUID, Long>> invites = new ConcurrentHashMap<>();
 
     public PartyModule(Loader plugin, ToggleModule toggle) {
@@ -45,7 +41,6 @@ public class PartyModule implements Listener {
     }
 
     public boolean isFeatureEnabled() { return toggle.getGlobal(FEATURE_KEY); }
-
     public String scope(Player player) { return scope(player == null ? null : player.getWorld()); }
 
     public String scope(World world) {
@@ -76,28 +71,19 @@ public class PartyModule implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) { refreshPlayerParty(event.getPlayer(), true); }
 
     @EventHandler
-    public void onWorldChange(PlayerChangedWorldEvent event) {
-        refreshPlayerParty(event.getPlayer(), false);
-    }
+    public void onWorldChange(PlayerChangedWorldEvent event) { refreshPlayerParty(event.getPlayer(), false); }
 
     private void refreshPlayerParty(Player player, boolean rememberName) {
         Party party = getPartyOf(player.getUniqueId(), scope(player));
-        if (party != null) {
-            if (rememberName) {
-                party.rememberName(player.getUniqueId(), player.getName());
-                save();
-            }
-            updateDisplayName(player, party);
-        } else {
-            resetDisplayName(player);
+        if (party != null && rememberName) {
+            party.rememberName(player.getUniqueId(), player.getName());
+            save();
         }
+        PlayerDisplayFormatter.get(plugin).refresh(player);
     }
-
-    // ================= references =================
 
     public Party getParty(UUID partyId) { return partyId == null ? null : parties.get(partyId); }
 
-    /** Backward-compatible lookup: online players use their current group; offline players use default. */
     public Party getPartyOf(UUID playerUuid) {
         Player online = Bukkit.getPlayer(playerUuid);
         return getPartyOf(playerUuid, online == null ? "default" : scope(online));
@@ -117,7 +103,6 @@ public class PartyModule implements Listener {
         return party;
     }
 
-    /** Legacy API returns only default-scope parties. */
     public List<Party> getParties() { return getParties("default"); }
     public List<Party> getParties(Player player) { return getParties(scope(player)); }
     public List<Party> getParties(String scope) {
@@ -125,7 +110,6 @@ public class PartyModule implements Listener {
         return parties.values().stream().filter(p -> p.getScope().equals(normalized)).toList();
     }
 
-    /** 現在のOtherworldグループで検索・自由参加できる公開Party。 */
     public List<Party> getPublicParties(Player player) {
         return getParties(player).stream()
                 .filter(Party::isPublicParty)
@@ -164,9 +148,6 @@ public class PartyModule implements Listener {
         return name.length() < 2 || name.length() > MAX_NAME_LENGTH ? null : name;
     }
 
-    // ================= operations =================
-
-    /** 新規Partyは安全側でプライベートから開始する。 */
     public String createParty(Player leader, String name, PartyColor color, String description) {
         String currentScope = scope(leader);
         if (getPartyOf(leader.getUniqueId(), currentScope) != null) return "このワールドグループでは既にパーティーに所属しています";
@@ -240,7 +221,6 @@ public class PartyModule implements Listener {
         return addMember(player, party, "§d[パーティー] §e" + player.getName() + " §fが招待から加入しました");
     }
 
-    /** 公開Partyへ検索画面から参加。プライベートPartyでは必ず拒否する。 */
     public String joinPublicParty(Player player, Party party) {
         if (party == null || !party.isPublicParty()) return "このパーティーは現在プライベートです";
         if (!scope(player).equals(party.getScope())) return "別のワールドグループのパーティーには加入できません";
@@ -300,7 +280,9 @@ public class PartyModule implements Listener {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         if (party.rankOf(actor.getUniqueId()) != PartyRank.LEADER) return "昇格はリーダーのみ実行できます";
         if (party.rankOf(target) != PartyRank.MEMBER) return "メンバーのみ昇格できます";
-        party.getMembers().remove(target); party.getCoLeaders().add(target); save();
+        party.getMembers().remove(target);
+        party.getCoLeaders().add(target);
+        save();
         broadcast(party, "§d[パーティー] §e" + party.nameOf(target) + " §fがサブリーダーに昇格しました");
         return null;
     }
@@ -309,7 +291,9 @@ public class PartyModule implements Listener {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         if (party.rankOf(actor.getUniqueId()) != PartyRank.LEADER) return "降格はリーダーのみ実行できます";
         if (party.rankOf(target) != PartyRank.CO_LEADER) return "サブリーダーのみ降格できます";
-        party.getCoLeaders().remove(target); party.getMembers().add(target); save();
+        party.getCoLeaders().remove(target);
+        party.getMembers().add(target);
+        save();
         broadcast(party, "§d[パーティー] §e" + party.nameOf(target) + " §fがメンバーに降格しました");
         return null;
     }
@@ -320,7 +304,9 @@ public class PartyModule implements Listener {
         String sanitized = sanitizeName(newName);
         if (sanitized == null) return "パーティー名は2〜" + MAX_NAME_LENGTH + "文字で指定してください";
         if (!sanitized.equalsIgnoreCase(party.getName()) && isNameUsed(party.getScope(), sanitized, party)) return "このワールドグループではその名前は既に使われています";
-        party.setName(sanitized); save(); refreshDisplayNames(party);
+        party.setName(sanitized);
+        save();
+        refreshDisplayNames(party);
         broadcast(party, "§d[パーティー] §fパーティー名が " + party.getColoredName() + " §fに変更されました");
         return null;
     }
@@ -329,7 +315,9 @@ public class PartyModule implements Listener {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         if (party.rankOf(actor.getUniqueId()) != PartyRank.LEADER) return "カラー変更はリーダーのみ実行できます";
         if (isColorUsed(party.getScope(), color, party)) return "このワールドグループではそのカラーは他のパーティーが使用中です";
-        party.setColorKey(color.name()); save(); refreshDisplayNames(party);
+        party.setColorKey(color.name());
+        save();
+        refreshDisplayNames(party);
         broadcast(party, "§d[パーティー] §fイメージカラーが " + color.getLegacyCode() + color.getDisplayName() + " §fに変更されました");
         return null;
     }
@@ -338,10 +326,11 @@ public class PartyModule implements Listener {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         PartyRank rank = party.rankOf(actor.getUniqueId());
         if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) return "説明変更はサブリーダー以上のみ実行できます";
-        party.setDescription(description == null ? "" : description.trim()); save(); return null;
+        party.setDescription(description == null ? "" : description.trim());
+        save();
+        return null;
     }
 
-    /** 公開/プライベート切替。サブリーダー以上が変更可能。 */
     public String setPublicParty(Player actor, Party party, boolean publicParty) {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         PartyRank rank = party.rankOf(actor.getUniqueId());
@@ -361,40 +350,27 @@ public class PartyModule implements Listener {
         }
     }
 
-    // ================= display =================
-
     public void updateDisplayName(Player player, Party party) {
-        if (party == null || !scope(player).equals(party.getScope()) || !party.isMember(player.getUniqueId())) {
-            resetDisplayName(player);
-            return;
-        }
-        String prefix = party.isNameTagPrefix() ? "[" + party.getName() + "] " : "";
-        String color = party.isNameTagColor() ? party.getColor().getLegacyCode() : "§f";
-        Component component = ComponentUtils.legacy(color + prefix + player.getName());
-        player.displayName(component);
-        player.playerListName(component);
+        PlayerDisplayFormatter.get(plugin).refresh(player);
     }
 
     public void resetDisplayName(Player player) {
-        Component component = ComponentUtils.legacy("§f" + player.getName());
-        player.displayName(component);
-        player.playerListName(component);
+        PlayerDisplayFormatter.get(plugin).refresh(player);
     }
 
     public void refreshDisplayNames(Party party) {
         for (UUID member : party.getAllMembers()) {
             Player online = Bukkit.getPlayer(member);
-            if (online != null && scope(online).equals(party.getScope())) updateDisplayName(online, party);
+            if (online != null && scope(online).equals(party.getScope())) PlayerDisplayFormatter.get(plugin).refresh(online);
         }
     }
-
-    // ================= settings =================
 
     public String setFriendlyFire(Player actor, Party party, boolean enabled) {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         PartyRank rank = party.rankOf(actor.getUniqueId());
         if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) return "設定変更はサブリーダー以上のみ実行できます";
-        party.setFriendlyFire(enabled); save();
+        party.setFriendlyFire(enabled);
+        save();
         broadcast(party, "§d[パーティー] §f味方同士の攻撃: " + (enabled ? "§a有効" : "§c無効"));
         return null;
     }
@@ -403,7 +379,9 @@ public class PartyModule implements Listener {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         PartyRank rank = party.rankOf(actor.getUniqueId());
         if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) return "設定変更はサブリーダー以上のみ実行できます";
-        party.setNameTagColor(enabled); save(); refreshDisplayNames(party);
+        party.setNameTagColor(enabled);
+        save();
+        refreshDisplayNames(party);
         broadcast(party, "§d[パーティー] §fネームタグカラー: " + (enabled ? "§a有効" : "§c無効"));
         return null;
     }
@@ -412,7 +390,9 @@ public class PartyModule implements Listener {
         if (!scope(actor).equals(party.getScope())) return "別のワールドグループのパーティーは操作できません";
         PartyRank rank = party.rankOf(actor.getUniqueId());
         if (rank == null || !rank.isAtLeast(PartyRank.CO_LEADER)) return "設定変更はサブリーダー以上のみ実行できます";
-        party.setNameTagPrefix(enabled); save(); refreshDisplayNames(party);
+        party.setNameTagPrefix(enabled);
+        save();
+        refreshDisplayNames(party);
         broadcast(party, "§d[パーティー] §fパーティープレフィックス: " + (enabled ? "§a有効" : "§c無効"));
         return null;
     }
