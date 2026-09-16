@@ -53,7 +53,7 @@ public final class OtherworldDatapackBootstrap {
                     return;
                 }
 
-                DatapackFormatResolver.PackFormat packFormat = DatapackFormatResolver.resolve(context);
+                DatapackFormatResolver.ResolvedPackFormat packFormat = DatapackFormatResolver.resolve();
                 Path generated = context.getDataDirectory().resolve(GENERATED_DIR);
                 rebuildGeneratedPack(generated, config.groups(), dimensions, packFormat);
                 event.registrar().discoverPack(generated, GENERATED_PACK_ID, options -> options
@@ -185,7 +185,7 @@ public final class OtherworldDatapackBootstrap {
 
     private static void rebuildGeneratedPack(Path generated, Map<String, Long> groups,
                                              Map<String, byte[]> dimensions,
-                                             DatapackFormatResolver.PackFormat packFormat) throws IOException {
+                                             DatapackFormatResolver.ResolvedPackFormat packFormat) throws IOException {
         deleteRecursively(generated);
         Files.createDirectories(generated);
 
