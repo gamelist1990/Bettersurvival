@@ -1,5 +1,47 @@
 import { SectionShell } from '../components/SectionShell';
 import { WikiLink } from '../components/WikiNavContext';
+import { FetchedWikiImage } from '../components/FetchedWikiImage';
+import { TextureLayout } from '../components/TextureLayout';
+
+const minecraftAsset = (name: string) => `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/26.1/items/${name}.png`;
+
+function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: string; slots: (string | null)[]; output: string; outputLabel: string }) {
+  const craftingItems = slots.flatMap((item, index) => {
+    if (!item) return [];
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    return [{
+      id: `slot-${index}`,
+      src: minecraftAsset(item),
+      left: 12.6 + column * 13.1,
+      top: 32.3 + row * 23.5,
+      size: 12.9,
+      imageSize: 68,
+    }];
+  });
+
+  return (
+    <article className="wiki-crafting-recipe-preview">
+      <h4>{title}</h4>
+      <TextureLayout
+        src="/images/wiki/crafting-table-ui.png"
+        alt="作業台のクラフト画面"
+        className="wiki-crafting-screen"
+        items={[...craftingItems, {
+          id: 'output',
+          src: minecraftAsset(output),
+          alt: `${outputLabel}のアイテム画像`,
+          left: 80,
+          top: 55.2,
+          size: 18.5,
+          imageSize: 68,
+          className: output === 'campfire' ? 'wiki-crafting-output--campfire' : undefined,
+        }]}
+      />
+      <p><strong>材料:</strong> {outputLabel}</p>
+    </article>
+  );
+}
 
 type Recipe = {
   name: string;
@@ -191,6 +233,13 @@ export function RecipesSection() {
         <li>対応する <code>/toggle &lt;キー&gt;</code> が <strong>無効</strong> のときは合成は起こりません。</li>
         <li>名札を使うレシピは、まず <strong>金床で名札の名前を指定文字列に変更</strong> してから投げてください。名前が違うと反応しません。</li>
       </ul>
+
+      <h3>クラフト系レシピ</h3>
+      <p>作業台の画像に材料アイテムを重ねて、配置と完成品を確認できます。アイテム画像は PrismarineJS の minecraft-assets（26.1）を参照しています。</p>
+      <div className="wiki-crafting-recipe-grid">
+        <CraftingRecipePreview title="レベリングの書" slots={['', 'emerald', '', 'lapis_lazuli', 'book', 'lapis_lazuli', '', 'emerald', '']} output="book" outputLabel="エメラルド ×2 / ラピスラズリ ×2 / 本 ×1 → レベリングの書" />
+        <CraftingRecipePreview title="不吉な焚き火（不定形）" slots={['campfire', 'stone_sword', null, null, null, null, null, null, null]} output="campfire" outputLabel="焚き火 ×1 / 石の剣 ×1 → 不吉な焚き火" />
+      </div>
 
       <h3>全レシピ (カテゴリ別)</h3>
       <div className="wiki-feature-list">

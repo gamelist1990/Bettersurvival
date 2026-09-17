@@ -1,9 +1,11 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
+import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebMap.WebMapSettingsMenu;
 
@@ -416,7 +418,11 @@ public final class WebServiceSettingsMenu {
     private static void openPortDialog(Player player, WebServiceModule service) {
         WebMapModule webMap = service.getPlugin().getWebMapModule();
         int currentPort = webMap == null ? 8123 : webMap.getSettings().getPort();
-        DialogUI.builder()
+
+        // InventoryClickEvent 内では、開いたままのインベントリにダイアログ表示が
+        // 上書きされることがあるため、インベントリを閉じて次の tick に表示する。
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
                 .title("WebService Port")
                 .body("1024-65535 の範囲で WebService / WebMap 共通ポートを設定します")
                 .addTextInput("port", "Port", String.valueOf(currentPort), 5, false)
@@ -444,6 +450,6 @@ public final class WebServiceSettingsMenu {
                     p.sendMessage("§aWebService HTTP ポートを " + port + " に変更しました");
                     openNetworkMenu(p, service);
                 })
-                .show(player);
+                .show(player));
     }
 }

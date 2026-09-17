@@ -7,10 +7,13 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
 import org.bukkit.WorldCreator;
+import org.bukkit.generator.ChunkGenerator;
+import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
@@ -28,6 +31,7 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -47,6 +51,7 @@ import java.util.UUID;
  */
 public class OtherworldModule implements Listener {
     private static final String CONFIG_PATH = "Otherworld/config.json";
+    private static final String SELECTION_LOBBY_WORLD = "otherworld_lobby";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final Loader plugin;
@@ -55,6 +60,9 @@ public class OtherworldModule implements Listener {
     private final Map<String, Group> groups = new LinkedHashMap<>();
     private final Map<String, Set<UUID>> members = new LinkedHashMap<>();
     private final Set<String> creatingMirrorKeys = new HashSet<>();
+    private final Set<UUID> selectionTransitions = new HashSet<>();
+    private final Map<UUID, GameMode> selectionLobbyGameModes = new HashMap<>();
+    private String defaultJoinGroup = "default";
 
     public OtherworldModule(Loader plugin) {
         this.plugin = plugin;
@@ -72,6 +80,8 @@ public class OtherworldModule implements Listener {
         groups.clear();
         members.clear();
         PEXConfig config = configManager.loadConfig(CONFIG_PATH).orElseGet(PEXConfig::new);
+        Object configuredJoinGroup = config.get("defaultJoinGroup");
+        defaultJoinGroup = normalize(configuredJoinGroup == null ? "default" : configuredJoinGroup.toString());
         Object rawGroups = config.get("groups");
         if (rawGroups instanceof Map<?, ?> map) {
             for (var entry : map.entrySet()) {
@@ -105,6 +115,7 @@ public class OtherworldModule implements Listener {
             World primary = Bukkit.getWorld("world");
             groups.put("default", new Group("default", primary == null ? 0L : primary.getSeed(), worlds, new LinkedHashMap<>()));
         }
+        if (!groups.containsKey(defaultJoinGroup)) defaultJoinGroup = "default";
         Object rawMembers = config.get("members");
         if (rawMembers instanceof Map<?, ?> map) {
             for (var entry : map.entrySet()) {
@@ -146,6 +157,7 @@ public class OtherworldModule implements Listener {
         members.forEach((name, ids) -> memberData.put(name, ids.stream().map(UUID::toString).toList()));
         config.put("groups", groupData);
         config.put("members", memberData);
+        config.put("defaultJoinGroup", defaultJoinGroup);
         configManager.saveConfig(CONFIG_PATH, config);
     }
 
@@ -175,6 +187,7 @@ public class OtherworldModule implements Listener {
 
     public synchronized String getGroup(World world) {
         if (world == null) return "default";
+        if (isSelectionLobby(world)) return "selection-lobby";
         for (Group group : groups.values()) {
             if (group.worlds.values().stream().anyMatch(id -> matchesWorldId(world, id))
                     || group.customWorlds.values().stream().anyMatch(id -> matchesWorldId(world, id))) {
@@ -204,7 +217,7 @@ public class OtherworldModule implements Listener {
     public synchronized boolean canAccess(Player player, String groupName) {
         if (groupName == null) return false;
         Group group = groups.get(groupName.toLowerCase(Locale.ROOT));
-        return group != null && (group.name.equals("default") || !isWhitelistEnabled(group.name)
+        return group != null && (!isWhitelistEnabled(group.name)
                 || player.isOp() || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
     }
 
@@ -243,6 +256,18 @@ public class OtherworldModule implements Listener {
         if (group == null || !canAccess(player, groupName)) return false;
         World world = world(group, Environment.NORMAL);
         return world != null && player.teleport(world.getSpawnLocation());
+    }
+
+    public synchronized String getDefaultJoinGroup() {
+        return defaultJoinGroup;
+    }
+
+    public synchronized boolean setDefaultJoinGroup(String groupName) {
+        String normalized = normalize(groupName);
+        if (!groups.containsKey(normalized)) return false;
+        defaultJoinGroup = normalized;
+        save();
+        return true;
     }
 
     public synchronized boolean deleteGroup(String name) {
@@ -291,7 +316,7 @@ public class OtherworldModule implements Listener {
 
     public synchronized boolean setWhitelist(String group, boolean enabled) {
         group = normalize(group);
-        if (!groups.containsKey(group) || group.equals("default")) return false;
+        if (!groups.containsKey(group)) return false;
         if (enabled) members.putIfAbsent(group, new LinkedHashSet<>());
         else members.remove(group);
         save();
@@ -323,11 +348,40 @@ public class OtherworldModule implements Listener {
             Player player = event.getPlayer();
             playerDataStore.ensureDefaultMigration(player);
             String current = getGroup(player);
+            if (isSelectionLobby(player.getWorld())) {
+                enterSelectionLobby(player);
+                List<String> accessible = accessibleGroups(player);
+                if (accessible.size() > 1) showSelection(player, accessible);
+                return;
+            }
             if (!current.equals("default") && !canAccess(player, current)) {
-                move(player, "default");
-            } else {
+                World defaultWorld = world(groups.get("default"), Environment.NORMAL);
+                if (defaultWorld != null) player.teleport(defaultWorld.getSpawnLocation());
+                current = "default";
+            }
+            if (!current.equals("default")) {
                 playerDataStore.load(player, current);
-                showSelection(player);
+                return;
+            }
+
+            List<String> accessible = accessibleGroups(player);
+            if (!defaultJoinGroup.equals("default") && accessible.contains(defaultJoinGroup)) {
+                move(player, defaultJoinGroup);
+            } else if (accessible.size() > 1) {
+                World lobby = ensureSelectionLobby();
+                if (lobby != null && player.teleport(lobby.getSpawnLocation())) {
+                    enterSelectionLobby(player);
+                    showSelection(player, accessible);
+                }
+            } else if (accessible.size() == 1) {
+                String onlyGroup = accessible.get(0);
+                if (onlyGroup.equals("default")) {
+                    playerDataStore.load(player, "default");
+                } else {
+                    move(player, onlyGroup);
+                }
+            } else {
+                player.sendMessage("§cアクセス可能な Otherworld がありません。");
             }
         });
     }
@@ -335,6 +389,11 @@ public class OtherworldModule implements Listener {
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
+        if (isSelectionLobby(player.getWorld())) {
+            enterSelectionLobby(player);
+            return;
+        }
+        if (isSelectionLobby(event.getFrom()) || isSelectionLobby(player.getWorld())) return;
         String source = getGroup(event.getFrom());
         String target = getGroup(player.getWorld());
         if (source.equals(target)) return;
@@ -345,22 +404,94 @@ public class OtherworldModule implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        if (isSelectionLobby(player.getWorld())) {
+            selectionLobbyGameModes.remove(player.getUniqueId());
+            return;
+        }
         playerDataStore.ensureDefaultMigration(player);
         playerDataStore.save(player, getGroup(player));
     }
 
-    private void showSelection(Player player) {
-        List<String> accessible = groups.keySet().stream().filter(name -> canAccess(player, name)).toList();
+    private List<String> accessibleGroups(Player player) {
+        return groups.keySet().stream().filter(name -> canAccess(player, name)).toList();
+    }
+
+    private void showSelection(Player player, List<String> accessible) {
         if (accessible.size() <= 1) return;
-        ChestUI.Builder builder = ChestUI.builder().title("Otherworld")
-                .size(Math.min(54, Math.max(9, ((accessible.size() + 8) / 9) * 9)));
-        for (int i = 0; i < accessible.size(); i++) {
+        ChestUI.Builder builder = ChestUI.builder().title("§8✦ Otherworld Select ✦").size(54);
+        for (int slot = 0; slot < 54; slot++) {
+            builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Otherworld selection");
+        }
+        int[] buttonSlots = {20, 22, 24, 29, 31, 33, 38, 40, 42};
+        for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
             String name = accessible.get(i);
-            builder.addButtonAt(i, name, Material.GRASS_BLOCK, "移動\n§7Seed: §f" + groups.get(name).seed);
+            Material icon = name.equals("default") ? Material.GRASS_BLOCK : Material.NETHER_STAR;
+            builder.addButtonAt(buttonSlots[i], "§a" + name, icon,
+                    "§7クリックして移動\n§8Seed: §f" + groups.get(name).seed);
         }
         builder.then((result, p) -> {
-            if (result.success && result.slot != null && result.slot < accessible.size()) move(p, accessible.get(result.slot));
+            if (!result.success || result.slot == null) return;
+            for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
+                if (buttonSlots[i] == result.slot) {
+                    selectionTransitions.add(p.getUniqueId());
+                    ChestUI.closeMenu(p);
+                    if (move(p, accessible.get(i))) restoreSelectionGameMode(p);
+                    return;
+                }
+            }
         }).show(player);
+    }
+
+    private World ensureSelectionLobby() {
+        World existing = Bukkit.getWorld(SELECTION_LOBBY_WORLD);
+        if (existing != null) return existing;
+        WorldCreator creator = WorldCreator.name(SELECTION_LOBBY_WORLD)
+                .generateStructures(false)
+                .generator(new ChunkGenerator() {
+                    @Override
+                    public ChunkData generateChunkData(World world, java.util.Random random, int chunkX, int chunkZ, BiomeGrid biome) {
+                        return createChunkData(world);
+                    }
+                });
+        World lobby = Bukkit.createWorld(creator);
+        if (lobby != null) {
+            lobby.setSpawnLocation(0, 64, 0);
+            for (int x = -2; x <= 2; x++) {
+                for (int z = -2; z <= 2; z++) {
+                    lobby.getBlockAt(x, 63, z).setType(Material.BLACK_CONCRETE);
+                }
+            }
+            lobby.setGameRule(org.bukkit.GameRule.DO_DAYLIGHT_CYCLE, false);
+            lobby.setGameRule(org.bukkit.GameRule.DO_WEATHER_CYCLE, false);
+            lobby.setTime(6000L);
+        }
+        return lobby;
+    }
+
+    private boolean isSelectionLobby(World world) {
+        return world != null && SELECTION_LOBBY_WORLD.equals(world.getName());
+    }
+
+    private void enterSelectionLobby(Player player) {
+        selectionLobbyGameModes.putIfAbsent(player.getUniqueId(), player.getGameMode());
+        if (player.getGameMode() != GameMode.SPECTATOR) player.setGameMode(GameMode.SPECTATOR);
+    }
+
+    private void restoreSelectionGameMode(Player player) {
+        GameMode previous = selectionLobbyGameModes.remove(player.getUniqueId());
+        if (previous != null && player.getGameMode() != previous) player.setGameMode(previous);
+    }
+
+    @EventHandler
+    public void onSelectionMenuClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player) || !isSelectionLobby(player.getWorld())) return;
+        UUID playerId = player.getUniqueId();
+        if (selectionTransitions.remove(playerId)) return;
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (player.isOnline() && isSelectionLobby(player.getWorld())) {
+                showSelection(player, accessibleGroups(player));
+            }
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -429,6 +560,7 @@ public class OtherworldModule implements Listener {
         }
 
         String targetGroupName = getGroup(event.getTo().getWorld());
+        if (isSelectionLobby(event.getTo().getWorld()) || isSelectionLobby(event.getFrom().getWorld())) return;
         if (!sourceGroupName.equals(targetGroupName)) {
             if (!canAccess(player, targetGroupName)) {
                 event.setCancelled(true);

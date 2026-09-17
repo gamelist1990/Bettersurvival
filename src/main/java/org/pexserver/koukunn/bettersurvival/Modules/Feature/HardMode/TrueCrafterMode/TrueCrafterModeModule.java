@@ -11,7 +11,6 @@ import org.bukkit.block.Block;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.attribute.AttributeModifier;
-import org.bukkit.entity.CaveSpider;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.EnderDragon;
 import org.bukkit.entity.Enderman;
@@ -23,16 +22,11 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Monster;
-import org.bukkit.entity.PiglinBrute;
 import org.bukkit.entity.PigZombie;
 import org.bukkit.entity.Piglin;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Slime;
-import org.bukkit.entity.Snowball;
-import org.bukkit.entity.Spider;
-import org.bukkit.entity.Vindicator;
-import org.bukkit.entity.Witch;
 import org.bukkit.entity.Wither;
 import org.bukkit.entity.WitherSkeleton;
 import org.bukkit.event.EventHandler;
@@ -74,7 +68,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /** TrueCrafterModeの戦闘システムをPaper APIだけで再現する。 */
 public final class TrueCrafterModeModule implements Listener {
-    private static final float SKELETON_SHEATH_SCALE = 0.5F;
+    private static final float SKELETON_SHEATH_SCALE = 0.12F;
 
     private final Loader plugin;
     private final TrueCrafterSettings settings;

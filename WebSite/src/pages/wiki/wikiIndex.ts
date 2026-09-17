@@ -18,6 +18,7 @@ import { RecyclerSection } from './sections/RecyclerSection';
 import { YouTubeSection } from './sections/YouTubeSection';
 import { PetSitSection } from './sections/PetSitSection';
 import { HardModeSection } from './sections/HardModeSection';
+import { JustLevelingSection } from './sections/JustLevelingSection';
 
 export type WikiScope = 'system' | 'admin' | 'player';
 
@@ -48,6 +49,7 @@ export const wikiEntries: WikiEntry[] = [
   { slug: 'pet-sit',          title: 'Pet・座る機能',             summary: '友好モブのPet化、行動モード、散歩と /sit の使い方。', scope: 'player', category: '詳細ガイド', icon: '♥', component: PetSitSection },
   { slug: 'youtube',          title: 'YouTube ライブ連携',       summary: 'コメント、スパチャ、メンバー、登録者増減とBossBar通知の設定。', scope: 'admin', category: '詳細ガイド', icon: '▶', component: YouTubeSection },
   { slug: 'hardmode',         title: '真クラモード 完全攻略',      summary: '熱量、強化Mob、地形追跡、特殊弾、ウィザーとエンダードラゴンの攻略を網羅。', scope: 'admin', category: '詳細ガイド', icon: '☠', component: HardModeSection },
+  { slug: 'just-leveling',     title: 'Just Leveling',                 summary: '8能力値・24スキル・41称号の成長システムと、レベリングの書・不吉な焚き火のクラフト経路。', scope: 'player', category: '詳細ガイド', icon: '⬆', component: JustLevelingSection },
   { slug: 'land-protection',  title: '土地保護',                 summary: 'Lv1-100 の保護半径 / 維持コスト早見表、燃料、パーティ / リング / レイド連携までまとめて解説。', scope: 'player', category: '詳細ガイド', icon: '⛨', component: LandProtectionSection },
   { slug: 'party',            title: 'パーティー (ギルド)',      summary: '招待制の 3 階級グループ機能。名前 / カラー / 表示設定・土地保護連携まで解説。',              scope: 'player', category: '詳細ガイド', icon: '☰', component: PartySection },
   { slug: 'chestshop',        title: 'チェストショップ',         summary: '看板でチェストをショップ化。通貨指定・26 スロット商品・収益回収 UI までの流れ。',           scope: 'player', category: '詳細ガイド', icon: '$', component: ChestShopSection },

@@ -27,8 +27,8 @@ public class TreeMineModule implements Listener {
         Player p = e.getPlayer();
         Block b = e.getBlock();
 
-        // 対象: 木材 (LOGS タグ)
-        if (!Tag.LOGS.isTagged(b.getType())) return;
+        // 対象: 通常の原木とネザーの幹・菌糸
+        if (!isTreeWood(b)) return;
 
         // 条件: プレイヤーが斧を持っていて、シフト（スニーク）していること
         if (!p.isSneaking()) return;
@@ -50,7 +50,7 @@ public class TreeMineModule implements Listener {
 
         Set<Block> toBreak = collectTreeBlocks(b);
 
-        if (!hasAdjacentLeaves(toBreak)) {
+        if (!isNetherTree(b) && !hasAdjacentLeaves(toBreak)) {
             // 葉と隣接していない場合は木ではないとみなすじゃないと荒らしに悪用される
             return;
         }
@@ -89,7 +89,7 @@ public class TreeMineModule implements Listener {
                     for (int dz = -1; dz <= 1; dz++) {
                         if (dx == 0 && dy == 0 && dz == 0) continue;
                         Block nb = b.getRelative(dx, dy, dz);
-                        if (!found.contains(nb) && Tag.LOGS.isTagged(nb.getType())) {
+                        if (!found.contains(nb) && isTreeWood(nb)) {
                             found.add(nb);
                             queue.add(nb);
                         }
@@ -99,6 +99,18 @@ public class TreeMineModule implements Listener {
         }
 
         return found;
+    }
+
+    private boolean isTreeWood(Block block) {
+        Material material = block.getType();
+        return Tag.LOGS.isTagged(material)
+                || Tag.CRIMSON_STEMS.isTagged(material)
+                || Tag.WARPED_STEMS.isTagged(material);
+    }
+
+    private boolean isNetherTree(Block block) {
+        Material material = block.getType();
+        return Tag.CRIMSON_STEMS.isTagged(material) || Tag.WARPED_STEMS.isTagged(material);
     }
 
     /**

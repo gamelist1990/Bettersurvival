@@ -334,7 +334,6 @@ public final class LevelingSystemModule implements Listener {
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
         applyPassives(player);
-        player.sendMessage("§7レベリングプロフィール切替: §b" + dataScope(player));
     }
 
     @EventHandler(ignoreCancelled = true)

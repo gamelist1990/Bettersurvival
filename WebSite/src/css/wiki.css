@@ -1,3 +1,88 @@
+/* --- Just Leveling --- */
+.just-leveling-callout { padding: 16px 18px; border-left: 4px solid var(--wiki-accent); border-radius: 12px; background: var(--wiki-accent-soft); }
+.just-leveling-callout p { margin: 6px 0 0; }
+.just-leveling-recipe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.just-leveling-recipe { padding: 16px; border: 1px solid var(--wiki-border); border-radius: 14px; background: var(--wiki-panel-strong); }
+.just-leveling-recipe h4 { margin: 0 0 10px; }
+.just-leveling-recipe-pattern { display: grid; gap: 4px; padding: 10px; border-radius: 8px; background: #211b17; color: #fff8f0; font-family: monospace; white-space: pre; }
+.just-leveling-recipe-pattern code { font: inherit; }
+.just-leveling-item { display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; vertical-align: middle; }
+.just-leveling-item img { width: 32px; height: 32px; image-rendering: pixelated; }
+.just-leveling-crafting-ui { max-width: 720px; margin: 14px auto; }
+.just-leveling-crafting-ui img { width: 100%; height: auto; }
+.just-leveling-items { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.just-leveling-path { display: grid; gap: 10px; }
+.just-leveling-path-step { position: relative; display: grid; grid-template-columns: 34px 1fr; column-gap: 10px; padding: 12px 16px; border: 1px solid var(--wiki-border); border-radius: 12px; background: var(--wiki-panel); }
+.just-leveling-path-step > span { grid-row: span 2; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--wiki-accent); color: #fff; font-weight: 800; }
+.just-leveling-path-step p { margin: 4px 0 0; color: var(--wiki-muted); }
+.just-leveling-path-step b { position: absolute; bottom: -17px; left: 24px; color: var(--wiki-accent); z-index: 1; }
+.just-leveling-campfire-note { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--wiki-accent-soft); }
+.just-leveling-source { display: block; margin-top: 20px; color: var(--wiki-muted); }
+.just-leveling-gui-mock { position: relative; width: min(100%, 700px); margin: 18px auto 24px; overflow: hidden; border: 1px solid var(--wiki-border); border-radius: 14px; background: #c6c6c6; box-shadow: 0 16px 34px rgba(45, 35, 27, 0.2); }
+.just-leveling-gui-mock > .wiki-real-image { margin: 0; }
+.just-leveling-gui-mock > .wiki-real-image img { display: block; width: 100%; height: auto; }
+.just-leveling-slot-grid { position: absolute; inset: 0; }
+.just-leveling-slot { position: absolute; display: grid; place-items: center; width: 10.34%; aspect-ratio: 1; transform: translate(-50%, -50%); }
+.just-leveling-slot img { width: 48%; height: 48%; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6)); }
+.just-leveling-slot span { position: absolute; right: 4%; bottom: 3%; padding: 1px 3px; border-radius: 3px; background: rgba(20, 16, 13, 0.82); color: #fff; font-size: clamp(0.42rem, 1.25vw, 0.68rem); font-weight: 800; line-height: 1.1; text-shadow: 1px 1px #000; }
+.just-leveling-slot.slot-10 { left: 19.5%; top: 34.4%; }
+.just-leveling-slot.slot-12 { left: 40.2%; top: 34.4%; }
+.just-leveling-slot.slot-14 { left: 60.9%; top: 34.4%; }
+.just-leveling-slot.slot-16 { left: 81.6%; top: 34.4%; }
+.just-leveling-slot.slot-20 { left: 29.9%; top: 48.4%; }
+.just-leveling-slot.slot-22 { left: 50.6%; top: 48.4%; }
+.just-leveling-slot.slot-24 { left: 71.3%; top: 48.4%; }
+.just-leveling-slot.slot-28 { left: 19.5%; top: 62.5%; }
+.just-leveling-slot.slot-30 { left: 40.2%; top: 62.5%; }
+.just-leveling-slot.slot-32 { left: 60.9%; top: 62.5%; }
+.just-leveling-slot.slot-34 { left: 81.6%; top: 62.5%; }
+.just-leveling-slot.slot-45 { left: 9.2%; top: 90.6%; }
+.just-leveling-slot.slot-47 { left: 29.9%; top: 90.6%; }
+.just-leveling-slot.slot-49 { left: 50.6%; top: 90.6%; }
+.just-leveling-slot.slot-51 { left: 71.3%; top: 90.6%; }
+.just-leveling-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 28px; }
+.just-leveling-legend > div { padding: 14px 16px; border: 1px solid var(--wiki-border); border-radius: 12px; background: var(--wiki-panel); }
+.just-leveling-legend p { margin: 5px 0 0; color: var(--wiki-muted); }
+.just-leveling-cost { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.just-leveling-cost > div { display: grid; gap: 5px; padding: 15px; border: 1px solid var(--wiki-border); border-radius: 12px; background: var(--wiki-panel-strong); text-align: center; }
+.just-leveling-cost span { color: var(--wiki-muted); font-size: 0.82rem; }
+.just-leveling-cost strong { color: var(--wiki-accent); font-size: 1.08rem; }
+.just-leveling-aptitudes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.just-leveling-aptitude { display: grid; grid-template-columns: 48px 1fr; gap: 12px; align-items: start; padding: 15px; border: 1px solid var(--wiki-border); border-radius: 13px; background: var(--wiki-panel-strong); }
+.just-leveling-aptitude img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+.just-leveling-aptitude h4 { margin: 0 0 5px; }
+.just-leveling-aptitude h4 span { color: var(--wiki-accent); font-size: 0.8em; }
+.just-leveling-aptitude p { margin: 0 0 7px; }
+.just-leveling-aptitude small { color: var(--wiki-muted); }
+.just-leveling-note { margin: 16px 0; padding: 15px 17px; border: 1px solid var(--wiki-border); border-radius: 12px; background: var(--wiki-accent-soft); }
+.just-leveling-note p { margin: 5px 0 0; }
+.just-leveling-table-wrap { overflow-x: auto; border: 1px solid var(--wiki-border); border-radius: 12px; }
+.just-leveling-table-wrap table { width: 100%; border-collapse: collapse; }
+.just-leveling-table-wrap th, .just-leveling-table-wrap td { padding: 11px 14px; border-bottom: 1px solid var(--wiki-border); text-align: left; }
+.just-leveling-table-wrap th { background: var(--wiki-accent-soft); }
+.just-leveling-table-wrap tbody tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 650px) {
+  .just-leveling-legend, .just-leveling-aptitudes { grid-template-columns: 1fr; }
+  .just-leveling-cost { grid-template-columns: 1fr; }
+  .just-leveling-slot span { display: none; }
+}
+
+/* --- Crafting recipe previews --- */
+.texture-layout { position: relative; }
+.texture-layout > .wiki-real-image { margin: 0; }
+.texture-layout > .wiki-real-image img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.texture-layout-overlay { position: absolute; inset: 0; }
+.texture-layout-item { position: absolute; display: grid; place-items: center; transform: translate(-50%, -50%); }
+.texture-layout-item-image { width: 48%; height: 48%; object-fit: contain; image-rendering: pixelated; }
+.texture-layout-item > span { position: absolute; right: 4%; bottom: 3%; padding: 1px 3px; border-radius: 3px; background: rgba(20, 16, 13, 0.82); color: #fff; font-size: clamp(0.42rem, 1.25vw, 0.68rem); font-weight: 800; line-height: 1.1; text-shadow: 1px 1px #000; }
+.wiki-crafting-recipe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.wiki-crafting-recipe-preview { padding: 14px; border: 1px solid var(--wiki-border); border-radius: 14px; background: var(--wiki-panel-strong); }
+.wiki-crafting-recipe-preview h4 { margin: 0 0 10px; }
+.wiki-crafting-screen { position: relative; max-width: 518px; margin: 0 auto; }
+.wiki-crafting-output--campfire .texture-layout-item-image { transform: translateY(8%); }
+.wiki-crafting-recipe-preview > p { margin: 10px 0 0; font-size: 0.92rem; }
+
 /* --- Wiki Layout --- */
 .wiki-shell {
   --wiki-text: #211b17;
