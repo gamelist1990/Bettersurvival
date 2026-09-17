@@ -92,16 +92,13 @@ jobs:
           python3 tools/pr4_phase2.py
           python3 - <<'PY'
           from pathlib import Path
+          import re
           path = Path('src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/WebMap/WebMapHttpServer.java')
           text = path.read_text(encoding='utf-8')
-          old = '''        String type = switch (world.getEnvironment()) {
-              case NETHER -> "nether";
-              case THE_END -> "the_end";
-              default -> "normal";
-          };'''
-          if old not in text:
-              raise SystemExit('remaining WorldView type switch anchor mismatch')
-          text = text.replace(old, '        String type = world.type();', 1)
+          pattern = r'(?m)^(\s*)String type = switch \(world\.getEnvironment\(\)\) \{\n\s*case NETHER -> "nether";\n\s*case THE_END -> "the_end";\n\s*default -> "normal";\n\s*\};'
+          text, count = re.subn(pattern, r'\1String type = world.type();', text, count=1)
+          if count != 1:
+              raise SystemExit(f'remaining WorldView type switch count={count}')
           path.write_text(text, encoding='utf-8')
           PY
 
