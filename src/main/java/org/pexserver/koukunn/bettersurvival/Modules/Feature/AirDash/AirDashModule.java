@@ -253,6 +253,9 @@ public class AirDashModule implements Listener {
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
+        if (armed.isEmpty()) {
+            return;
+        }
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 

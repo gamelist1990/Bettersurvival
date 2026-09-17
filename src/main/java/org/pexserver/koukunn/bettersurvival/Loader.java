@@ -217,7 +217,7 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(partyModule, this);
         partyMenu = new PartyMenu(this, partyModule);
         // LandProtection モジュール登録 (Rust 風の土地保護コア)
-        landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule);
+        landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule, otherworldModule);
         getServer().getPluginManager().registerEvents(landProtectionModule, this);
         getServer().getPluginManager().registerEvents(new DeathChestModule(this, toggleModule, landProtectionModule), this);
         // ParallelFurnace モジュール登録 (かまど×石炭ブロックで作る並列稼働かまど)
@@ -575,6 +575,9 @@ public final class Loader extends JavaPlugin {
     public void onDisable() {
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
             InvseeOfflineData.saveSnapshot(onlinePlayer);
+        }
+        if (otherworldModule != null) {
+            otherworldModule.shutdown();
         }
         if (webMapModule != null) {
             webMapModule.shutdown();

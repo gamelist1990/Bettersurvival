@@ -4,8 +4,6 @@ import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import org.bukkit.World;
-import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebProfile;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebPost;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServiceModule;
@@ -198,7 +196,7 @@ public class WebMapHttpServer {
         if (!guardApi(exchange)) {
             return;
         }
-        String serverName = ServerInfoUtil.getServerName();
+        String serverName = module.getHttpSnapshot().serverName();
         writeJson(exchange, Map.of(
                 "static", false,
                 "server", Map.of(
@@ -261,31 +259,26 @@ public class WebMapHttpServer {
         }
         List<Map<String, Object>> worlds = new ArrayList<>();
         int order = 0;
-        for (World world : module.getPlugin().getServer().getWorlds()) {
-            WebMapDimensionSettings dimension = module.getDimensionSettings(world);
-            if (!dimension.isVisible() || !module.isWorldPublished(world)) {
+        for (WebMapHttpSnapshot.WorldView world : module.getHttpSnapshot().worlds()) {
+            if (!world.visible() || !world.published()) {
                 continue;
             }
-            String worldKey = world.getKey().toString();
-            String worldName = world.getName();
+            String worldKey = world.key();
+            String worldName = world.name();
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("key", worldKey);
             row.put("name", worldName);
-            row.put("displayName", dimension.getDisplayName());
+            row.put("displayName", world.displayName());
             row.put("order", order++);
-            row.put("type", switch (world.getEnvironment()) {
-                case NETHER -> "nether";
-                case THE_END -> "the_end";
-                default -> "normal";
-            });
-            row.put("environment", world.getEnvironment().name());
+            row.put("type", world.type());
+            row.put("environment", world.environment());
             row.put("icon", null);
             row.put("chunks", module.getChunkCount(worldKey));
             row.put("tileUrl", "/api/v1/worlds/" + worldName + "/tile/{z}/{x}_{y}.png");
             row.put("worldUrl", "/api/v1/worlds/" + worldName);
             row.put("spawn", Map.of(
-                    "x", world.getSpawnLocation().getBlockX(),
-                    "z", world.getSpawnLocation().getBlockZ()
+                    "x", world.spawnX(),
+                    "z", world.spawnZ()
             ));
             worlds.add(row);
         }
@@ -299,10 +292,11 @@ public class WebMapHttpServer {
         if (!guardApi(exchange)) {
             return;
         }
+        WebMapHttpSnapshot snapshot = module.getHttpSnapshot();
         writeJson(exchange, Map.of(
-                "players", module.getOnlinePlayersSnapshot(),
-                "max", module.getPlugin().getServer().getMaxPlayers(),
-                "updatedAt", System.currentTimeMillis()
+                "players", snapshot.players(),
+                "max", snapshot.maxPlayers(),
+                "updatedAt", snapshot.updatedAt()
         ), 1);
     }
 
@@ -376,21 +370,16 @@ public class WebMapHttpServer {
     private void handleTilesSettings(HttpExchange exchange) throws IOException {
         List<Map<String, Object>> worlds = new ArrayList<>();
         int order = 0;
-        for (World world : module.getPlugin().getServer().getWorlds()) {
-            WebMapDimensionSettings dimension = module.getDimensionSettings(world);
-            if (!dimension.isVisible() || !module.isWorldPublished(world)) {
+        for (WebMapHttpSnapshot.WorldView world : module.getHttpSnapshot().worlds()) {
+            if (!world.visible() || !world.published()) {
                 continue;
             }
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("name", world.getName());
-            row.put("display_name", dimension.getDisplayName());
+            row.put("name", world.name());
+            row.put("display_name", world.displayName());
             row.put("icon", null);
             row.put("order", order++);
-            row.put("type", switch (world.getEnvironment()) {
-                case NETHER -> "nether";
-                case THE_END -> "the_end";
-                default -> "normal";
-            });
+            row.put("type", world.type());
             worlds.add(row);
         }
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -415,15 +404,16 @@ public class WebMapHttpServer {
     }
 
     private void handleTilesPlayers(HttpExchange exchange) throws IOException {
+        WebMapHttpSnapshot snapshot = module.getHttpSnapshot();
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("players", module.getOnlinePlayersSnapshot());
-        payload.put("max", module.getPlugin().getServer().getMaxPlayers());
+        payload.put("players", snapshot.players());
+        payload.put("max", snapshot.maxPlayers());
         writeJson(exchange, payload, 1);
     }
 
     private void handleWorldSettings(HttpExchange exchange, String worldName) throws IOException {
-        World world = resolveWorldByName(worldName);
-        if (world == null || !module.isWorldPublished(world)) {
+        WebMapHttpSnapshot.WorldView world = resolveWorldByName(worldName);
+        if (world == null || !world.visible() || !world.published()) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
@@ -452,21 +442,21 @@ public class WebMapHttpServer {
                 "extra", 6
         ));
         payload.put("spawn", Map.of(
-                "x", world.getSpawnLocation().getBlockX(),
-                "z", world.getSpawnLocation().getBlockZ()
+                "x", world.spawnX(),
+                "z", world.spawnZ()
         ));
-        payload.put("markersUrl", "/api/v1/worlds/" + world.getName() + "/markers");
+        payload.put("markersUrl", "/api/v1/worlds/" + world.name() + "/markers");
         writeJson(exchange, payload, 15);
     }
 
     private void handleWorldMarkers(HttpExchange exchange, String worldName) throws IOException {
-        World world = resolveWorldByName(worldName);
-        if (world == null || !module.isWorldPublished(world)) {
+        WebMapHttpSnapshot.WorldView world = resolveWorldByName(worldName);
+        if (world == null || !world.visible() || !world.published()) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
         writeJson(exchange, Map.of(
-                "markers", module.snapshotMarkers(world.getKey().toString()),
+                "markers", module.snapshotMarkers(world.key()),
                 "updatedAt", System.currentTimeMillis()
         ), 10);
     }
@@ -476,24 +466,19 @@ public class WebMapHttpServer {
     }
 
     private void handleWorldV1Settings(HttpExchange exchange, String worldName) throws IOException {
-        World world = resolveWorldByName(worldName);
-        if (world == null || !module.isWorldPublished(world)) {
+        WebMapHttpSnapshot.WorldView world = resolveWorldByName(worldName);
+        if (world == null || !world.visible() || !world.published()) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
-        WebMapDimensionSettings dimension = module.getDimensionSettings(world);
-        String type = switch (world.getEnvironment()) {
-            case NETHER -> "nether";
-            case THE_END -> "the_end";
-            default -> "normal";
-        };
+        String type = world.type();
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("key", world.getKey().toString());
-        payload.put("name", world.getName());
-        payload.put("displayName", dimension.getDisplayName());
-        payload.put("environment", world.getEnvironment().name());
+        payload.put("key", world.key());
+        payload.put("name", world.name());
+        payload.put("displayName", world.displayName());
+        payload.put("environment", world.environment());
         payload.put("type", type);
-        payload.put("chunks", module.getChunkCount(world.getKey().toString()));
+        payload.put("chunks", module.getChunkCount(world.key()));
         payload.put("playerTracker", Map.of(
                 "enabled", true,
                 "nameplates", Map.of(
@@ -511,28 +496,28 @@ public class WebMapHttpServer {
                 "max", 6
         ));
         payload.put("spawn", Map.of(
-                "x", world.getSpawnLocation().getBlockX(),
-                "z", world.getSpawnLocation().getBlockZ()
+                "x", world.spawnX(),
+                "z", world.spawnZ()
         ));
         payload.put("backgroundImage", switch (type) {
             case "nether" -> "/images/nether_sky.png";
             case "the_end" -> "/images/end_sky.png";
             default -> "/images/overworld_sky.png";
         });
-        payload.put("tileTemplate", "/api/v1/worlds/" + world.getName() + "/tile/{z}/{x}_{y}.png");
-        payload.put("changesUrl", "/api/v1/worlds/" + world.getName() + "/changes");
-        payload.put("markersUrl", "/api/v1/worlds/" + world.getName() + "/markers");
+        payload.put("tileTemplate", "/api/v1/worlds/" + world.name() + "/tile/{z}/{x}_{y}.png");
+        payload.put("changesUrl", "/api/v1/worlds/" + world.name() + "/changes");
+        payload.put("markersUrl", "/api/v1/worlds/" + world.name() + "/markers");
         writeJson(exchange, payload, 15);
     }
 
     private void handleWorldChanges(HttpExchange exchange, String worldName) throws IOException {
-        World world = resolveWorldByName(worldName);
-        if (world == null || !module.isWorldPublished(world)) {
+        WebMapHttpSnapshot.WorldView world = resolveWorldByName(worldName);
+        if (world == null || !world.visible() || !world.published()) {
             writePlain(exchange, 404, "World Not Found");
             return;
         }
         long since = parseLong(queryValue(exchange, "since"), 0L);
-        List<Map<String, Object>> tiles = module.getChangedTilesSince(world.getKey().toString(), since);
+        List<Map<String, Object>> tiles = module.getChangedTilesSince(world.key(), since);
         long latest = since;
         for (Map<String, Object> tile : tiles) {
             Object updatedAt = tile.get("updatedAt");
@@ -547,12 +532,12 @@ public class WebMapHttpServer {
     }
 
     private void handleTileImage(HttpExchange exchange, String worldName, String tileZoom, String tileSegment) throws IOException {
-        World world = resolveWorldByName(worldName);
-        if (world == null || !module.isWorldPublished(world)) {
+        WebMapHttpSnapshot.WorldView world = resolveWorldByName(worldName);
+        if (world == null || !world.visible() || !world.published()) {
             writeEmptyTile(exchange);
             return;
         }
-        String worldKey = world.getKey().toString();
+        String worldKey = world.key();
         int underscore = tileSegment.indexOf('_');
         int dot = tileSegment.lastIndexOf('.');
         if (underscore <= 0 || dot <= underscore) {
@@ -803,7 +788,7 @@ public class WebMapHttpServer {
     }
 
     private byte[] renderIndexHtml(HttpExchange exchange, byte[] templateBytes) {
-        String serverName = ServerInfoUtil.getServerName();
+        String serverName = module.getHttpSnapshot().serverName();
         PageMeta meta = buildPageMeta(exchange, serverName);
         String html = new String(templateBytes, StandardCharsets.UTF_8)
                 .replace(PLACEHOLDER_TITLE, escapeHtml(meta.title()))
@@ -962,7 +947,7 @@ public class WebMapHttpServer {
             builder.append(" 現在のワールド: ").append(worldDisplayName.trim()).append("。");
         }
         builder.append(" プレイヤー位置、ウェイポイント、土地保護エリアを見やすく確認できます。");
-        String motd = normalizeWhitespace(ServerInfoUtil.getServerDescription());
+        String motd = normalizeWhitespace(module.getHttpSnapshot().serverDescription());
         if (!motd.isBlank() && !motd.equalsIgnoreCase(base)) {
             builder.append(" ").append(motd);
             if (!motd.endsWith("。")) {
@@ -973,17 +958,9 @@ public class WebMapHttpServer {
     }
 
     private String resolveWorldDisplayName(String worldKey) {
-        if (worldKey == null || worldKey.isBlank()) {
-            return "";
-        }
-        for (World world : module.getPlugin().getServer().getWorlds()) {
-            if (world.getKey().toString().equals(worldKey) || world.getName().equals(worldKey)) {
-                WebMapDimensionSettings dimension = module.getDimensionSettings(world);
-                return dimension.getDisplayName();
-            }
-        }
-        return "";
-    }
+    WebMapHttpSnapshot.WorldView world = module.getHttpSnapshot().findWorld(worldKey);
+    return world == null ? "" : world.displayName();
+}
 
     private String absoluteRequestUrl(HttpExchange exchange) {
         URI uri = exchange.getRequestURI();
@@ -1666,13 +1643,8 @@ public class WebMapHttpServer {
     private record StoredUpload(String url) {
     }
 
-    private World resolveWorldByName(String worldName) {
-        for (World world : module.getPlugin().getServer().getWorlds()) {
-            if (world.getName().equals(worldName)) {
-                return world;
-            }
-        }
-        return null;
+    private WebMapHttpSnapshot.WorldView resolveWorldByName(String worldName) {
+        return module.getHttpSnapshot().findWorld(worldName);
     }
 
     private int parseInt(String value, int fallback) {

@@ -20,10 +20,13 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 
+import java.util.ArrayDeque;
 import java.util.Locale;
+import java.util.Queue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** SharedStorage IDを設置先/存在場所のOtherworld scopeへ透過的に正規化する。 */
@@ -32,6 +35,8 @@ public final class SharedStorageNamespaceListener implements Listener {
     private final Loader plugin;
     private final NamespacedKey roleKey;
     private final NamespacedKey idKey;
+    private final Queue<Chunk> initialScanQueue = new ArrayDeque<>();
+    private BukkitTask initialScanTask;
 
     private SharedStorageNamespaceListener(Loader plugin) {
         this.plugin = plugin;
@@ -43,7 +48,7 @@ public final class SharedStorageNamespaceListener implements Listener {
         if (plugin == null || !REGISTERED.compareAndSet(false, true)) return;
         SharedStorageNamespaceListener listener = new SharedStorageNamespaceListener(plugin);
         Bukkit.getPluginManager().registerEvents(listener, plugin);
-        Bukkit.getScheduler().runTask(plugin, listener::scanLoadedChunks);
+        Bukkit.getScheduler().runTask(plugin, listener::beginInitialScan);
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
@@ -70,8 +75,29 @@ public final class SharedStorageNamespaceListener implements Listener {
         scanChunk(event.getChunk());
     }
 
-    private void scanLoadedChunks() {
-        for (var world : Bukkit.getWorlds()) for (Chunk chunk : world.getLoadedChunks()) scanChunk(chunk);
+    private void beginInitialScan() {
+        for (var world : Bukkit.getWorlds()) {
+            java.util.Collections.addAll(initialScanQueue, world.getLoadedChunks());
+        }
+        if (!initialScanQueue.isEmpty()) {
+            initialScanTask = Bukkit.getScheduler().runTaskTimer(plugin, this::drainInitialScan, 1L, 1L);
+        }
+    }
+
+    private void drainInitialScan() {
+        for (int i = 0; i < 4; i++) {
+            Chunk chunk = initialScanQueue.poll();
+            if (chunk == null) {
+                break;
+            }
+            if (chunk.isLoaded()) {
+                scanChunk(chunk);
+            }
+        }
+        if (initialScanQueue.isEmpty() && initialScanTask != null) {
+            initialScanTask.cancel();
+            initialScanTask = null;
+        }
     }
 
     private void scanChunk(Chunk chunk) {

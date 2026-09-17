@@ -184,6 +184,19 @@ public class OtherworldModule implements Listener {
         return "default";
     }
 
+    /** Resolve an Otherworld scope from a persisted physical world id/name without requiring a loaded World. */
+    public synchronized String getGroupByWorldId(String worldId) {
+        if (worldId == null || worldId.isBlank()) return "default";
+        for (Group group : groups.values()) {
+            if (group.worlds.values().stream().anyMatch(id -> worldId.equalsIgnoreCase(id))
+                    || group.customWorlds.values().stream().anyMatch(id -> worldId.equalsIgnoreCase(id))) {
+                return group.name;
+            }
+        }
+        World loaded = resolveWorldId(worldId);
+        return loaded == null ? "default" : getGroup(loaded);
+    }
+
     public synchronized boolean sameGroup(Player first, Player second) {
         return getGroup(first).equals(getGroup(second));
     }
@@ -560,6 +573,13 @@ public class OtherworldModule implements Listener {
         return new Location(world, source.getX(),
                 Math.max(world.getMinHeight() + 1, Math.min(world.getMaxHeight() - 1, source.getY())),
                 source.getZ(), source.getYaw(), source.getPitch());
+    }
+
+    public void shutdown() {
+        for (Player player : List.copyOf(Bukkit.getOnlinePlayers())) {
+            playerDataStore.save(player, getGroup(player));
+        }
+        playerDataStore.shutdown();
     }
 
     private String normalize(String value) {
