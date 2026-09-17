@@ -35,6 +35,7 @@ import org.bukkit.event.server.ServerCommandEvent;
 import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ServerInfoUtil;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ClaimRegion;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
@@ -68,6 +69,8 @@ public class WebMapModule implements Listener {
     private final WebMapDataStore dataStore;
     private final WebMapHttpServer httpServer;
     private final WebMapStatusService statusService;
+    /** Immutable main-thread snapshot consumed by HTTP worker threads. */
+    private volatile WebMapHttpSnapshot httpSnapshot = WebMapHttpSnapshot.empty();
     /**
      * プレイヤーが最後にいたチャンクを {@link PlayerLastChunk} レコードで持つ。
      * String 連結によるアロケーションを避けるため、world UID と long-packed chunk key で識別する。
@@ -118,6 +121,7 @@ public class WebMapModule implements Listener {
         syncKnownWorlds();
         store.saveSettings(settings);
         refreshGlobalEnabled();
+        refreshHttpSnapshot();
         restorePersistedMarkerSnapshots();
         refreshMarkerSnapshots();
         startTasks();
@@ -156,6 +160,7 @@ public class WebMapModule implements Listener {
         this.settings = settings;
         syncKnownWorlds();
         boolean saved = store.saveSettings(settings);
+        refreshHttpSnapshot();
         syncRuntimeState();
         return saved;
     }
@@ -180,7 +185,7 @@ public class WebMapModule implements Listener {
     public String getPublicUrl() {
         String host;
         if (settings.isPublicAccess()) {
-            String configuredIp = plugin.getServer().getIp();
+            String configuredIp = httpSnapshot.serverIp();
             host = configuredIp == null || configuredIp.isBlank() ? "localhost" : configuredIp;
         } else {
             host = "127.0.0.1";
@@ -319,29 +324,85 @@ public class WebMapModule implements Listener {
         return dataStore.getChunk(worldKey, chunkX, chunkZ);
     }
 
+    public WebMapHttpSnapshot getHttpSnapshot() {
+        return httpSnapshot;
+    }
+
     public List<Map<String, Object>> getOnlinePlayersSnapshot() {
+        return httpSnapshot.players();
+    }
+
+    /**
+     * Capture Bukkit Player/World state on the main thread. The returned rows are detached from
+     * Bukkit objects before being published to HTTP worker threads.
+     */
+    private List<Map<String, Object>> captureOnlinePlayersSnapshot() {
         List<Map<String, Object>> players = new ArrayList<>();
         for (Player player : plugin.getServer().getOnlinePlayers()) {
-            Map<String, Object> row = new ConcurrentHashMap<>();
-            String worldKey = player.getWorld().getKey().toString();
-            String faceUrl = McApiClient.getFaceUrl(player.getUniqueId(), player.getName(), org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil.isBedrock(player));
+            Location location = player.getLocation();
+            World world = location.getWorld();
+            if (world == null) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            String worldKey = world.getKey().toString();
+            String faceUrl = McApiClient.getFaceUrl(player.getUniqueId(), player.getName(),
+                    org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil.isBedrock(player));
             row.put("name", player.getName());
             row.put("displayName", player.getName());
             row.put("uuid", player.getUniqueId().toString());
-            row.put("world", player.getWorld().getName());
+            row.put("world", world.getName());
             row.put("worldKey", worldKey);
-            row.put("x", player.getLocation().getBlockX());
-            row.put("y", player.getLocation().getBlockY());
-            row.put("z", player.getLocation().getBlockZ());
-            row.put("yaw", player.getLocation().getYaw());
-            row.put("chunkReady", dataStore.getChunk(worldKey, player.getLocation().getBlockX() >> 4, player.getLocation().getBlockZ() >> 4) != null);
-            row.put("face_url", faceUrl);
-            row.put("faceUrl", faceUrl);
+            row.put("x", location.getBlockX());
+            row.put("y", location.getBlockY());
+            row.put("z", location.getBlockZ());
+            row.put("yaw", location.getYaw());
+            row.put("chunkReady", dataStore.getChunk(worldKey, location.getBlockX() >> 4, location.getBlockZ() >> 4) != null);
+            if (faceUrl != null) {
+                row.put("face_url", faceUrl);
+                row.put("faceUrl", faceUrl);
+            }
             row.put("health", Math.round(player.getHealth()));
-            row.put("armor", player.getAttribute(Attribute.ARMOR) == null ? 0 : Math.round((float) player.getAttribute(Attribute.ARMOR).getValue()));
+            var armorAttribute = player.getAttribute(Attribute.ARMOR);
+            row.put("armor", armorAttribute == null ? 0 : Math.round((float) armorAttribute.getValue()));
             players.add(row);
         }
         return players;
+    }
+
+    /** Build the complete immutable HTTP view while Bukkit API access is legal. */
+    private void refreshHttpSnapshot() {
+        List<WebMapHttpSnapshot.WorldView> worlds = new ArrayList<>();
+        for (World world : plugin.getServer().getWorlds()) {
+            WebMapDimensionSettings dimension = getDimensionSettings(world);
+            String type = switch (world.getEnvironment()) {
+                case NETHER -> "nether";
+                case THE_END -> "the_end";
+                default -> "normal";
+            };
+            worlds.add(new WebMapHttpSnapshot.WorldView(
+                    world.getKey().toString(),
+                    world.getName(),
+                    dimension.getDisplayName(),
+                    type,
+                    world.getEnvironment().name(),
+                    world.getSpawnLocation().getBlockX(),
+                    world.getSpawnLocation().getBlockZ(),
+                    dimension.isVisible(),
+                    isWorldPublished(world)
+            ));
+        }
+        String serverIp = plugin.getServer().getIp();
+        httpSnapshot = new WebMapHttpSnapshot(
+                worlds,
+                WebMapHttpSnapshot.indexWorlds(worlds),
+                captureOnlinePlayersSnapshot(),
+                plugin.getServer().getMaxPlayers(),
+                ServerInfoUtil.getServerName(),
+                ServerInfoUtil.getServerDescription(),
+                serverIp == null ? "" : serverIp,
+                System.currentTimeMillis()
+        );
     }
 
     public int getActiveChunkGenCount() {
@@ -990,6 +1051,7 @@ public class WebMapModule implements Listener {
         dirtyFlushTask = plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, () -> dataStore.flushDirty(), 200L, 200L);
         featureSyncTask = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             refreshGlobalEnabled();
+            refreshHttpSnapshot();
             syncRuntimeState();
             updateGlobalTpsBar();
         }, 40L, 40L);
