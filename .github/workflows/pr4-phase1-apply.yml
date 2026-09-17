@@ -1,0 +1,62 @@
+name: PR4 Performance Migration
+
+on:
+  push:
+    branches:
+      - refactor/performance-bug-audit
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr4-performance-migration
+  cancel-in-progress: false
+
+jobs:
+  apply-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: refactor/performance-bug-audit
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Apply phase 1 refactor
+        run: python3 tools/pr4_phase1.py
+
+      - name: Validate patch whitespace
+        run: git diff --check
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew build --stacktrace
+
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Loader.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/LandProtection/LandProtectionModule.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/Otherworld/OtherworldModule.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/Otherworld/OtherworldPlayerDataStore.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/Pet/PetModule.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/SharedStorage/SharedStorageNamespaceListener.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/SharedStorage/SharedStorageModule.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/AirDash/AirDashModule.java
+          git commit -m "perf: finish runtime hot-path and persistence audit"
+          git push origin HEAD:refactor/performance-bug-audit
