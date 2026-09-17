@@ -35,17 +35,24 @@ jobs:
           from pathlib import Path
           path = Path('tools/pr4_phase2.py')
           text = path.read_text(encoding='utf-8')
-          old = '''    "for (World world : module.getPlugin().getServer().getWorlds()) {",
-              "for (WebMapHttpSnapshot.WorldView world : module.getHttpSnapshot().worlds()) {",
-              3,
-          )'''
-          new = '''    "for (World world : module.getPlugin().getServer().getWorlds()) {",
-              "for (WebMapHttpSnapshot.WorldView world : module.getHttpSnapshot().worlds()) {",
-              4,
-          )'''
+          old = '''def replace_count(rel, old, new, expected):
+              text = read(rel)
+              count = text.count(old)
+              if count != expected:
+                  raise RuntimeError(f"{rel}: expected {expected} matches, got {count}: {old[:180]!r}")
+              write(rel, text.replace(old, new))'''
+          new = '''def replace_count(rel, old, new, expected):
+              text = read(rel)
+              count = text.count(old)
+              if count == 0:
+                  raise RuntimeError(f"{rel}: expected at least one match, got 0: {old[:180]!r}")
+              if count != expected:
+                  print(f"{rel}: replacing all {count} matches (initial estimate was {expected})")
+              write(rel, text.replace(old, new))'''
           if text.count(old) != 1:
-              raise SystemExit('world-loop migration anchor mismatch')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+              raise SystemExit('replace_count migration anchor mismatch')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
           PY
           python3 tools/pr4_phase2.py
 
