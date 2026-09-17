@@ -90,6 +90,20 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           python3 tools/pr4_phase2.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/WebMap/WebMapHttpServer.java')
+          text = path.read_text(encoding='utf-8')
+          old = '''        String type = switch (world.getEnvironment()) {
+              case NETHER -> "nether";
+              case THE_END -> "the_end";
+              default -> "normal";
+          };'''
+          if old not in text:
+              raise SystemExit('remaining WorldView type switch anchor mismatch')
+          text = text.replace(old, '        String type = world.type();', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Validate patch whitespace
         run: git diff --check
