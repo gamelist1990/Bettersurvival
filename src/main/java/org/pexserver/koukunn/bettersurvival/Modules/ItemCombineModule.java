@@ -3,8 +3,8 @@ package org.pexserver.koukunn.bettersurvival.Modules;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.entity.Item;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Item;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.ItemMergeEvent;
@@ -15,6 +15,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,11 +26,9 @@ import java.util.function.Predicate;
 /**
  * ドロップされた Item 同士の組み合わせ判定を共通化するモジュール。
  *
- * レシピごとに 2 つの ItemStack 条件と判定半径を持たせ、
- * 条件一致時に then(...) で処理を受け取る。
- *
- * 床付近の合成と空中合成で半径を分けられるため、
- * 設置型クラフトのような処理を複数機能で再利用しやすい。
+ * <p>以前は Item × レシピごとに個別 BukkitTask を生成していたため、
+ * ドロップ数とレシピ数に比例して scheduler task が増えていた。
+ * 現在は 1 本の共有 ticker で追跡 Item をまとめて処理する。</p>
  */
 public class ItemCombineModule implements Listener {
 
@@ -39,10 +38,14 @@ public class ItemCombineModule implements Listener {
 
     private final Loader plugin;
     private final Map<String, CombineRegistration> registrations = new LinkedHashMap<>();
-    private final Map<String, BukkitTask> airCheckTasks = new LinkedHashMap<>();
+    /** Item UUID -> 追跡開始 tick。メインスレッドでのみ操作する。 */
+    private final Map<UUID, Long> trackedSeeds = new LinkedHashMap<>();
+    private final BukkitTask trackingTask;
+    private long schedulerTick;
 
     public ItemCombineModule(Loader plugin) {
         this.plugin = plugin;
+        this.trackingTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickTrackedSeeds, 1L, 1L);
     }
 
     public CombineBuilder recipe(String key) {
@@ -51,6 +54,11 @@ public class ItemCombineModule implements Listener {
 
     public void unregister(String key) {
         registrations.remove(key);
+    }
+
+    public void shutdown() {
+        trackingTask.cancel();
+        trackedSeeds.clear();
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -71,61 +79,95 @@ public class ItemCombineModule implements Listener {
 
     private void scheduleChecks(Item seed) {
         UUID seedId = seed.getUniqueId();
-        for (CombineRegistration registration : registrations.values()) {
-            if (registration.allowAirCombine) {
-                scheduleAirTracking(seedId, registration);
+        if (trackedSeeds.putIfAbsent(seedId, schedulerTick) != null) {
+            return;
+        }
+        // retryTicks=0 / airborne の初回判定を遅延させない。
+        runDueChecks(seedId, 0L);
+    }
+
+    private void tickTrackedSeeds() {
+        schedulerTick++;
+        if (trackedSeeds.isEmpty()) {
+            return;
+        }
+
+        Iterator<Map.Entry<UUID, Long>> iterator = trackedSeeds.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, Long> entry = iterator.next();
+            UUID seedId = entry.getKey();
+            if (!(Bukkit.getEntity(seedId) instanceof Item seed) || !seed.isValid()) {
+                iterator.remove();
                 continue;
             }
-            for (long delay : registration.retryTicks) {
-                Bukkit.getScheduler().runTaskLater(plugin, () -> runRegistration(seedId, registration), delay);
+
+            long elapsed = schedulerTick - entry.getValue();
+            if (!runDueChecks(seedId, elapsed)) {
+                iterator.remove();
             }
         }
     }
 
-    private void scheduleAirTracking(UUID seedId, CombineRegistration registration) {
-        String trackingKey = registration.key + ":" + seedId;
-        if (airCheckTasks.containsKey(trackingKey))
-            return;
-        final long[] elapsed = {0L};
-        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (!(Bukkit.getEntity(seedId) instanceof Item seed) || !seed.isValid()) {
-                cancelAirTracking(trackingKey);
-                return;
+    /**
+     * この elapsed tick で必要なレシピだけを実行する。
+     * @return 今後もこの Item を追跡する必要がある場合 true
+     */
+    private boolean runDueChecks(UUID seedId, long elapsed) {
+        boolean keepTracking = false;
+        for (CombineRegistration registration : registrations.values()) {
+            if (registration.allowAirCombine) {
+                if (elapsed <= registration.airTrackDurationTicks) {
+                    keepTracking = true;
+                    if (elapsed == 0L || elapsed % registration.airRetryIntervalTicks == 0L) {
+                        runRegistration(seedId, registration);
+                    }
+                }
+                continue;
             }
-            runRegistration(seedId, registration);
-            elapsed[0] += registration.airRetryIntervalTicks;
-            if (elapsed[0] >= registration.airTrackDurationTicks)
-                cancelAirTracking(trackingKey);
-        }, 0L, registration.airRetryIntervalTicks);
-        airCheckTasks.put(trackingKey, task);
-    }
 
-    private void cancelAirTracking(String trackingKey) {
-        BukkitTask task = airCheckTasks.remove(trackingKey);
-        if (task != null)
-            task.cancel();
+            for (long retryTick : registration.retryTicks) {
+                if (retryTick >= elapsed) {
+                    keepTracking = true;
+                }
+                if (retryTick == elapsed) {
+                    runRegistration(seedId, registration);
+                    break;
+                }
+            }
+        }
+        return keepTracking;
     }
 
     private void runRegistration(UUID seedId, CombineRegistration registration) {
-        if (!(Bukkit.getEntity(seedId) instanceof Item seed) || !seed.isValid())
+        if (!(Bukkit.getEntity(seedId) instanceof Item seed) || !seed.isValid()) {
             return;
+        }
         Location seedLocation = seed.getLocation();
         World world = seedLocation.getWorld();
-        if (world == null)
+        if (world == null) {
             return;
+        }
 
         List<Item> nearbyItems = collectNearbyItems(world, seedLocation, registration.maxRadius, registration.verticalRadius);
         for (Item first : nearbyItems) {
-            if (!first.isValid() || !registration.firstMatcher.test(first.getItemStack()))
+            if (!first.isValid() || !registration.firstMatcher.test(first.getItemStack())) {
                 continue;
+            }
             for (Item second : nearbyItems) {
-                if (first.getUniqueId().equals(second.getUniqueId()))
+                if (first.getUniqueId().equals(second.getUniqueId())) {
                     continue;
-                if (!second.isValid() || !registration.secondMatcher.test(second.getItemStack()))
+                }
+                if (!second.isValid() || !registration.secondMatcher.test(second.getItemStack())) {
                     continue;
-                if (!isPairWithinRange(first, second, registration))
+                }
+                if (!isPairWithinRange(first, second, registration)) {
                     continue;
-                registration.handler.accept(new CombineMatch(first, second, getCenter(first, second), registration.allowAirCombine && isAirborne(first, second)));
+                }
+                registration.handler.accept(new CombineMatch(
+                        first,
+                        second,
+                        getCenter(first, second),
+                        registration.allowAirCombine && isAirborne(first, second)));
                 return;
             }
         }
@@ -134,8 +176,9 @@ public class ItemCombineModule implements Listener {
     private List<Item> collectNearbyItems(World world, Location center, double horizontalRadius, double verticalRadius) {
         List<Item> items = new ArrayList<>();
         for (Entity entity : world.getNearbyEntities(center, horizontalRadius, verticalRadius, horizontalRadius)) {
-            if (entity instanceof Item item && item.isValid())
+            if (entity instanceof Item item && item.isValid()) {
                 items.add(item);
+            }
         }
         return items;
     }
@@ -143,15 +186,17 @@ public class ItemCombineModule implements Listener {
     private boolean isPairWithinRange(Item first, Item second, CombineRegistration registration) {
         Location firstLocation = first.getLocation();
         Location secondLocation = second.getLocation();
-        if (!firstLocation.getWorld().equals(secondLocation.getWorld()))
+        if (!firstLocation.getWorld().equals(secondLocation.getWorld())) {
             return false;
+        }
 
         double horizontalDeltaX = firstLocation.getX() - secondLocation.getX();
         double horizontalDeltaZ = firstLocation.getZ() - secondLocation.getZ();
         double horizontalDistanceSquared = horizontalDeltaX * horizontalDeltaX + horizontalDeltaZ * horizontalDeltaZ;
         double allowedHorizontalRadius = registration.groundRadius;
-        if (registration.allowAirCombine && isAirborne(first, second))
+        if (registration.allowAirCombine && isAirborne(first, second)) {
             allowedHorizontalRadius = registration.airRadius;
+        }
         return horizontalDistanceSquared <= allowedHorizontalRadius * allowedHorizontalRadius
                 && Math.abs(firstLocation.getY() - secondLocation.getY()) <= registration.verticalRadius;
     }
@@ -237,7 +282,9 @@ public class ItemCombineModule implements Listener {
         }
 
         public CombineBuilder retryTicks(long... retryTicks) {
-            this.retryTicks = retryTicks == null || retryTicks.length == 0 ? DEFAULT_RETRY_TICKS.clone() : retryTicks.clone();
+            this.retryTicks = retryTicks == null || retryTicks.length == 0
+                    ? DEFAULT_RETRY_TICKS.clone()
+                    : retryTicks.clone();
             return this;
         }
 
