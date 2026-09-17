@@ -70,6 +70,23 @@ jobs:
               '''                return world.displayName();''',
               1,
           )
+
+          marker_start = "replace_once(\n    server,\n    '''    private String resolveWorldDisplayName"
+          marker_end = "\nreplace_once(\n    server,\n    '''        writeJson(exchange, Map.of("
+          start = text.index(marker_start)
+          end = text.index(marker_end, start)
+          robust = '''server_text = read(server)
+          method_start = server_text.index("    private String resolveWorldDisplayName(String worldKey) {")
+          method_end = server_text.index("    private String absoluteRequestUrl(HttpExchange exchange) {", method_start)
+          replacement_method = ''' + '"""' + '''    private String resolveWorldDisplayName(String worldKey) {
+              WebMapHttpSnapshot.WorldView world = module.getHttpSnapshot().findWorld(worldKey);
+              return world == null ? "" : world.displayName();
+          }
+
+          ''' + '"""' + '''
+          write(server, server_text[:method_start] + replacement_method + server_text[method_end:])
+          '''
+          text = text[:start] + robust + text[end:]
           path.write_text(text, encoding='utf-8')
           PY
           python3 tools/pr4_phase2.py
