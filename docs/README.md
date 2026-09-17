@@ -11,7 +11,8 @@ BetterSurvival は Paper 向けの大型サバイバル拡張プラグインで�
 | [機能一覧](FEATURES.md) | 実装されている機能をカテゴリ別に網羅 |
 | [コマンド一覧](COMMANDS.md) | Loader で登録されるコマンドと用途 |
 | [Just Leveling](LEVELING_SYSTEM.md) | 能力値、必要経験値、スキル、称号、Book、Otherworld 連携 |
-| [ChestGUI デモ](leveling-gui-demo.html) | 実際の 9×6 ChestGUI をブラウザ上で操作できるモック |
+| [ChestGUI ビジュアルガイド](LEVELING_GUI.md) | Wiki上の静的モック、実スロット表、Interactive版への入口 |
+| [ChestGUI Interactive Mock](leveling-gui-demo.html) | 実際の 9×6 ChestGUI をブラウザ上で操作できるモック |
 | [Floodgate / Bedrock](Floodgate.md) | Floodgate / Bedrock 関連設定 |
 | [YouTube OAuth](YOUTUBE_OAUTH_SETUP.md) | YouTube 連携のセットアップ |
 | [TrueCrafter attribution](TRUECRAFTER_ATTRIBUTION.md) | TrueCrafter 由来部分の帰属情報 |
@@ -36,11 +37,11 @@ BetterSurvival は Paper 向けの大型サバイバル拡張プラグインで�
 4. 8能力値のアイコンをクリックし、Minecraft の経験値レベルを消費して強化
 5. `称号` から解放済みタイトルを選択
 
-GUI の見た目とスロット配置は [Just Leveling](LEVELING_SYSTEM.md) と [ChestGUI デモ](leveling-gui-demo.html) を参照してください。
+GUI の見た目は [ChestGUI ビジュアルガイド](LEVELING_GUI.md)、ゲーム仕様は [Just Leveling](LEVELING_SYSTEM.md) を参照してください。
 
 ## ドキュメント更新ルール
 
 - コマンド名・設定値・GUI のスロット・数式は **Java 実装を正** とする
 - 機能追加時は [FEATURES.md](FEATURES.md) と、必要なら [COMMANDS.md](COMMANDS.md) も同時更新する
-- Just Leveling の能力値 / スキル / 称号を変更した場合は [LEVELING_SYSTEM.md](LEVELING_SYSTEM.md) と ChestGUI デモも同時更新する
+- Just Leveling の能力値 / スキル / 称号を変更した場合は [LEVELING_SYSTEM.md](LEVELING_SYSTEM.md)、[LEVELING_GUI.md](LEVELING_GUI.md)、Interactive Mock も同時更新する
 - 実装と Wiki が食い違う場合は、推測で埋めず実装を確認して Wiki を直す
