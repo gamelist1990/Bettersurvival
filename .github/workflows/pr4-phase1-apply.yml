@@ -30,7 +30,24 @@ jobs:
           cache: gradle
 
       - name: Apply WebMap snapshot refactor
-        run: python3 tools/pr4_phase2.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/pr4_phase2.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''    "for (World world : module.getPlugin().getServer().getWorlds()) {",
+              "for (WebMapHttpSnapshot.WorldView world : module.getHttpSnapshot().worlds()) {",
+              3,
+          )'''
+          new = '''    "for (World world : module.getPlugin().getServer().getWorlds()) {",
+              "for (WebMapHttpSnapshot.WorldView world : module.getHttpSnapshot().worlds()) {",
+              4,
+          )'''
+          if text.count(old) != 1:
+              raise SystemExit('world-loop migration anchor mismatch')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 tools/pr4_phase2.py
 
       - name: Validate patch whitespace
         run: git diff --check
@@ -43,7 +60,7 @@ jobs:
       - name: Commit validated changes
         shell: bash
         run: |
-          if git diff --quiet; then
+          if git diff --quiet -- src/main/java; then
             echo "No generated source changes to commit."
             exit 0
           fi
