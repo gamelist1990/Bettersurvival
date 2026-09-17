@@ -29,10 +29,8 @@ jobs:
           java-version: '25'
           cache: gradle
 
-      - name: Apply phase 1 refactor
-        run: |
-          sed -i 's/private static String normalize(String value)/private String normalize(String value)/' tools/pr4_phase1.py
-          python3 tools/pr4_phase1.py
+      - name: Apply WebMap snapshot refactor
+        run: python3 tools/pr4_phase2.py
 
       - name: Validate patch whitespace
         run: git diff --check
@@ -52,13 +50,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Loader.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/LandProtection/LandProtectionModule.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/Otherworld/OtherworldModule.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/Otherworld/OtherworldPlayerDataStore.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/Pet/PetModule.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/SharedStorage/SharedStorageNamespaceListener.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/SharedStorage/SharedStorageModule.java \
-            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/AirDash/AirDashModule.java
-          git commit -m "perf: finish runtime hot-path and persistence audit"
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/WebMap/WebMapModule.java \
+            src/main/java/org/pexserver/koukunn/bettersurvival/Modules/Feature/WebMap/WebMapHttpServer.java
+          git commit -m "perf: isolate WebMap HTTP threads from Bukkit state"
           git push origin HEAD:refactor/performance-bug-audit
