@@ -10,15 +10,26 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Base64;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Otherworld グループ単位で Vanilla inventory / XP / EnderChest を保存する。
- * default は既存の Vanilla playerdata を初期値として自動移行する。
+ * Bukkit の Player/ItemStack 参照はメインスレッドで snapshot/apply し、
+ * ディスク I/O だけを専用の単一スレッドへ逃がす。
  */
 public final class OtherworldPlayerDataStore {
     private static final String KEY_INVENTORY = "inventory";
@@ -37,6 +48,9 @@ public final class OtherworldPlayerDataStore {
 
     private final Loader plugin;
     private final File root;
+    private final ExecutorService ioExecutor;
+    private final AtomicLong loadSequence = new AtomicLong();
+    private final Map<UUID, Long> activeLoads = new ConcurrentHashMap<>();
 
     public OtherworldPlayerDataStore(Loader plugin) {
         this.plugin = plugin;
@@ -44,20 +58,72 @@ public final class OtherworldPlayerDataStore {
         if (!root.exists() && !root.mkdirs()) {
             plugin.getLogger().warning("[Otherworld] playerdata フォルダを作成できませんでした");
         }
+        this.ioExecutor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "BetterSurvival-Otherworld-IO");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     public boolean hasData(UUID playerId, String scope) {
         return dataFile(playerId, scope).isFile();
     }
 
-    /** 旧仕様の共有 Vanilla データを default 側へ一度だけ退避する。 */
+    /** 旧仕様の共有 Vanilla データを default 側へ一度だけ非同期退避する。 */
     public void ensureDefaultMigration(Player player) {
-        if (player == null || hasData(player.getUniqueId(), "default")) return;
-        save(player, "default");
+        if (player == null || ioExecutor.isShutdown()) return;
+        Properties snapshot = capture(player);
+        UUID playerId = player.getUniqueId();
+        submitIo(() -> savePropertiesIfAbsent(playerId, "default", snapshot));
     }
 
+    /** Player の状態をメインスレッド上で snapshot し、ファイル書き込みだけを非同期化する。 */
     public void save(Player player, String scope) {
-        if (player == null) return;
+        if (player == null || ioExecutor.isShutdown()) return;
+        Properties snapshot = capture(player);
+        UUID playerId = player.getUniqueId();
+        String normalizedScope = normalizeScope(scope);
+        submitIo(() -> saveProperties(playerId, normalizedScope, snapshot));
+    }
+
+    /**
+     * scope のファイル読み込みを非同期化し、Bukkit inventory/location への反映はメインスレッドへ戻す。
+     * 同一プレイヤーで load が連続した場合は最後の要求だけを適用し、古い read の stale apply を防ぐ。
+     */
+    public void load(Player player, String scope) {
+        if (player == null || ioExecutor.isShutdown()) return;
+        UUID playerId = player.getUniqueId();
+        String normalizedScope = normalizeScope(scope);
+        long requestId = loadSequence.incrementAndGet();
+        activeLoads.put(playerId, requestId);
+        submitIo(() -> {
+            File file = dataFile(playerId, normalizedScope);
+            boolean exists = file.isFile();
+            Properties properties = exists ? loadProperties(playerId, normalizedScope) : null;
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                Long current = activeLoads.get(playerId);
+                if (!Objects.equals(current, requestId) || !player.isOnline()) return;
+                activeLoads.remove(playerId, requestId);
+                if (exists && properties == null) {
+                    // 読み込みエラー時は現在の状態を壊さない。
+                    return;
+                }
+                if (!exists) {
+                    if ("default".equals(normalizedScope)) {
+                        save(player, normalizedScope);
+                        return;
+                    }
+                    clear(player);
+                    save(player, normalizedScope);
+                    return;
+                }
+                apply(player, properties);
+            });
+        });
+    }
+
+    private Properties capture(Player player) {
         Properties properties = new Properties();
         PlayerInventory inventory = player.getInventory();
         properties.setProperty(KEY_INVENTORY, encode(normalize(inventory.getStorageContents(), 36)));
@@ -76,26 +142,10 @@ public final class OtherworldPlayerDataStore {
             properties.setProperty(KEY_YAW, Float.toString(location.getYaw()));
             properties.setProperty(KEY_PITCH, Float.toString(location.getPitch()));
         }
-        saveProperties(player.getUniqueId(), scope, properties);
+        return properties;
     }
 
-    /**
-     * scope のデータを適用する。存在しない非default scopeは完全な新規状態にする。
-     */
-    public void load(Player player, String scope) {
-        if (player == null) return;
-        String normalizedScope = normalizeScope(scope);
-        if (!hasData(player.getUniqueId(), normalizedScope)) {
-            if ("default".equals(normalizedScope)) {
-                save(player, normalizedScope);
-                return;
-            }
-            clear(player);
-            save(player, normalizedScope);
-            return;
-        }
-
-        Properties properties = loadProperties(player.getUniqueId(), normalizedScope);
+    private void apply(Player player, Properties properties) {
         PlayerInventory inventory = player.getInventory();
         inventory.setStorageContents(decode(properties.getProperty(KEY_INVENTORY), 36));
         inventory.setArmorContents(decode(properties.getProperty(KEY_ARMOR), 4));
@@ -140,13 +190,19 @@ public final class OtherworldPlayerDataStore {
     private Properties loadProperties(UUID playerId, String scope) {
         Properties properties = new Properties();
         File file = dataFile(playerId, scope);
-        if (!file.isFile()) return properties;
         try (var reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
             properties.load(reader);
+            return properties;
         } catch (IOException exception) {
             plugin.getLogger().warning("[Otherworld] playerdata 読み込み失敗: " + file.getPath());
+            return null;
         }
-        return properties;
+    }
+
+    private void savePropertiesIfAbsent(UUID playerId, String scope, Properties properties) {
+        File file = dataFile(playerId, scope);
+        if (file.isFile()) return;
+        saveProperties(playerId, scope, properties);
     }
 
     private void saveProperties(UUID playerId, String scope, Properties properties) {
@@ -156,10 +212,45 @@ public final class OtherworldPlayerDataStore {
             plugin.getLogger().warning("[Otherworld] playerdata フォルダを作成できませんでした: " + parent.getPath());
             return;
         }
-        try (var writer = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
+        File temporary = new File(parent, file.getName() + ".tmp");
+        try (var writer = Files.newBufferedWriter(temporary.toPath(), StandardCharsets.UTF_8)) {
             properties.store(writer, "BetterSurvival Otherworld player data");
         } catch (IOException exception) {
             plugin.getLogger().warning("[Otherworld] playerdata 保存失敗: " + file.getPath());
+            return;
+        }
+        try {
+            Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            try {
+                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException exception) {
+                plugin.getLogger().warning("[Otherworld] playerdata 保存失敗: " + file.getPath());
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("[Otherworld] playerdata 保存失敗: " + file.getPath());
+        }
+    }
+
+    private void submitIo(Runnable task) {
+        try {
+            ioExecutor.execute(task);
+        } catch (RejectedExecutionException ignored) {
+            // Plugin shutdown 中の遅延イベントは無視する。
+        }
+    }
+
+    public void shutdown() {
+        activeLoads.clear();
+        ioExecutor.shutdown();
+        try {
+            if (!ioExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                plugin.getLogger().warning("[Otherworld] playerdata I/O の終了待機がタイムアウトしました");
+                ioExecutor.shutdownNow();
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            ioExecutor.shutdownNow();
         }
     }
 

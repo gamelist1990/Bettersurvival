@@ -49,6 +49,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.ui.LandMenu;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.Party;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Party.PartyRank;
@@ -82,6 +83,7 @@ public class LandProtectionModule implements Listener {
 
     private final ToggleModule toggle;
     private final PartyModule partyModule;
+    private final OtherworldModule otherworldModule;
     private final ClaimStore store;
     private final LandMenu menu;
     private final ClaimVisualizer visualizer;
@@ -89,6 +91,8 @@ public class LandProtectionModule implements Listener {
     private final Map<String, ClaimRegion> claims = new LinkedHashMap<>();
     /** ワールド名 -> そのワールドの保護領域一覧（高速参照用） */
     private final Map<String, List<ClaimRegion>> worldIndex = new LinkedHashMap<>();
+    /** worldName -> packed chunk coordinate -> claims intersecting that chunk. */
+    private final Map<String, Map<Long, List<ClaimRegion>>> spatialIndex = new LinkedHashMap<>();
     /** プレイヤーが現在滞在している保護領域キー（侵入通知用） */
     private final Map<UUID, String> insideClaim = new ConcurrentHashMap<>();
     /** 拒否メッセージのスパム防止 */
@@ -109,9 +113,11 @@ public class LandProtectionModule implements Listener {
     private final BukkitTask raidTask;
 
     public LandProtectionModule(Loader plugin, ToggleModule toggle,
-                                ItemCombineModule itemCombineModule, PartyModule partyModule) {
+                                ItemCombineModule itemCombineModule, PartyModule partyModule,
+                                OtherworldModule otherworldModule) {
         this.toggle = toggle;
         this.partyModule = partyModule;
+        this.otherworldModule = otherworldModule;
         this.store = new ClaimStore(plugin.getConfigManager());
         this.coreKey = new NamespacedKey(plugin, "land_core");
         this.dataOwnerKey = new NamespacedKey(plugin, "land_core_owner");
@@ -216,7 +222,8 @@ public class LandProtectionModule implements Listener {
         if (world == null) {
             return null;
         }
-        for (ClaimRegion claim : getClaimsInWorld(world.getName())) {
+        for (ClaimRegion claim : getClaimCandidates(world.getName(),
+                location.getBlockX(), location.getBlockZ(), 0)) {
             if (claim.isActive() && claim.containsHorizontal(location)) {
                 resolvePartyLazy(claim);
                 return claim;
@@ -293,9 +300,56 @@ public class LandProtectionModule implements Listener {
 
     private void rebuildWorldIndex() {
         worldIndex.clear();
+        spatialIndex.clear();
         for (ClaimRegion claim : claims.values()) {
             worldIndex.computeIfAbsent(claim.getWorldName(), k -> new ArrayList<>()).add(claim);
+            indexSpatially(claim);
         }
+    }
+
+    private void indexSpatially(ClaimRegion claim) {
+        Map<Long, List<ClaimRegion>> worldSpatial = spatialIndex.computeIfAbsent(
+                claim.getWorldName(), ignored -> new LinkedHashMap<>());
+        int radius = Math.max(0, claim.getRadius());
+        int minChunkX = Math.floorDiv(claim.getX() - radius, 16);
+        int maxChunkX = Math.floorDiv(claim.getX() + radius, 16);
+        int minChunkZ = Math.floorDiv(claim.getZ() - radius, 16);
+        int maxChunkZ = Math.floorDiv(claim.getZ() + radius, 16);
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                worldSpatial.computeIfAbsent(packChunkKey(chunkX, chunkZ), ignored -> new ArrayList<>()).add(claim);
+            }
+        }
+    }
+
+    private List<ClaimRegion> getClaimCandidates(String worldName, int x, int z, int radius) {
+        Map<Long, List<ClaimRegion>> worldSpatial = spatialIndex.get(worldName);
+        if (worldSpatial == null || worldSpatial.isEmpty()) {
+            return List.of();
+        }
+        int safeRadius = Math.max(0, radius);
+        int minChunkX = Math.floorDiv(x - safeRadius, 16);
+        int maxChunkX = Math.floorDiv(x + safeRadius, 16);
+        int minChunkZ = Math.floorDiv(z - safeRadius, 16);
+        int maxChunkZ = Math.floorDiv(z + safeRadius, 16);
+        if (minChunkX == maxChunkX && minChunkZ == maxChunkZ) {
+            List<ClaimRegion> bucket = worldSpatial.get(packChunkKey(minChunkX, minChunkZ));
+            return bucket == null ? List.of() : bucket;
+        }
+        java.util.LinkedHashSet<ClaimRegion> candidates = new java.util.LinkedHashSet<>();
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                List<ClaimRegion> bucket = worldSpatial.get(packChunkKey(chunkX, chunkZ));
+                if (bucket != null) {
+                    candidates.addAll(bucket);
+                }
+            }
+        }
+        return candidates.isEmpty() ? List.of() : new ArrayList<>(candidates);
+    }
+
+    private static long packChunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) ^ (chunkZ & 0xffffffffL);
     }
 
     private void registerClaim(ClaimRegion claim) {
@@ -344,7 +398,8 @@ public class LandProtectionModule implements Listener {
 
         // 個人/ギルドごとに保護コアは 1 つまで
         UUID placingOwner = incoming.getOwner() != null ? incoming.getOwner() : player.getUniqueId();
-        ClaimRegion existingPersonal = findClaimByOwner(placingOwner);
+        String scope = scopeForWorldName(worldName);
+        ClaimRegion existingPersonal = findClaimByOwner(placingOwner, scope);
         if (existingPersonal != null && !existingPersonal.key().equals(incoming.key())) {
             event.setCancelled(true);
             player.sendMessage("§c既に土地保護コアを設置済みです");
@@ -354,7 +409,7 @@ public class LandProtectionModule implements Listener {
             return;
         }
         if (incoming.getPartyId() != null) {
-            ClaimRegion existingParty = findClaimByParty(incoming.getPartyId());
+            ClaimRegion existingParty = findClaimByParty(incoming.getPartyId(), scope);
             if (existingParty != null && !existingParty.key().equals(incoming.key())) {
                 event.setCancelled(true);
                 player.sendMessage("§c所属ギルドは既に別の土地保護コアを設置済みです");
@@ -366,7 +421,7 @@ public class LandProtectionModule implements Listener {
         }
 
         // 他人の保護エリアと重複する場所には設置できない
-        for (ClaimRegion existing : getClaimsInWorld(worldName)) {
+        for (ClaimRegion existing : getClaimCandidates(worldName, placed.getX(), placed.getZ(), incoming.getRadius())) {
             if (!existing.intersects(worldName, placed.getX(), placed.getZ(), incoming.getRadius())) {
                 continue;
             }
@@ -915,7 +970,7 @@ public class LandProtectionModule implements Listener {
 
         int newRadius = ClaimLevel.radius(nextLevel);
         // 拡大後の範囲が他人の保護エリアと重ならないか確認
-        for (ClaimRegion existing : getClaimsInWorld(claim.getWorldName())) {
+        for (ClaimRegion existing : getClaimCandidates(claim.getWorldName(), claim.getX(), claim.getZ(), newRadius)) {
             if (existing.key().equals(claim.key())) {
                 continue;
             }
@@ -929,6 +984,7 @@ public class LandProtectionModule implements Listener {
             player.getInventory().removeItem(new ItemStack(req.material(), req.amount()));
         }
         claim.setLevel(nextLevel);
+        rebuildWorldIndex();
         saveAll();
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0F, 1.0F);
         return null;
@@ -970,7 +1026,7 @@ public class LandProtectionModule implements Listener {
         if (party == null) {
             return "パーティーに所属していません";
         }
-        ClaimRegion existingParty = findClaimByParty(party.getId());
+        ClaimRegion existingParty = findClaimByParty(party.getId(), scopeForWorldName(claim.getWorldName()));
         if (existingParty != null && !existingParty.key().equals(claim.key())) {
             return "所属ギルドは既に別の土地保護コアを設置済みです (x: " + existingParty.getX()
                     + " y: " + existingParty.getY() + " z: " + existingParty.getZ() + ")";
@@ -983,11 +1039,16 @@ public class LandProtectionModule implements Listener {
     // ================= 所有制限 =================
 
     public ClaimRegion findClaimByOwner(UUID owner) {
+        return findClaimByOwner(owner, null);
+    }
+
+    private ClaimRegion findClaimByOwner(UUID owner, String scope) {
         if (owner == null) {
             return null;
         }
         for (ClaimRegion claim : claims.values()) {
-            if (owner.equals(claim.getOwner())) {
+            if (owner.equals(claim.getOwner())
+                    && (scope == null || scope.equals(scopeForWorldName(claim.getWorldName())))) {
                 return claim;
             }
         }
@@ -995,15 +1056,24 @@ public class LandProtectionModule implements Listener {
     }
 
     public ClaimRegion findClaimByParty(UUID partyId) {
+        return findClaimByParty(partyId, null);
+    }
+
+    private ClaimRegion findClaimByParty(UUID partyId, String scope) {
         if (partyId == null) {
             return null;
         }
         for (ClaimRegion claim : claims.values()) {
-            if (partyId.equals(claim.getPartyId())) {
+            if (partyId.equals(claim.getPartyId())
+                    && (scope == null || scope.equals(scopeForWorldName(claim.getWorldName())))) {
                 return claim;
             }
         }
         return null;
+    }
+
+    private String scopeForWorldName(String worldName) {
+        return otherworldModule == null ? "default" : otherworldModule.getGroupByWorldId(worldName);
     }
 
     // ================= レイド =================

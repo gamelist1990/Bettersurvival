@@ -3,6 +3,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.Pet;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -28,7 +29,9 @@ import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ItemCombineModule;
 
+import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
+import java.util.Queue;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Set;
@@ -46,6 +49,8 @@ public final class PetModule implements Listener {
     private final NamespacedKey ownerKey;
     private final NamespacedKey modeKey;
     private final Set<UUID> petIds = ConcurrentHashMap.newKeySet();
+    private final Queue<UUID> petQueue = new ArrayDeque<>();
+    private final Queue<Chunk> initialScan = new ArrayDeque<>();
     private final BukkitTask task;
 
     public PetModule(Loader plugin, ItemCombineModule itemCombineModule) {
@@ -54,13 +59,15 @@ public final class PetModule implements Listener {
         ownerKey = new NamespacedKey(plugin, "pet_owner");
         modeKey = new NamespacedKey(plugin, "pet_mode");
         registerRecipes(itemCombineModule);
-        Bukkit.getWorlds().forEach(world -> world.getEntitiesByClass(Mob.class).stream()
-                .filter(this::isPet).forEach(mob -> petIds.add(mob.getUniqueId())));
+        Bukkit.getWorlds().forEach(world -> java.util.Collections.addAll(initialScan, world.getLoadedChunks()));
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 10L);
     }
 
     public void shutdown() {
         task.cancel();
+        initialScan.clear();
+        petQueue.clear();
+        petIds.clear();
     }
 
     public List<String> supportedTypes() {
@@ -90,7 +97,7 @@ public final class PetModule implements Listener {
             event.setCancelled(true);
             consumeOne(player);
             mob.getPersistentDataContainer().set(ownerKey, PersistentDataType.STRING, player.getUniqueId().toString());
-            petIds.add(mob.getUniqueId());
+            trackPet(mob);
             setMode(mob, Mode.FOLLOW);
             mob.setPersistent(true);
             mob.setRemoveWhenFarAway(false);
@@ -159,7 +166,7 @@ public final class PetModule implements Listener {
     @EventHandler
     public void onEntitiesLoad(EntitiesLoadEvent event) {
         event.getEntities().stream().filter(Mob.class::isInstance).map(Mob.class::cast)
-                .filter(this::isPet).forEach(mob -> petIds.add(mob.getUniqueId()));
+                .filter(this::isPet).forEach(this::trackPet);
     }
 
     @EventHandler
@@ -168,45 +175,88 @@ public final class PetModule implements Listener {
     }
 
     private void tick() {
-        for (UUID petId : java.util.List.copyOf(petIds)) {
-            if (!(Bukkit.getEntity(petId) instanceof Mob mob) || !mob.isValid()) {
+        scanInitialChunks(2);
+        int budget = Math.min(128, petIds.size());
+        for (int i = 0; i < budget; i++) {
+            UUID petId = petQueue.poll();
+            if (petId == null) {
+                break;
+            }
+            if (!petIds.contains(petId)) {
                 continue;
             }
-                String owner = mob.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
-                if (owner == null) {
-                    petIds.remove(petId);
-                    continue;
+            if (!(Bukkit.getEntity(petId) instanceof Mob mob) || !mob.isValid()) {
+                petIds.remove(petId);
+                continue;
+            }
+            updatePet(petId, mob);
+            if (petIds.contains(petId)) {
+                petQueue.offer(petId);
+            }
+        }
+    }
+
+    private void scanInitialChunks(int budget) {
+        for (int i = 0; i < budget; i++) {
+            Chunk chunk = initialScan.poll();
+            if (chunk == null) {
+                return;
+            }
+            if (!chunk.isLoaded()) {
+                continue;
+            }
+            for (org.bukkit.entity.Entity entity : chunk.getEntities()) {
+                if (entity instanceof Mob mob && isPet(mob)) {
+                    trackPet(mob);
                 }
-                Player player;
-                try {
-                    player = Bukkit.getPlayer(UUID.fromString(owner));
-                } catch (IllegalArgumentException ignored) {
-                    continue;
-                }
-                Mode mode = getMode(mob);
-                boolean staying = mode == Mode.STAY;
-                mob.setAware(!staying);
-                if (mob instanceof Sittable sittable) {
-                    sittable.setSitting(staying);
-                }
-                if (staying || mode == Mode.ROAM || player == null || player.isDead() || mob.isLeashed()) {
-                    if (staying) mob.getPathfinder().stopPathfinding();
-                    continue;
-                }
-                if (!mob.getWorld().equals(player.getWorld())) {
-                    // Entity.teleport does not fire PlayerTeleportEvent, so Otherworld's
-                    // player boundary cannot protect pets automatically.
-                    if (plugin.getOtherworldModule() != null
-                            && !plugin.getOtherworldModule().getGroup(mob.getWorld())
-                                    .equals(plugin.getOtherworldModule().getGroup(player.getWorld()))) {
-                        continue;
-                    }
-                    mob.teleport(player.getLocation());
-                } else if (mob.getLocation().distanceSquared(player.getLocation()) > 256) {
-                    mob.teleport(player.getLocation());
-                } else if (mob.getLocation().distanceSquared(player.getLocation()) > 9) {
-                    mob.getPathfinder().moveTo(player, 1.2);
-                }
+            }
+        }
+    }
+
+    private void trackPet(Mob mob) {
+        UUID petId = mob.getUniqueId();
+        if (petIds.add(petId)) {
+            petQueue.offer(petId);
+        }
+    }
+
+    private void updatePet(UUID petId, Mob mob) {
+        String owner = mob.getPersistentDataContainer().get(ownerKey, PersistentDataType.STRING);
+        if (owner == null) {
+            petIds.remove(petId);
+            return;
+        }
+        Player player;
+        try {
+            player = Bukkit.getPlayer(UUID.fromString(owner));
+        } catch (IllegalArgumentException ignored) {
+            petIds.remove(petId);
+            return;
+        }
+        Mode mode = getMode(mob);
+        boolean staying = mode == Mode.STAY;
+        mob.setAware(!staying);
+        if (mob instanceof Sittable sittable) {
+            sittable.setSitting(staying);
+        }
+        if (staying || mode == Mode.ROAM || player == null || player.isDead() || mob.isLeashed()) {
+            if (staying) mob.getPathfinder().stopPathfinding();
+            return;
+        }
+        if (!mob.getWorld().equals(player.getWorld())) {
+            if (plugin.getOtherworldModule() != null
+                    && !plugin.getOtherworldModule().getGroup(mob.getWorld())
+                            .equals(plugin.getOtherworldModule().getGroup(player.getWorld()))) {
+                return;
+            }
+            mob.teleport(player.getLocation());
+        } else {
+            double distanceSquared = mob.getLocation().distanceSquared(player.getLocation());
+            if (distanceSquared > 256) {
+                mob.teleport(player.getLocation());
+            } else if (distanceSquared > 9) {
+                mob.getPathfinder().moveTo(player, 1.2);
+            }
         }
     }
 

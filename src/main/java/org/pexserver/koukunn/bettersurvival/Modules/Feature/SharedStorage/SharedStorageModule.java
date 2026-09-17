@@ -1007,7 +1007,7 @@ public class SharedStorageModule implements Listener {
                     return PlacementResult.MAIN_ALREADY_EXISTS;
             }
             network.setMain(anchor);
-            reindexAllPlacements();
+            reindexNetwork(network);
             return PlacementResult.SUCCESS;
         }
 
@@ -1020,7 +1020,7 @@ public class SharedStorageModule implements Listener {
         if (matchedSub != null)
             network.removeSub(matchedSub);
         network.addSub(anchor);
-        reindexAllPlacements();
+        reindexNetwork(network);
         return PlacementResult.SUCCESS;
     }
 
@@ -1110,6 +1110,36 @@ public class SharedStorageModule implements Listener {
             networks.remove(removedId);
     }
 
+    private void reindexNetwork(SharedNetwork network) {
+        if (network == null) {
+            return;
+        }
+        placements.entrySet().removeIf(entry -> entry.getValue().id().equals(network.id()));
+        if (network.main() != null) {
+            List<Location> mainFootprint = resolveContainerLocations(network.main());
+            if (mainFootprint.isEmpty()) {
+                network.setMain(null);
+            } else {
+                Location canonicalMain = canonicalAnchor(mainFootprint);
+                network.setMain(canonicalMain);
+                indexPlacement(network.id(), ROLE_MAIN, canonicalMain, mainFootprint);
+            }
+        }
+        List<Location> rewrittenSubs = new ArrayList<>();
+        for (Location subAnchor : new ArrayList<>(network.subs())) {
+            List<Location> subFootprint = resolveContainerLocations(subAnchor);
+            if (subFootprint.isEmpty()) {
+                continue;
+            }
+            Location canonicalSub = canonicalAnchor(subFootprint);
+            if (!containsBlock(rewrittenSubs, canonicalSub)) {
+                rewrittenSubs.add(canonicalSub);
+            }
+            indexPlacement(network.id(), ROLE_SUB, canonicalSub, subFootprint);
+        }
+        network.replaceSubs(rewrittenSubs);
+    }
+
     private void indexPlacement(String id, String role, Location anchor, List<Location> footprint) {
         Placement placement = new Placement(id, role, anchor);
         for (Location location : footprint)
@@ -1122,7 +1152,7 @@ public class SharedStorageModule implements Listener {
 
     private void redistributeNetwork(SharedNetwork network, Player actor, boolean announce, List<ItemStack> trackedMainItems,
                                      List<ItemStack> injectedItems) {
-        reindexAllPlacements();
+        reindexNetwork(network);
         if (network.main() == null)
             return;
         ResolvedInventory main = resolveInventory(network.main());
