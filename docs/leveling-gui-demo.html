@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BetterSurvival - Just Leveling ChestGUI Mock</title>
+<style>
+:root{color-scheme:dark;--bg:#101216;--panel:#1b1f26;--slot:#8b8b8b;--slot-hi:#c6c6c6;--text:#f5f7fa;--muted:#aeb6c2;--xp:#80e65b;--gold:#ffd75e;--purple:#d78cff}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(circle at top,#252a34 0,#101216 55%);color:var(--text);min-height:100vh}main{width:min(1120px,94vw);margin:32px auto 64px}.hero{display:flex;gap:18px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap}.hero h1{margin:0;font-size:clamp(28px,5vw,52px);letter-spacing:-.04em}.hero p{max-width:700px;color:var(--muted);margin:.6rem 0 0}.badge{font:700 12px ui-monospace,monospace;padding:7px 10px;border:1px solid #ffffff25;border-radius:999px;background:#ffffff0b}.layout{display:grid;grid-template-columns:minmax(0,700px) minmax(260px,1fr);gap:22px;margin-top:24px}@media(max-width:880px){.layout{grid-template-columns:1fr}}.card{background:#161a20dd;border:1px solid #ffffff16;border-radius:18px;box-shadow:0 18px 55px #0008;overflow:hidden}.toolbar{padding:14px 16px;border-bottom:1px solid #ffffff13;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.toolbar .controls{display:flex;gap:8px;flex-wrap:wrap}button,select,input{font:inherit}.preset{border:1px solid #ffffff20;background:#262c36;color:#fff;padding:8px 11px;border-radius:9px;cursor:pointer}.preset:hover{background:#303846}.xpbox{display:flex;align-items:center;gap:8px;color:#d9e5d4}.xpbox input{width:85px;background:#0e1115;color:#fff;border:1px solid #ffffff28;border-radius:8px;padding:7px 8px}.minecraft-wrap{padding:28px;background:linear-gradient(135deg,#0e1115,#191d24);display:flex;justify-content:center}.mc-window{width:min(100%,650px);background:#c6c6c6;border:4px solid;border-color:#fff #555 #555 #fff;box-shadow:0 0 0 3px #222,0 18px 35px #0008;padding:13px;image-rendering:pixelated;color:#373737;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.mc-title{font-weight:800;margin:0 0 9px;text-shadow:1px 1px #fff}.grid{display:grid;grid-template-columns:repeat(9,1fr);gap:2px}.slot{aspect-ratio:1;min-width:0;position:relative;display:flex;align-items:center;justify-content:center;background:#8b8b8b;border:3px solid;border-color:#373737 #fff #fff #373737;cursor:default;user-select:none}.slot.action{cursor:pointer}.slot.action:hover,.slot.action.active{background:#a8a8a8;outline:2px solid #ffffa0;outline-offset:-2px}.slot img{width:70%;height:70%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(2px 2px 0 #0005)}.slot .fallback{font-size:10px;font-weight:900;color:#fff;text-shadow:1px 1px #111;text-align:center;padding:2px}.slot .num{position:absolute;right:3px;bottom:1px;color:#fff;font-size:11px;text-shadow:1px 1px #222}.slot.progress{cursor:default}.slot.progress.done{background:#67a851}.slot.progress.todo{background:#676767}.slot.close{background:#9f6666}.slot.help{background:#6e82aa}.legend{padding:15px 18px;color:var(--muted);font-size:13px;line-height:1.7;border-top:1px solid #ffffff12}.details{padding:20px}.details h2{margin:0 0 8px;font-size:22px}.details .icon-title{display:flex;align-items:center;gap:12px}.details .icon-title img{width:42px;height:42px;image-rendering:pixelated}.meta{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:16px 0}.metric{background:#ffffff08;border:1px solid #ffffff0f;border-radius:11px;padding:11px}.metric small{display:block;color:var(--muted);margin-bottom:3px}.metric strong{font-size:18px}.bar{height:11px;background:#0d1014;border-radius:99px;overflow:hidden;border:1px solid #ffffff20}.bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#59b34c,#b6f06f);transition:width .25s}.lore{white-space:pre-line;background:#0c0f13;border:1px solid #ffffff14;border-radius:12px;padding:13px;color:#e8edf3;line-height:1.65;min-height:150px}.hint{margin-top:14px;color:#90a0b2;font-size:12px}.source{margin-top:20px;padding:13px 16px;border:1px dashed #ffffff24;border-radius:12px;color:#aeb6c2;font-size:12px}.source a{color:#9ed0ff}.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;background:#12171d;border:1px solid #ffffff25;border-radius:12px;padding:10px 14px;box-shadow:0 10px 40px #000a;transition:.2s;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<main>
+  <div class="hero"><div><h1>Just Leveling ChestGUI</h1><p>BetterSurvival の実装スロットを再現した、クリック可能な Wiki 用モックです。能力値をクリックすると XP level を消費してレベルアップする流れをブラウザ上で試せます。</p></div><span class="badge">9 × 6 · 54 slots</span></div>
+  <section class="layout">
+    <div class="card">
+      <div class="toolbar"><div class="controls"><button class="preset" data-preset="new">New Player</button><button class="preset" data-preset="mid">Mid Game</button><button class="preset" data-preset="end">End Game</button></div><label class="xpbox">Minecraft XP Lv <input id="xp" type="number" min="0" max="999" value="32"></label></div>
+      <div class="minecraft-wrap"><div class="mc-window"><div class="mc-title">Just Leveling · Progression Board</div><div id="grid" class="grid" aria-label="Chest GUI mock"></div></div></div>
+      <div class="legend">クリック可能: 8能力値 / 称号 / Help / Close。<br>能力値コストは実装と同じ <code>5 + floor(currentLevel / 2)</code>、最大 Lv.32 です。</div>
+    </div>
+    <aside class="card details">
+      <div class="icon-title"><img id="detailIcon" alt=""><div><h2 id="detailTitle">プレイヤー概要</h2><div id="detailSub" style="color:var(--muted)">スロットをクリックして詳細を確認</div></div></div>
+      <div class="meta"><div class="metric"><small>XP Level</small><strong id="metricXp">32</strong></div><div class="metric"><small>Total Aptitude</small><strong id="metricTotal">0 / 256</strong></div></div>
+      <div class="bar"><i id="bar"></i></div>
+      <div id="lore" class="lore" style="margin-top:14px">8能力値から好きな能力を選び、Minecraft の経験値レベルを使って成長させます。\n\nOtherworld を使う場合、能力値プロフィールは world group ごとに分離されます。</div>
+      <div class="hint">これはドキュメント用モックです。サーバーの保存データは変更しません。</div>
+    </aside>
+  </section>
+  <div class="source">Item textures: <a href="https://github.com/PrismarineJS/minecraft-assets" target="_blank" rel="noreferrer">PrismarineJS/minecraft-assets</a> の Minecraft 1.21.8 asset を外部 URL 参照しています。画像が取得できない場合は文字ラベルを表示します。</div>
+</main>
+<div id="toast" class="toast"></div>
+<script>
+const ASSET='https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.21.8/items/';
+const aptitudes=[
+ {key:'strength',name:'筋力',abbr:'STR',icon:'iron_sword.png',slot:10,color:'§e',skills:'Lv10 片手の達人 / Lv16 闘志 / Lv30 狂戦士'},
+ {key:'constitution',name:'体力',abbr:'CON',icon:'golden_apple.png',slot:12,skills:'Lv10 運動能力 / Lv20 亀の守り / Lv32 獅子の心'},
+ {key:'dexterity',name:'敏捷',abbr:'DEX',icon:'bow.png',slot:14,skills:'Lv10 高速再配置 / Lv16 隠密の達人 / Lv32 猫の目'},
+ {key:'defense',name:'防御',abbr:'DEF',icon:'shield.png',slot:16,skills:'Lv10 雪上歩行 / Lv18 反撃 / Lv30 金剛の皮膚'},
+ {key:'intelligence',name:'知力',abbr:'INT',icon:'enchanting_table.png',slot:28,skills:'Lv8 学者 / Lv16 値切り上手 / Lv30 錬金術操作'},
+ {key:'building',name:'建築',abbr:'BLD',icon:'diamond_pickaxe.png',slot:30,skills:'Lv12 黒曜石破砕 / Lv20 トレジャーハンター / Lv30 収束'},
+ {key:'magic',name:'魔力',abbr:'MAG',icon:'brewing_stand.png',slot:32,skills:'Lv12 安全転移 / Lv18 生命吸収 / Lv32 ワームホール倉庫'},
+ {key:'luck',name:'幸運',abbr:'LCK',icon:'emerald.png',slot:34,skills:'Lv12 運命のダイス / Lv22 幸運ドロップ / Lv32 限界突破'}
+];
+const thresholds10=[5,8,11,14,17,20,23,26,29,32], thresholds5=[8,14,20,26,32];
+const state={xp:32,levels:Object.fromEntries(aptitudes.map(a=>[a.key,0])),selected:null};
+const icons={player:'player_head.png',xp:'experience_bottle.png',title:'name_tag.png',help:'book.png',close:'barrier.png'};
+function cost(l){return 5+Math.floor(l/2)}function tier(l,arr){return arr.filter(x=>l>=x).length}
+function rank(l){if(l>=32)return'超越者';if(l>=28)return'達人';if(l>=24)return'熟練者';if(l>=20)return'上級者';if(l>=16)return'中級者';if(l>=12)return'一人前';if(l>=8)return'見習い';if(l>=4)return'駆け出し';return'初心者'}
+function img(name,alt){const el=document.createElement('img');el.src=ASSET+name;el.alt=alt||'';el.onerror=()=>{el.style.display='none';const f=document.createElement('span');f.className='fallback';f.textContent=alt||'?';el.parentElement?.appendChild(f)};return el}
+function slotBase(i){const s=document.createElement('div');s.className='slot';s.dataset.slot=i;return s}
+function addItem(slot,item,click){const cell=document.querySelector(`[data-slot="${slot}"]`);if(!cell)return;cell.classList.add('action');cell.appendChild(img(item.icon,item.short||item.name));if(item.count){const n=document.createElement('span');n.className='num';n.textContent=item.count;cell.appendChild(n)}cell.title=item.name;if(click)cell.onclick=click}
+function render(){state.xp=Math.max(0,Number(document.querySelector('#xp').value)||0);const g=document.querySelector('#grid');g.innerHTML='';for(let i=0;i<54;i++)g.appendChild(slotBase(i));
+ aptitudes.forEach(a=>addItem(a.slot,{...a,short:a.abbr,count:state.levels[a.key]},()=>upgrade(a)));
+ addItem(22,{name:'プレイヤー概要',short:'YOU',icon:icons.player},()=>showOverview());
+ addItem(24,{name:'経験値',short:'XP',icon:icons.xp,count:state.xp},()=>showXp());
+ addItem(26,{name:'称号',short:'TITLE',icon:icons.title},()=>showTitles());
+ const total=Object.values(state.levels).reduce((a,b)=>a+b,0),segments=Math.round(total/256*7);[37,38,39,40,41,42,43].forEach((sl,i)=>{const c=document.querySelector(`[data-slot="${sl}"]`);c.classList.add('progress',i<segments?'done':'todo');c.innerHTML=`<span class="fallback">${i<segments?'◆':'◇'}</span>`});
+ addItem(45,{name:'ヘルプ',short:'?',icon:icons.help},()=>showHelp());document.querySelector('[data-slot="45"]').classList.add('help');
+ addItem(49,{name:'閉じる',short:'X',icon:icons.close},()=>toast('サーバー上では ChestUI.closeMenu(player)'));document.querySelector('[data-slot="49"]').classList.add('close');
+ updateMetrics();if(state.selected){const a=aptitudes.find(x=>x.key===state.selected);if(a)showAptitude(a,false)} }
+function upgrade(a){const lv=state.levels[a.key],c=cost(lv);state.selected=a.key;if(lv>=32){toast(`${a.name} は最大レベルです`);showAptitude(a);return}if(state.xp<c){toast(`XP level不足: 必要 ${c} / 所持 ${state.xp}`);showAptitude(a);return}state.xp-=c;state.levels[a.key]++;document.querySelector('#xp').value=state.xp;toast(`${a.name} → Lv.${state.levels[a.key]}`);render();showAptitude(a)}
+function showAptitude(a,mark=true){if(mark)state.selected=a.key;document.querySelectorAll('.slot').forEach(x=>x.classList.remove('active'));document.querySelector(`[data-slot="${a.slot}"]`)?.classList.add('active');const l=state.levels[a.key],c=cost(l);setDetail(a.name+' ['+a.abbr+']',`Lv.${l} / 32 · ${rank(l)}`,a.icon,`パッシブ: ${tier(l,thresholds10)}/10 / ${tier(l,thresholds5)}/5\n次の必要XPレベル: ${l>=32?'MAX':c}\n\n${a.skills}\n\n能力値アイコンをクリックすると、実ゲームと同じコスト計算でこのモック上のレベルが上がります。`)}
+function showOverview(){state.selected=null;const total=Object.values(state.levels).reduce((a,b)=>a+b,0);setDetail('プレイヤー概要',`default scope · ${total}/256`,'player_head.png',`全能力値の合計: ${total}\n現在のXP level: ${state.xp}\n\nOtherworld 使用時は、このプロフィールが world group ごとに分離されます。`)}
+function showXp(){state.selected=null;const next=Math.min(...aptitudes.filter(a=>state.levels[a.key]<32).map(a=>cost(state.levels[a.key])));setDetail('経験値',`Minecraft XP Lv.${state.xp}`,'experience_bottle.png',`レベルアップでは XP point ではなくプレイヤーの経験値レベルを消費します。\n\n現在もっとも安い次アップグレード: ${Number.isFinite(next)?next:'MAX'} level`)}
+function showTitles(){state.selected=null;setDetail('称号','41 titles · scope aware','name_tag.png','称号なしを含む41種類。能力値 Lv16 / Lv32、討伐数、釣り、エンチャント、交易、長期生存、乗り物移動、Nether / End 到達などで解放されます。\n\n実ゲームでは称号GUIへ遷移し、解放済みのものだけ選択できます。')}
+function showHelp(){state.selected=null;setDetail('遊び方','Interactive Wiki mock','book.png','1. 上部で XP level を変更\n2. 能力値アイコンをクリック\n3. 必要XPが足りればレベルアップ\n4. New / Mid / End Game でサンプル状態を切替\n\nサーバー側のデータは変更されません。')}
+function setDetail(title,sub,icon,lore){document.querySelector('#detailTitle').textContent=title;document.querySelector('#detailSub').textContent=sub;const d=document.querySelector('#detailIcon');d.src=ASSET+icon;d.onerror=()=>{d.style.visibility='hidden'};document.querySelector('#lore').textContent=lore;updateMetrics()}
+function updateMetrics(){const total=Object.values(state.levels).reduce((a,b)=>a+b,0);document.querySelector('#metricXp').textContent=state.xp;document.querySelector('#metricTotal').textContent=`${total} / 256`;document.querySelector('#bar').style.width=(total/256*100)+'%'}
+function toast(t){const el=document.querySelector('#toast');el.textContent=t;el.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>el.classList.remove('show'),1800)}
+document.querySelector('#xp').addEventListener('change',render);document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{const p=b.dataset.preset;if(p==='new'){state.xp=12;aptitudes.forEach(a=>state.levels[a.key]=0)}else if(p==='mid'){state.xp=45;aptitudes.forEach((a,i)=>state.levels[a.key]=[16,12,10,18,8,20,12,14][i])}else{state.xp=120;aptitudes.forEach((a,i)=>state.levels[a.key]=[32,30,28,32,26,30,24,32][i])}document.querySelector('#xp').value=state.xp;state.selected=null;render();showOverview()});render();showOverview();
+</script>
+</body>
+</html>
