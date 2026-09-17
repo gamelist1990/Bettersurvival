@@ -35,13 +35,14 @@ jobs:
           from pathlib import Path
           path = Path('tools/pr4_phase2.py')
           text = path.read_text(encoding='utf-8')
-          old = '''def replace_count(rel, old, new, expected):
+
+          old_count = '''def replace_count(rel, old, new, expected):
               text = read(rel)
               count = text.count(old)
               if count != expected:
                   raise RuntimeError(f"{rel}: expected {expected} matches, got {count}: {old[:180]!r}")
               write(rel, text.replace(old, new))'''
-          new = '''def replace_count(rel, old, new, expected):
+          new_count = '''def replace_count(rel, old, new, expected):
               text = read(rel)
               count = text.count(old)
               if count == 0:
@@ -49,9 +50,26 @@ jobs:
               if count != expected:
                   print(f"{rel}: replacing all {count} matches (initial estimate was {expected})")
               write(rel, text.replace(old, new))'''
-          if text.count(old) != 1:
+          if text.count(old_count) != 1:
               raise SystemExit('replace_count migration anchor mismatch')
-          text = text.replace(old, new, 1)
+          text = text.replace(old_count, new_count, 1)
+
+          text = text.replace(
+              'replace_once(server, "world.getEnvironment().name()", "world.environment()")',
+              'replace_count(server, "world.getEnvironment().name()", "world.environment()", 2)',
+              1,
+          )
+          text = text.replace(
+              'replace_once(server, "        WebMapDimensionSettings dimension = module.getDimensionSettings(world);\\n", "")',
+              'replace_count(server, "        WebMapDimensionSettings dimension = module.getDimensionSettings(world);\\n", "", 2)',
+              1,
+          )
+          text = text.replace(
+              '''                WebMapDimensionSettings dimension = module.getDimensionSettings(world);
+                return dimension.getDisplayName();''',
+              '''                return world.displayName();''',
+              1,
+          )
           path.write_text(text, encoding='utf-8')
           PY
           python3 tools/pr4_phase2.py
