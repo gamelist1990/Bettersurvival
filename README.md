@@ -1,127 +1,87 @@
-# Bettersurvival
+# BetterSurvival
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Java](https://img.shields.io/badge/Java-17+-blue.svg)](https://www.oracle.com/java/)
-[![Gradle](https://img.shields.io/badge/Gradle-8.x-green.svg)](https://gradle.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-25-blue.svg)](https://www.oracle.com/java/)
+[![Paper](https://img.shields.io/badge/Paper-26.2-4b8bbe.svg)](https://papermc.io/)
 
-Minecraft サーバー（Paper/Spigot）向けの機能拡張プラグイン。サーバー運営を支援する様々な機能を備えています。
+Minecraft Paper サーバー向けの大型サバイバル拡張プラグインです。採集・生活QoL、チェスト保護とショップ、Party / LandProtect、Bedrock連携、WebMap / WebService、Otherworld、HardMode / Just Leveling などを一つのプラグインで提供します。
 
-## 目次
+## Documentation / Wiki
 
-- [概要](#概要)
-- [機能](#機能)
-- [プロジェクト構造](#プロジェクト構造)
-- [インストール手順](#インストール手順)
-- [使用方法](#使用方法)
-- [貢献ガイドライン](#貢献ガイドライン)
-- [ライセンス](#ライセンス)
-- [連絡先](#連絡先)
+実装と同期したドキュメントは [`docs/README.md`](docs/README.md) を入口にしています。
 
-## 概要
+- **[Wiki Home](docs/README.md)**
+- **[実装済み機能一覧](docs/FEATURES.md)**
+- **[コマンド一覧](docs/COMMANDS.md)**
+- **[Just Leveling 完全ガイド](docs/LEVELING_SYSTEM.md)**
+- **[Just Leveling ChestGUI Interactive Mock](docs/leveling-gui-demo.html)**
+- **[Floodgate / Bedrock](docs/Floodgate.md)**
+- **[YouTube OAuth Setup](docs/YOUTUBE_OAUTH_SETUP.md)**
 
-Bettersurvival は、Minecraft サーバーの運営をより快適にするためのプラグインです。プレイヤーのブロックリスト管理だけでなく、自動化機能や便利なコマンドを提供し、サーバー管理者の負担を軽減します。
+## 主な機能
 
-## 機能
+### Survival / QoL
+TreeMine、OreMine、AutoFeed、AutoFishing、AnythingFeed、AutoPlant、DeathChest、Home、AirDash、Sit など。
 
-- **チェストロック**: チェストのロックと保護
-- **チェストソート**: チェスト内のアイテム自動整理
-- **自動餌やり**: 動物への自動餌やり機能
-- **何でも餌やり**: 任意のアイテムでの餌やり
-- **自動植え付け**: 種子の自動植え付け
-- **鉱石採掘**: 鉱石ブロックの効率的な採掘
-- **木採掘**: 木の効率的な伐採
-- **機能トグル**: 各機能のオン/オフ切り替え
+### Storage / Equipment
+ChestLock、ChestShop、ChestSort、SharedStorage、EnchantSplit、ChunkLoader、ParallelFurnace、Recycler、CustomEnchant、WarpStone など。
 
+### Community / Protection
+TPA、Party、LandProtect、Pet、CopperGolem、JPCh、InvSee、OfflineAccess、PendingWhitelist など。
 
+### Integrations / Server
+BedrockSkin、Geyser向け金床・鍛冶台、WebMap、WebService、Discord、YouTube Live Chat、Performance、MOTD、KeepAliveGuard など。
 
+### HardMode
+TrueCrafter と **Just Leveling** を搭載。Just Leveling は8能力値、パッシブ、24スキル、41称号、Otherworldごとのプロフィール分離を持ちます。
 
-## インストール手順
+> 網羅的な一覧と各 Toggle key は [docs/FEATURES.md](docs/FEATURES.md) を参照してください。
 
-### 前提条件
-- Java 25 以上
-- Minecraft サーバー PaperまたはSpigot 26.1 以上
+## Just Leveling ChestGUI
 
-### プラグインインストール
+レベリングの書を右クリックすると 9×6 ChestGUI を開き、Minecraft の経験値レベルを消費して能力値を成長させられます。GUI は能力値・プレイヤー概要・XP・称号・全体進行を分離したレイアウトです。
 
-1. [リリースページ](https://github.com/gamelist1990/Bettersurvival/releases)から最新の JAR ファイルをダウンロードしてください。
+ブラウザ上でも [Interactive ChestGUI Mock](docs/leveling-gui-demo.html) を開き、XP値やサンプル進行度を変えながら操作感を確認できます。デモの Minecraft item texture は外部の [PrismarineJS/minecraft-assets](https://github.com/PrismarineJS/minecraft-assets) を参照しています。
 
-2. ダウンロードした JAR ファイルをサーバーの `plugins` フォルダに移動してください。
+## Requirements
 
-3. サーバーを再起動してください。プラグインが正常に読み込まれると、コンソールに「Bettersurvival has been enabled!」というメッセージが表示されます。
+現行 `build.gradle` を基準とします。
 
-## 使用方法
+- **Java 25**
+- **Paper 26.2**
+- Geyser / Floodgate: 関連機能を使用する場合のみ
 
-### 機能の有効化/無効化
-各機能は `/toggle` コマンドで個別にオン/オフを切り替えられます。管理者モードではグローバル設定も可能です
+> 旧 README の Java 17+ / Paper・Spigot 26.1+ 表記は現行ビルド設定と一致していなかったため更新しました。
 
-## 貢献ガイドライン
+## Install
 
-プロジェクトへの貢献を歓迎します！以下の手順に従ってください：
+1. [Releases](https://github.com/gamelist1990/Bettersurvival/releases) から JAR を取得します。
+2. Paper サーバーの `plugins` へ配置します。
+3. Java 25 でサーバーを起動します。
+4. `/toggle` や各管理コマンドで必要な機能を設定します。
 
-### 開発環境のセットアップ
-1. リポジトリをフォークしてください。
-2. ローカルにクローンし、上記のインストール手順に従ってビルドしてください。
+開発ビルドでは次で検証できます。
 
-### コードの変更
-1. 新しいブランチを作成してください：
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-2. 変更を加え、テストしてください。
-3. コミットメッセージは明確に記述してください。
-
-### プルリクエスト
-1. 変更をプッシュしてください。
-2. GitHub からプルリクエストを作成してください。
-3. レビューを待ち、必要に応じて修正してください。
-
-### バグ報告・機能リクエスト
-- [GitHub Issues](https://github.com/gamelist1990/Bettersurvival/issues) を使用してください。
-- バグ報告には以下の情報を含めてください：
-  - Minecraft バージョン
-  - サーバーソフトウェア (Paper/Spigot)
-  - エラーログ
-  - 再現手順
-
-### コーディング標準
-- Java コーディング規約に従ってください。
-- コメントは日本語または英語で記述してください。
-- 新しい機能には適切なテストを追加してください。
-
-## ライセンス
-
-このプロジェクトは MIT License の下で公開されています。
-
+```bash
+./gradlew build --stacktrace
 ```
-MIT License
+
+## Contributing
+
+変更時はコードだけでなく、ユーザーから見える仕様が変わる場合に `docs/` も更新してください。特に以下は実装とドキュメントを同じPRで同期させます。
+
+- `Loader` の Feature / Command 登録
+- `/toggle` key と初期値
+- Just Leveling の能力値・スキル・称号・GUI slot
+- 対応 Java / Paper version
+- Web / Bedrock / 外部サービス設定
+
+## License
+
+[MIT License](LICENSE)
 
 Copyright (c) 2025 Koukunn
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## Issues
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-## 連絡先
-
-- **作者**: Koukunn
-- **GitHub**: [https://github.com/gamelist1990/Bettersurvival](https://github.com/gamelist1990/Bettersurvival)
-- **Issues**: [バグ報告・機能リクエスト](https://github.com/gamelist1990/Bettersurvival/issues)
-
----
-
-ご質問やフィードバックがありましたら、GitHub Issues からお気軽にお問い合わせください。
+バグ報告・機能リクエスト: [GitHub Issues](https://github.com/gamelist1990/Bettersurvival/issues)
