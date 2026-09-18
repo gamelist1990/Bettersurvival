@@ -76,7 +76,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBucketEmpty(PlayerBucketEmptyEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block target = event.getBlockClicked().getRelative(event.getBlockFace());
         Material placed = switch (event.getBucket()) {
@@ -103,7 +103,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBucketFill(PlayerBucketFillEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block source = event.getBlockClicked();
         module.recordPlayer(
@@ -119,7 +119,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFlow(BlockFromToEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         cleanupLiquidActorsOccasionally();
 
         Block from = event.getBlock();
@@ -177,7 +177,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onIgnite(BlockIgniteEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         ActorRef actor = event.getPlayer() != null
                 ? ActorRef.of(event.getPlayer())
@@ -195,7 +195,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBurn(BlockBurnEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         Block block = event.getBlock();
         module.recordSystem(
                 "#fire",
@@ -209,7 +209,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFade(BlockFadeEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block block = event.getBlock();
         ProtectAction action = block.getType() == Material.FIRE || block.getType() == Material.SOUL_FIRE
@@ -227,7 +227,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onSpread(BlockSpreadEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block source = event.getSource();
         Block target = event.getBlock();
@@ -257,7 +257,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onGrow(BlockGrowEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         Block block = event.getBlock();
         module.recordSystem(
                 "#growth",
@@ -271,7 +271,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onStructureGrow(StructureGrowEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         String speciesName = event.getSpecies().name();
         List<BlockMutation> mutations = new ArrayList<>(event.getBlocks().size());
@@ -320,7 +320,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onLeavesDecay(LeavesDecayEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         Block block = event.getBlock();
         module.recordSystem(
                 "#leaf_decay",
@@ -334,7 +334,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockForm(BlockFormEvent event) {
-        if (!module.isEnabled() || event instanceof EntityBlockFormEvent) return;
+        if (!module.isRecordingEnabled() || event instanceof EntityBlockFormEvent) return;
 
         Block block = event.getBlock();
         module.recordSystem(
@@ -349,7 +349,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityBlockForm(EntityBlockFormEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block block = event.getBlock();
         module.recordSystem(
@@ -364,7 +364,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityChangeBlock(EntityChangeBlockEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block block = event.getBlock();
         ProtectAction action = block.getType() == Material.FARMLAND && event.getTo() == Material.DIRT
@@ -384,7 +384,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityTrample(EntityInteractEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         Block block = event.getBlock();
         if (block.getType() != Material.TURTLE_EGG) return;
 
@@ -403,7 +403,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         ActorRef actor = actorForExplosion(event.getEntity());
         for (Block block : event.blockList()) {
@@ -421,7 +421,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         for (Block block : event.blockList()) {
             module.recordSystem(
@@ -437,19 +437,19 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         trackPiston(event.getBlocks(), event.getDirection(), "extend");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         trackPiston(event.getBlocks(), event.getDirection(), "retract");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPortalCreate(PortalCreateEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         String actor = event.getEntity() instanceof Player player
                 ? player.getName()
@@ -471,7 +471,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPhysics(BlockPhysicsEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Block block = event.getBlock();
         if (!shouldTrackPhysics(block.getType())) return;
@@ -496,7 +496,7 @@ public final class ProtectWorldListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onSpecialInteract(PlayerInteractEvent event) {
-        if (!module.isEnabled() || event.getHand() != EquipmentSlot.HAND) return;
+        if (!module.isRecordingEnabled() || event.getHand() != EquipmentSlot.HAND) return;
         Block block = event.getClickedBlock();
         if (block == null) return;
 
