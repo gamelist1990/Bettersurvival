@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ChestGuiMock, type ChestGuiSlot } from './ChestGuiMock';
 
 function MockPanel({
