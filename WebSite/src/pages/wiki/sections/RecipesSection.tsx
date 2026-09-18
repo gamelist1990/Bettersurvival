@@ -2,8 +2,7 @@ import { SectionShell } from '../components/SectionShell';
 import { WikiLink } from '../components/WikiNavContext';
 import { FetchedWikiImage } from '../components/FetchedWikiImage';
 import { TextureLayout } from '../components/TextureLayout';
-
-const minecraftAsset = (name: string) => `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.21.8/items/${name}.png`;
+import { minecraft26ItemAsset } from '../components/minecraft26Assets';
 
 function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: string; slots: (string | null)[]; output: string; outputLabel: string }) {
   const craftingItems = slots.flatMap((item, index) => {
@@ -12,7 +11,7 @@ function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: s
     const row = Math.floor(index / 3);
     return [{
       id: `slot-${index}`,
-      src: minecraftAsset(item),
+      src: minecraft26ItemAsset(item),
       left: 12.6 + column * 13.1,
       top: 32.3 + row * 23.5,
       size: 12.9,
@@ -29,7 +28,7 @@ function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: s
         className="wiki-crafting-screen"
         items={[...craftingItems, {
           id: 'output',
-          src: minecraftAsset(output),
+          src: minecraft26ItemAsset(output),
           alt: `${outputLabel}のアイテム画像`,
           left: 80,
           top: 55.2,
