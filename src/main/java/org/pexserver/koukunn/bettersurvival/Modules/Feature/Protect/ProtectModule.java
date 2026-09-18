@@ -596,7 +596,7 @@ public final class ProtectModule implements Listener {
         return itemSummary(deserializeItem(data));
     }
 
-    private static String itemSummary(ItemStack item) {
+    static String itemSummary(ItemStack item) {
         ItemStack copy = copyItem(item);
         if (copy == null) {
             return "空";
