@@ -45,10 +45,10 @@ const ITEM_TEXTURE_PATHS: Record<string, string> = {
   writable_book: 'items/writable_book.png',
 
   // items_textures.json上ではblock modelを参照するアイテム。
-  grass_block: 'blocks/dirt.png',
+  grass_block: 'blocks/grass_block_side.png',
   diamond_block: 'blocks/diamond_block.png',
-  lodestone: 'blocks/lodestone_top.png',
-  tnt: 'blocks/tnt_bottom.png',
+  lodestone: 'blocks/lodestone_side.png',
+  tnt: 'blocks/tnt_side.png',
 
   // special renderer items。ChestGuiMockでは専用描画するが、
   // 通常imgとして要求された場合にも26.1実textureへfallbackできる。
