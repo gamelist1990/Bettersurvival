@@ -513,7 +513,11 @@ public final class ProtectModule implements Listener {
                 return null;
             }
         }
-        return null;
+        try {
+            return inventory.getLocation();
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private ItemStack[] snapshot(Inventory inventory) {
@@ -556,23 +560,26 @@ public final class ProtectModule implements Listener {
     private static String describeContainerChange(ItemStack before, ItemStack after) {
         ItemStack oldItem = copyItem(before);
         ItemStack newItem = copyItem(after);
+        String tag = (oldItem != null && oldItem.getType() == Material.BUNDLE)
+                || (newItem != null && newItem.getType() == Material.BUNDLE)
+                ? "#bundle " : "";
         if (oldItem == null && newItem != null) {
-            return "DEPOSIT " + itemSummary(newItem);
+            return tag + "DEPOSIT " + itemSummary(newItem);
         }
         if (oldItem != null && newItem == null) {
-            return "WITHDRAW " + itemSummary(oldItem);
+            return tag + "WITHDRAW " + itemSummary(oldItem);
         }
         if (oldItem != null && newItem != null
                 && oldItem.isSimilar(newItem)) {
             int delta = newItem.getAmount() - oldItem.getAmount();
             if (delta > 0) {
-                return "DEPOSIT " + newItem.getType().name() + " x" + delta;
+                return tag + "DEPOSIT " + newItem.getType().name() + " x" + delta;
             }
             if (delta < 0) {
-                return "WITHDRAW " + oldItem.getType().name() + " x" + (-delta);
+                return tag + "WITHDRAW " + oldItem.getType().name() + " x" + (-delta);
             }
         }
-        return "REPLACE " + itemSummary(oldItem) + " -> " + itemSummary(newItem);
+        return tag + "REPLACE " + itemSummary(oldItem) + " -> " + itemSummary(newItem);
     }
 
     static byte[] serializeItem(ItemStack item) {
