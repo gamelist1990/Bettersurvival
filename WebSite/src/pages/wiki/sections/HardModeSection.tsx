@@ -1,5 +1,6 @@
 import { SectionShell } from '../components/SectionShell';
 import { CommandBox } from '../components/CommandBox';
+import { OminousCampfireGuiMock } from '../components/FeatureChestGuiMocks';
 
 const heatLevels = [
   { level: 1, name: '警戒', detail: '真クラの基本状態。通常のサバイバルより手強い敵AIが戦闘へ加わります。' },
@@ -93,6 +94,8 @@ export function HardModeSection() {
       </div>
 
       <h3>不吉な焚き火</h3>
+      <p>実装の27スロット熱量GUIもWeb上で操作できます。熱量1～5をクリックすると現在値が切り替わります。</p>
+      <OminousCampfireGuiMock />
       <ol className="truecrafter-steps">
         <li><strong>作成</strong><span>焚き火と石の剣をクラフト欄へ置く不定形レシピで作成します。</span></li>
         <li><strong>設置</strong><span>通常の焚き火と同じように、管理しやすい場所へ設置します。</span></li>
