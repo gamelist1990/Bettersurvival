@@ -363,6 +363,25 @@ public final class ProtectDatabase {
         return future;
     }
 
+    public CompletableFuture<List<ProtectRecord>> queryOperationGroup(
+            ProtectRecord seed,
+            int rolledBackState) {
+        CompletableFuture<List<ProtectRecord>> future = new CompletableFuture<>();
+        if (seed == null || seed.operationId() == null || seed.operationId().isBlank()) {
+            future.complete(seed == null ? List.of() : List.of(seed));
+            return future;
+        }
+        io.execute(() -> {
+            try {
+                flushBatch();
+                future.complete(expandOperationGroups(List.of(seed), rolledBackState));
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
+    }
+
     public CompletableFuture<List<ProtectRecord>> queryLastRollback(String rollbackActor, int limit) {
         CompletableFuture<List<ProtectRecord>> future = new CompletableFuture<>();
         int safeLimit = Math.max(1, Math.min(QUERY_LIMIT_MAX, limit));
