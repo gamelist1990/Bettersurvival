@@ -253,22 +253,28 @@ public final class ProtectMenu {
                 .addButtonAt(11, "§b" + shortAction(record.action()), icon(record.action()), historyLore(record))
                 .addButtonAt(15, "§e戻る", Material.ARROW, "");
 
-        if (record.reversible() && !record.rolledBack()) {
-            builder.addButtonAt(13, "§cこの1件をロールバック", Material.CLOCK,
-                    "§7この操作だけ元に戻します");
+        if (record.reversible()) {
+            if (record.rolledBack()) {
+                builder.addButtonAt(13, "§aこの1件をRestore", Material.SLIME_BALL,
+                        "§7Rollback済みの変更を再適用します");
+            } else {
+                builder.addButtonAt(13, "§cこの1件をロールバック", Material.CLOCK,
+                        "§7この操作だけ元に戻します");
+            }
         } else {
-            builder.addButtonAt(13,
-                    record.rolledBack() ? "§7ロールバック済み" : "§7復元対象外",
-                    Material.GRAY_DYE,
-                    "");
+            builder.addButtonAt(13, "§7復元対象外", Material.GRAY_DYE, "");
         }
 
         builder.then((result, p) -> {
             if (!result.success || result.slot == null) {
                 return;
             }
-            if (result.slot == 13 && record.reversible() && !record.rolledBack()) {
-                module.rollbackSingle(p, record);
+            if (result.slot == 13 && record.reversible()) {
+                if (record.rolledBack()) {
+                    module.restoreSingle(p, record);
+                } else {
+                    module.rollbackSingle(p, record);
+                }
                 openMain(p, module);
             } else if (result.slot == 15) {
                 openHistoryAt(p, module, origin, radius, page, actorName, actions);
@@ -1100,6 +1106,16 @@ public final class ProtectMenu {
         EnumSet<ProtectAction> result = EnumSet.noneOf(ProtectAction.class);
         for (ProtectAction action : ProtectAction.values()) {
             if (action.isItemAction()) {
+                result.add(action);
+            }
+        }
+        return result;
+    }
+
+    private static Set<ProtectAction> containerActions() {
+        EnumSet<ProtectAction> result = EnumSet.noneOf(ProtectAction.class);
+        for (ProtectAction action : ProtectAction.values()) {
+            if (action.isContainerAction()) {
                 result.add(action);
             }
         }
