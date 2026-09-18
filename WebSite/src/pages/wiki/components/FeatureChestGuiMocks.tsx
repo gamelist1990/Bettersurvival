@@ -437,3 +437,34 @@ export function RecyclerGuiMock() {
   outputs.forEach((slot,index)=>slots.push({slot,label:index%2===0?'鉄インゴット':'棒',item:index%2===0?'iron_ingot':'stick',count:index%2===0?2:1,onClick:()=>setNotice('回収口から素材を取り出す操作です。')}));
   return <MockPanel title="♻ リサイクラー - 分解装置" rows={6} slots={slots} notice={notice} caption="RecyclerUI.java の54スロットを再現。投入口/回収口、50%還元率、状態・統計を操作できます。" />;
 }
+
+
+export function OminousCampfireGuiMock() {
+  const [heat, setHeat] = useState(3);
+  const [notice, setNotice] = useState('不吉な焚き火をOPが右クリックした時の熱量UIです。');
+  const icons = ['coal', 'copper_ingot', 'iron_ingot', 'gold_ingot', 'netherite_ingot'];
+  const slots: ChestGuiSlot[] = [11, 12, 13, 14, 15].map((slot, index) => {
+    const level = index + 1;
+    return {
+      slot,
+      label: `熱量 ${level}`,
+      item: icons[index],
+      active: heat === level,
+      lore: [heat === level ? '現在の熱量' : 'クリックして変更'],
+      onClick: () => {
+        setHeat(level);
+        setNotice(`TrueCrafterの熱量を ${level} に変更しました（Webモック）。`);
+      },
+    };
+  });
+
+  return (
+    <MockPanel
+      title={`TrueCrafter 熱量: ${heat}`}
+      rows={3}
+      slots={slots}
+      notice={notice}
+      caption="OminousCampfireSystem.openMenu の27スロットを実装どおり再現。熱量1～5をクリックして切り替えられます。"
+    />
+  );
+}
