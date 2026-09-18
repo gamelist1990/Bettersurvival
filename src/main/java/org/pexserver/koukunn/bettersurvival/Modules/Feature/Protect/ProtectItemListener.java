@@ -4,7 +4,9 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Hanging;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -15,10 +17,14 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemBreakEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
+import org.bukkit.event.hanging.HangingBreakByEntityEvent;
+import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.inventory.BlockInventoryHolder;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -160,6 +166,71 @@ public final class ProtectItemListener implements Listener {
                 null, null, null,
                 null, ProtectModule.serializeItem(result),
                 ProtectModule.itemSummary(ProtectModule.serializeItem(result)));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onHangingPlace(HangingPlaceEvent event) {
+        if (!module.isEnabled()) return;
+
+        Hanging hanging = event.getEntity();
+        Player player = event.getPlayer();
+        if (player != null) {
+            module.recordPlayer(
+                    player,
+                    hanging.getLocation(),
+                    ProtectAction.ITEM_INTERACT,
+                    null, null, null,
+                    ProtectModule.serializeItem(event.getItemStack()),
+                    null,
+                    "HANGING_PLACE " + hanging.getType().name());
+        } else {
+            module.recordSystem(
+                    "#hanging",
+                    hanging.getLocation(),
+                    ProtectAction.ITEM_INTERACT,
+                    null, null, null,
+                    ProtectModule.serializeItem(event.getItemStack()),
+                    null,
+                    "HANGING_PLACE " + hanging.getType().name());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onHangingBreak(HangingBreakByEntityEvent event) {
+        if (!module.isEnabled()) return;
+
+        Entity remover = event.getRemover();
+        if (remover instanceof Player player) {
+            module.recordPlayer(
+                    player,
+                    event.getEntity().getLocation(),
+                    ProtectAction.ITEM_INTERACT,
+                    null, null, null,
+                    null, null,
+                    "HANGING_BREAK " + event.getEntity().getType().name());
+        } else {
+            module.recordSystem(
+                    remover == null ? "#hanging" : "#" + remover.getType().name().toLowerCase(Locale.ROOT),
+                    event.getEntity().getLocation(),
+                    ProtectAction.ITEM_INTERACT,
+                    null, null, null,
+                    null, null,
+                    "HANGING_BREAK " + event.getEntity().getType().name());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onItemFrameInteract(PlayerInteractEntityEvent event) {
+        if (!module.isEnabled() || !(event.getRightClicked() instanceof ItemFrame frame)) return;
+
+        module.recordPlayer(
+                event.getPlayer(),
+                frame.getLocation(),
+                ProtectAction.ITEM_INTERACT,
+                null, null, null,
+                ProtectModule.serializeItem(frame.getItem()),
+                ProtectModule.serializeItem(event.getPlayer().getInventory().getItem(event.getHand())),
+                "ITEM_FRAME_INTERACT");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
