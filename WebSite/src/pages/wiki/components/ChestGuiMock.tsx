@@ -1,4 +1,9 @@
 import { useState, type ReactNode } from 'react';
+import {
+  minecraft26ChestTexture,
+  minecraft26ItemAsset,
+  minecraft26PlayerSkin,
+} from './minecraft26Assets';
 
 export type ChestGuiSlot = {
   slot: number;
@@ -20,9 +25,6 @@ type ChestGuiMockProps = {
   caption?: ReactNode;
   className?: string;
 };
-
-export const minecraftItemAsset = (name: string) =>
-  `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.21.8/items/${name}.png`;
 
 function normalizeLore(lore?: string | string[]) {
   if (!lore) return [];
@@ -52,9 +54,55 @@ function fallbackForItem(item?: string) {
   }
 }
 
-function SlotIcon({ src, item }: { src?: string; item?: string }) {
+function ChestEntityIcon({ ender }: { ender: boolean }) {
+  const texture = minecraft26ChestTexture(ender);
+  return (
+    <svg
+      className="web-chest-special-icon web-chest-entity-icon"
+      viewBox="0 0 14 15"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <svg x="0" y="0" width="14" height="5" viewBox="14 14 14 5" preserveAspectRatio="none">
+        <image href={texture} x="0" y="0" width="64" height="64" />
+      </svg>
+      <svg x="0" y="5" width="14" height="10" viewBox="14 33 14 10" preserveAspectRatio="none">
+        <image href={texture} x="0" y="0" width="64" height="64" />
+      </svg>
+    </svg>
+  );
+}
+
+function PlayerHeadIcon() {
+  const texture = minecraft26PlayerSkin();
+  return (
+    <svg
+      className="web-chest-special-icon web-chest-player-head"
+      viewBox="0 0 8 8"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <image href={texture} x="-8" y="-8" width="64" height="64" />
+      <image href={texture} x="-40" y="-8" width="64" height="64" />
+    </svg>
+  );
+}
+
+function SlotIcon({
+  src,
+  item,
+}: {
+  src?: string;
+  item?: string;
+}) {
   const [failed, setFailed] = useState(false);
-  if (!src || failed) {
+
+  if (!src && item === 'chest') return <ChestEntityIcon ender={false} />;
+  if (!src && item === 'ender_chest') return <ChestEntityIcon ender />;
+  if (!src && item === 'player_head') return <PlayerHeadIcon />;
+
+  const resolvedSrc = src ?? (item ? minecraft26ItemAsset(item) : undefined);
+  if (!resolvedSrc || failed) {
     return (
       <span className="web-chest-fallback" aria-hidden="true">
         {fallbackForItem(item)}
@@ -64,7 +112,7 @@ function SlotIcon({ src, item }: { src?: string; item?: string }) {
 
   return (
     <img
-      src={src}
+      src={resolvedSrc}
       alt=""
       draggable={false}
       data-chest-item={item ?? ''}
@@ -96,7 +144,6 @@ export function ChestGuiMock({
             }
 
             const lore = normalizeLore(slot.lore);
-            const src = slot.itemSrc ?? (slot.item ? minecraftItemAsset(slot.item) : undefined);
             const clickable = Boolean(slot.onClick) && !slot.disabled;
             return (
               <button
@@ -112,7 +159,7 @@ export function ChestGuiMock({
                 disabled={slot.disabled}
                 aria-label={slot.label}
               >
-                <SlotIcon src={src} item={slot.item} />
+                <SlotIcon src={slot.itemSrc} item={slot.item} />
                 {slot.count && slot.count > 1 ? <span className="web-chest-count">{slot.count}</span> : null}
                 <span className="web-chest-tooltip" role="tooltip">
                   <strong>{slot.label}</strong>
