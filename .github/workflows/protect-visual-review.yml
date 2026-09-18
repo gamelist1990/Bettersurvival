@@ -120,11 +120,12 @@ jobs:
           await shotGui('parallel-furnace', '09-parallel-furnace', ['＋コア']);
           await shotGui('recycler', '10-recycler', ['鉄のツルハシ']);
           await shotGui('just-leveling', '11-just-leveling', ['STR']);
+          await shotGui('hardmode', '12-hardmode', ['熱量 5']);
 
           {
             const { page, errors } = await openPage('copper-golem', 390, 844);
-            await page.screenshot({ path: out + '/12-copper-golem-mobile-full.png', fullPage: true });
-            await page.locator('.web-chest-gui').first().screenshot({ path: out + '/13-copper-golem-mobile-gui.png' });
+            await page.screenshot({ path: out + '/13-copper-golem-mobile-full.png', fullPage: true });
+            await page.locator('.web-chest-gui').first().screenshot({ path: out + '/14-copper-golem-mobile-gui.png' });
             fs.writeFileSync(out + '/mobile-errors.txt', errors.join('\n'));
             await page.close();
           }
