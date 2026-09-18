@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 export type ChestGuiSlot = {
   slot: number;
@@ -27,6 +27,50 @@ export const minecraftItemAsset = (name: string) =>
 function normalizeLore(lore?: string | string[]) {
   if (!lore) return [];
   return Array.isArray(lore) ? lore : lore.split('\n');
+}
+
+function fallbackForItem(item?: string) {
+  switch (item) {
+    case 'player_head': return '☻';
+    case 'clock': return '◷';
+    case 'compass':
+    case 'recovery_compass':
+    case 'lodestone': return '✥';
+    case 'chest':
+    case 'ender_chest':
+    case 'barrel': return '▣';
+    case 'book':
+    case 'writable_book':
+    case 'paper': return '▤';
+    case 'hopper': return '▽';
+    case 'redstone': return '●';
+    case 'barrier': return '⊘';
+    case 'tnt': return '✹';
+    case 'arrow':
+    case 'spectral_arrow': return '➜';
+    default: return '◆';
+  }
+}
+
+function SlotIcon({ src, item }: { src?: string; item?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <span className="web-chest-fallback" aria-hidden="true">
+        {fallbackForItem(item)}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      draggable={false}
+      data-chest-item={item ?? ''}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 export function ChestGuiMock({
@@ -68,7 +112,7 @@ export function ChestGuiMock({
                 disabled={slot.disabled}
                 aria-label={slot.label}
               >
-                {src ? <img src={src} alt="" draggable={false} /> : <span className="web-chest-fallback">◆</span>}
+                <SlotIcon src={src} item={slot.item} />
                 {slot.count && slot.count > 1 ? <span className="web-chest-count">{slot.count}</span> : null}
                 <span className="web-chest-tooltip" role="tooltip">
                   <strong>{slot.label}</strong>
