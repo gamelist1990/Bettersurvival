@@ -79,6 +79,8 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChunkLoader.ChunkLoa
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectWorldListener;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectItemListener;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -150,6 +152,8 @@ public final class Loader extends JavaPlugin {
         }
         protectModule = new ProtectModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(protectModule, this);
+        getServer().getPluginManager().registerEvents(new ProtectWorldListener(this, protectModule), this);
+        getServer().getPluginManager().registerEvents(new ProtectItemListener(protectModule), this);
         if (!toggleModule.hasGlobal("offlineaccess")) {
             toggleModule.setGlobal("offlineaccess", false);
         }
