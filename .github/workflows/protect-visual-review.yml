@@ -89,6 +89,10 @@ jobs:
             await page.waitForTimeout(100);
             await gui.screenshot({ path: out + '/' + file + '-main.png' });
 
+            const fallbacks = await gui.locator('.web-chest-fallback').evaluateAll((nodes) =>
+              nodes.map((node) => node.closest('button')?.getAttribute('aria-label') ?? '(unknown)')
+            );
+
             let index = 1;
             for (const name of clickNames) {
               const button = page.getByRole('button', { name, exact: true }).first();
@@ -101,6 +105,7 @@ jobs:
               }
             }
             fs.writeFileSync(out + '/' + file + '-errors.txt', errors.join('\n'));
+            fs.writeFileSync(out + '/' + file + '-fallbacks.txt', fallbacks.join('\n'));
             await page.close();
           }
 
