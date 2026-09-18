@@ -407,6 +407,14 @@ public final class ProtectModule implements Listener {
         applyRollback(admin, List.of(record));
     }
 
+    public void restoreSingle(Player admin, ProtectRecord record) {
+        if (record == null || !record.reversible() || !record.rolledBack()) {
+            admin.sendMessage("§c[Protect] このログはRestoreできません");
+            return;
+        }
+        applyRestore(admin, List.of(record), true);
+    }
+
     public void shutdown() {
         inspectors.clear();
         containerSessions.clear();
