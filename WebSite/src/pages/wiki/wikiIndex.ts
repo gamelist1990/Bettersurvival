@@ -19,6 +19,7 @@ import { YouTubeSection } from './sections/YouTubeSection';
 import { PetSitSection } from './sections/PetSitSection';
 import { HardModeSection } from './sections/HardModeSection';
 import { JustLevelingSection } from './sections/JustLevelingSection';
+import { ProtectSection } from './sections/ProtectSection';
 
 export type WikiScope = 'system' | 'admin' | 'player';
 
@@ -37,6 +38,7 @@ export const wikiEntries: WikiEntry[] = [
   { slug: 'overview',         title: 'BetterSurvival Wiki',      summary: '実装済みの /toggle、カスタムブロック、カスタムエンチャント、便利機能の全体像。', scope: 'system', icon: '❦', component: OverviewSection },
 
   { slug: 'feature-toggle',   title: '/toggle 機能一覧',          summary: 'Loader に登録されている実在の toggle キーと、管理者が切り替える対象。',          scope: 'admin',  icon: '⚙', component: AdminToggleSection },
+  { slug: 'protect',          title: 'Protect 監査・復旧',         summary: '監査ログ、詳細Lookup、荒らしRollback/Restore、Status、DB管理と操作可能ChestGUIモック。', scope: 'admin', category: '詳細ガイド', icon: '⛨', component: ProtectSection },
 
   // --- 設備・アイテム ---
   { slug: 'custom-blocks',    title: 'カスタムブロック / 設置物', summary: '合成や設置で使う BetterSurvival 独自ブロック・設置アイテム。',              scope: 'player', category: '設備・アイテム', icon: '▣', component: CustomBlocksSection },
