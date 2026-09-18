@@ -1197,6 +1197,25 @@
   pointer-events: none;
   filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.38));
 }
+.web-chest-special-icon {
+  width: 60%;
+  height: 60%;
+  overflow: visible;
+  image-rendering: pixelated;
+  pointer-events: none;
+  filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.38));
+}
+.web-chest-special-icon image {
+  image-rendering: pixelated;
+}
+.web-chest-entity-icon {
+  width: 58%;
+  height: 62%;
+}
+.web-chest-player-head {
+  width: 54%;
+  height: 54%;
+}
 .web-chest-fallback {
   display: grid;
   width: 60%;
