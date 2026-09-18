@@ -85,12 +85,114 @@ public final class ProtectDatabase {
     }
 
     public long getDatabaseSizeBytes() {
-        long size = databaseFile.exists() ? databaseFile.length() : 0L;
+        return getMainDatabaseSizeBytes() + getWalSizeBytes() + getShmSizeBytes();
+    }
+
+    public long getMainDatabaseSizeBytes() {
+        return databaseFile.exists() ? databaseFile.length() : 0L;
+    }
+
+    public long getWalSizeBytes() {
         File wal = new File(databaseFile.getPath() + "-wal");
-        if (wal.exists()) {
-            size += wal.length();
+        return wal.exists() ? wal.length() : 0L;
+    }
+
+    public long getShmSizeBytes() {
+        File shm = new File(databaseFile.getPath() + "-shm");
+        return shm.exists() ? shm.length() : 0L;
+    }
+
+    public long getDiskUsableSpaceBytes() {
+        File dir = databaseFile.getParentFile();
+        return dir == null ? 0L : dir.getUsableSpace();
+    }
+
+    public long getDiskTotalSpaceBytes() {
+        File dir = databaseFile.getParentFile();
+        return dir == null ? 0L : dir.getTotalSpace();
+    }
+
+    public int getQueueSize() {
+        return queue.size();
+    }
+
+    public int getQueueCapacity() {
+        return MAX_QUEUE;
+    }
+
+    public boolean isReady() {
+        return !closed && connection != null;
+    }
+
+    public String getDatabaseFileName() {
+        return databaseFile.getName();
+    }
+
+    public CompletableFuture<StatusSnapshot> getStatusSnapshot() {
+        CompletableFuture<StatusSnapshot> future = new CompletableFuture<>();
+        io.execute(() -> {
+            try {
+                flushBatch();
+                long total = 0L;
+                long last24h = 0L;
+                long rolledBack = 0L;
+                if (connection != null) {
+                    try (Statement statement = connection.createStatement();
+                         ResultSet rs = statement.executeQuery("""
+                                 SELECT
+                                     COUNT(*) AS total,
+                                     SUM(CASE WHEN time_ms >= (CAST(strftime('%s','now') AS INTEGER) * 1000 - 86400000)
+                                              THEN 1 ELSE 0 END) AS last_24h,
+                                     SUM(CASE WHEN rolled_back = 1 THEN 1 ELSE 0 END) AS rolled_back
+                                 FROM protect_events
+                                 """)) {
+                        if (rs.next()) {
+                            total = rs.getLong("total");
+                            last24h = rs.getLong("last_24h");
+                            rolledBack = rs.getLong("rolled_back");
+                        }
+                    }
+                }
+                future.complete(new StatusSnapshot(
+                        total,
+                        last24h,
+                        rolledBack,
+                        getMainDatabaseSizeBytes(),
+                        getWalSizeBytes(),
+                        getShmSizeBytes(),
+                        getDiskUsableSpaceBytes(),
+                        getDiskTotalSpaceBytes(),
+                        getQueueSize(),
+                        getQueueCapacity(),
+                        getDroppedRecords(),
+                        isReady()));
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
+    }
+
+    public record StatusSnapshot(
+            long totalRecords,
+            long last24hRecords,
+            long rolledBackRecords,
+            long databaseBytes,
+            long walBytes,
+            long shmBytes,
+            long diskUsableBytes,
+            long diskTotalBytes,
+            int queueSize,
+            int queueCapacity,
+            long droppedRecords,
+            boolean ready) {
+        public long totalStorageBytes() {
+            return databaseBytes + walBytes + shmBytes;
         }
-        return size;
+
+        public double queueUsagePercent() {
+            return queueCapacity <= 0 ? 0.0 : (queueSize * 100.0) / queueCapacity;
+        }
     }
 
     public CompletableFuture<Long> countRecords() {
