@@ -62,6 +62,7 @@ import org.pexserver.koukunn.bettersurvival.Commands.land.LandCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.youtube.YouTubeCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.sit.SitCommand;
 import org.pexserver.koukunn.bettersurvival.Commands.pet.PetCommand;
+import org.pexserver.koukunn.bettersurvival.Commands.protect.ProtectCommand;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.YouTube.YouTubeLiveChatModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Pet.PetModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Sit.SitListener;
@@ -77,6 +78,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.WebService.WebServic
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChunkLoader.ChunkLoaderModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
@@ -118,6 +120,7 @@ public final class Loader extends JavaPlugin {
     private YouTubeLiveChatModule youTubeLiveChatModule;
     private PetModule petModule;
     private TrueCrafterModeModule trueCrafterMode;
+    private ProtectModule protectModule;
 
     @Override
     public void onEnable() {
@@ -142,6 +145,11 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(globalFilter, this);
 
         toggleModule = new ToggleModule(this);
+        if (!toggleModule.hasGlobal(ProtectModule.FEATURE_KEY)) {
+            toggleModule.setGlobal(ProtectModule.FEATURE_KEY, true);
+        }
+        protectModule = new ProtectModule(this, toggleModule);
+        getServer().getPluginManager().registerEvents(protectModule, this);
         if (!toggleModule.hasGlobal("offlineaccess")) {
             toggleModule.setGlobal("offlineaccess", false);
         }
@@ -263,6 +271,8 @@ public final class Loader extends JavaPlugin {
                 new ToggleFeature("treemine", "TreeMine", "木を一括で伐採・破壊します(スニーク必須)", Material.DIAMOND_AXE));
         toggleModule.registerFeature(
                 new ToggleFeature("oremine", "OreMine", "近接する鉱石を一括で破壊します（スニーク必須）", Material.DIAMOND_PICKAXE));
+        toggleModule.registerFeature(
+                new ToggleFeature(ProtectModule.FEATURE_KEY, "Protect", "ブロック/コンテナ操作履歴とロールバックを記録します", Material.RECOVERY_COMPASS, false));
         toggleModule
                 .registerFeature(new ToggleFeature("autofeed", "AutoFeed", "餌を与えると周辺の動物にも自動で餌を与えます", Material.WHEAT));
         toggleModule.registerFeature(
@@ -462,6 +472,7 @@ public final class Loader extends JavaPlugin {
         commandManager.register(new YouTubeCommand(youTubeLiveChatModule));
         commandManager.register(new SitCommand(this));
         commandManager.register(new PetCommand(petModule));
+        commandManager.register(new ProtectCommand(protectModule));
         commandManager.register(new HardModeCommand(trueCrafterMode));
         // 他のコマンドはここに追加できます
     }
@@ -571,6 +582,10 @@ public final class Loader extends JavaPlugin {
         return offlineAccessModule;
     }
 
+    public ProtectModule getProtectModule() {
+        return protectModule;
+    }
+
     @Override
     public void onDisable() {
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
@@ -629,6 +644,9 @@ public final class Loader extends JavaPlugin {
         }
         if (trueCrafterMode != null) {
             trueCrafterMode.shutdown();
+        }
+        if (protectModule != null) {
+            protectModule.shutdown();
         }
         getLogger().info("Better Survival Plugin が無効になりました");
     }
