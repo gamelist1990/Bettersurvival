@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import {
-  minecraft26ChestTexture,
-  minecraft26ItemAsset,
-  minecraft26PlayerSkin,
-} from './minecraft26Assets';
+  minecraftItemAsset,
+  minecraftPlayerSkin,
+} from './minecraftAssets';
 
 export type ChestGuiSlot = {
   slot: number;
@@ -54,27 +53,8 @@ function fallbackForItem(item?: string) {
   }
 }
 
-function ChestEntityIcon({ ender }: { ender: boolean }) {
-  const texture = minecraft26ChestTexture(ender);
-  return (
-    <svg
-      className="web-chest-special-icon web-chest-entity-icon"
-      viewBox="0 0 14 15"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <svg x="0" y="0" width="14" height="5" viewBox="14 14 14 5" preserveAspectRatio="none">
-        <image href={texture} x="0" y="0" width="64" height="64" />
-      </svg>
-      <svg x="0" y="5" width="14" height="10" viewBox="14 33 14 10" preserveAspectRatio="none">
-        <image href={texture} x="0" y="0" width="64" height="64" />
-      </svg>
-    </svg>
-  );
-}
-
 function PlayerHeadIcon() {
-  const texture = minecraft26PlayerSkin();
+  const texture = minecraftPlayerSkin();
   return (
     <svg
       className="web-chest-special-icon web-chest-player-head"
@@ -97,11 +77,9 @@ function SlotIcon({
 }) {
   const [failed, setFailed] = useState(false);
 
-  if (!src && item === 'chest') return <ChestEntityIcon ender={false} />;
-  if (!src && item === 'ender_chest') return <ChestEntityIcon ender />;
   if (!src && item === 'player_head') return <PlayerHeadIcon />;
 
-  const resolvedSrc = src ?? (item ? minecraft26ItemAsset(item) : undefined);
+  const resolvedSrc = src ?? (item ? minecraftItemAsset(item) : undefined);
   if (!resolvedSrc || failed) {
     return (
       <span className="web-chest-fallback" aria-hidden="true">
