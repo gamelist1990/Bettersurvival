@@ -1,7 +1,5 @@
 import { SectionShell } from '../components/SectionShell';
-import { FetchedWikiImage } from '../components/FetchedWikiImage';
-
-const customEnchantImage = '/images/wiki/custom-enchants-ui.png';
+import { CustomEnchantGuiMock } from '../components/FeatureChestGuiMocks';
 
 const enchantCategories = [
   {
@@ -119,11 +117,9 @@ export function CustomEnchantsSection() {
       intro="カスタムエンチャントは、BetterSurvival 独自の強化要素です。通常エンチャントとは別に、専用テーブルから道具や装備へ付与します。"
       scope="player"
     >
-      <FetchedWikiImage
-        src={customEnchantImage}
-        alt="カスタムエンチャント管理 UI"
-        caption="カスタムエンチャント管理 UI。中央にエンチャントテーブル、下部に本と素材枠が見える画面です。"
-      />
+      <h3>実際に触れるカスタムエンチャント管理UI</h3>
+      <p>実装の <code>CustomEnchantTableUI</code> と同じ54スロット配置です。道具スロットやエンチャント候補をクリックして、Web上で状態変化を試せます。</p>
+      <CustomEnchantGuiMock />
 
       <h3>カスタムエンチャントとは</h3>
       <ul className="wiki-bullets">
