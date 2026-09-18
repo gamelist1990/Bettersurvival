@@ -1,0 +1,105 @@
+name: Temporary Protect Visual Review
+
+on:
+  pull_request:
+    types: [synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 7 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: WebSite/package-lock.json
+
+      - name: Install and build WebSite
+        working-directory: WebSite
+        run: |
+          npm ci
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+          npm run build
+
+      - name: Capture Protect UI
+        working-directory: WebSite
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/protect-vite.log 2>&1 &
+          echo $! > /tmp/protect-vite.pid
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:4173/wiki/protect >/dev/null; then break; fi
+            sleep 0.5
+          done
+
+          cat > /tmp/protect-shot.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const out = 'visual-review';
+          fs.mkdirSync(out, { recursive: true });
+          const browser = await chromium.launch({ headless: true });
+
+          async function openPage(width, height) {
+            const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+            const errors = [];
+            page.on('console', msg => {
+              if (msg.type() === 'error') errors.push('console: ' + msg.text());
+            });
+            page.on('pageerror', err => errors.push('pageerror: ' + err.message));
+            await page.goto('http://127.0.0.1:4173/wiki/protect', { waitUntil: 'networkidle' });
+            return { page, errors };
+          }
+
+          {
+            const { page, errors } = await openPage(1440, 1100);
+            await page.screenshot({ path: out + '/01-protect-desktop-full.png', fullPage: true });
+            const gui = page.locator('.web-chest-gui').first();
+            await gui.screenshot({ path: out + '/02-protect-main-gui.png' });
+
+            await page.getByRole('button', { name: '詳細調査 / 復旧' }).click();
+            await page.waitForTimeout(100);
+            await gui.screenshot({ path: out + '/03-protect-advanced-gui.png' });
+
+            await page.getByRole('button', { name: 'DB Stats' }).click();
+            await page.waitForTimeout(100);
+            await gui.screenshot({ path: out + '/04-protect-status-gui.png' });
+
+            await page.getByRole('button', { name: 'Settings' }).click();
+            await page.waitForTimeout(100);
+            await gui.screenshot({ path: out + '/05-protect-settings-gui.png' });
+
+            fs.writeFileSync(out + '/desktop-errors.txt', errors.join('\n'));
+            await page.close();
+          }
+
+          {
+            const { page, errors } = await openPage(390, 844);
+            await page.screenshot({ path: out + '/06-protect-mobile-full.png', fullPage: true });
+            await page.locator('.web-chest-gui').first().screenshot({ path: out + '/07-protect-mobile-gui.png' });
+            fs.writeFileSync(out + '/mobile-errors.txt', errors.join('\n'));
+            await page.close();
+          }
+
+          await browser.close();
+          EOF
+
+          node /tmp/protect-shot.mjs
+          kill "$(cat /tmp/protect-vite.pid)" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: protect-visual-review
+          path: WebSite/visual-review/
+          if-no-files-found: error
+          retention-days: 1
