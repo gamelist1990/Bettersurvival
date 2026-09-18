@@ -1,6 +1,7 @@
 import { SectionShell } from '../components/SectionShell';
 import { CommandBox } from '../components/CommandBox';
 import { WikiLink } from '../components/WikiNavContext';
+import { ChestShopGuiMock } from '../components/FeatureChestGuiMocks';
 
 export function ChestShopSection() {
   return (
@@ -10,6 +11,9 @@ export function ChestShopSection() {
       intro="看板を使って自分のチェストをそのままお店にする機能。通貨アイテムを指定して、複数の商品スロットを 1 台のチェストで販売できます。"
       scope="player"
     >
+      <h3>実際に触れるChestShop UI</h3>
+      <ChestShopGuiMock />
+
       <h3>どんな機能か</h3>
       <ul className="wiki-bullets">
         <li>チェスト / トラップチェスト / 樽の近くに <strong>看板</strong>を立てて、そのチェストをショップに変えます。</li>
