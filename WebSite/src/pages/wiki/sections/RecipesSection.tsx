@@ -3,7 +3,7 @@ import { WikiLink } from '../components/WikiNavContext';
 import { FetchedWikiImage } from '../components/FetchedWikiImage';
 import { TextureLayout } from '../components/TextureLayout';
 
-const minecraftAsset = (name: string) => `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/26.1/items/${name}.png`;
+const minecraftAsset = (name: string) => `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.21.8/items/${name}.png`;
 
 function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: string; slots: (string | null)[]; output: string; outputLabel: string }) {
   const craftingItems = slots.flatMap((item, index) => {
