@@ -3,8 +3,7 @@ import { SectionShell } from '../components/SectionShell';
 import { FetchedWikiImage } from '../components/FetchedWikiImage';
 import { WikiLink } from '../components/WikiNavContext';
 import { ChestGuiMock } from '../components/ChestGuiMock';
-
-const asset = (name: string) => `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/26.1/items/${name}.png`;
+import { minecraft26ItemAsset } from '../components/minecraft26Assets';
 
 const aptitudes = [
   ['STR', '筋力', 'iron_sword', '攻撃力とノックバックを高めます。', 'Lv.10 片手の達人 / Lv.16 闘志 / Lv.30 狂戦士'],
@@ -101,7 +100,7 @@ export function JustLevelingSection() {
       <div className="just-leveling-aptitudes">
         {aptitudes.map(([code, name, item, description, milestones]) => (
           <article className="just-leveling-aptitude" key={code}>
-            <img src={asset(item)} alt="" />
+            <img src={minecraft26ItemAsset(item)} alt="" />
             <div><h4><span>{code}</span> {name}</h4><p>{description}</p><small>主な解放: {milestones}</small></div>
           </article>
         ))}
