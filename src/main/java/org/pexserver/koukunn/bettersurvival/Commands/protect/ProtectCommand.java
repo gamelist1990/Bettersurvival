@@ -47,7 +47,7 @@ public final class ProtectCommand extends BaseCommand {
 
     @Override
     public String getUsage() {
-        return "/protect <lookup|rollback|restore|undo|redo|inspect|stats|purge|retention> [key:value...]";
+        return "/protect <lookup|rollback|restore|undo|redo|inspect|status|purge|retention> [key:value...]";
     }
 
     @Override
@@ -210,7 +210,7 @@ public final class ProtectCommand extends BaseCommand {
         player.sendMessage("§f/protect restore user:Steve time:2h radius:100 action:block");
         player.sendMessage("§f/protect undo §7- 自分が最後に行ったrollbackを取り消す");
         player.sendMessage("§f/protect redo §7- この起動中に最後にundoした内容を再rollback");
-        player.sendMessage("§f/protect stats");
+        player.sendMessage("§f/protect status §7- DB容量・件数・WAL・Queue・空き容量");
         player.sendMessage("§f/protect purge time:30d [user:Steve] confirm:true");
         player.sendMessage("§f/protect retention days:30");
         player.sendMessage("§8Keys: user/u, time/t, radius/r, action/a, limit/l, page, world/w, x,y,z, preview");
@@ -228,7 +228,7 @@ public final class ProtectCommand extends BaseCommand {
             result.add("undo");
             result.add("redo");
             result.add("inspect");
-            result.add("stats");
+            result.add("status");
             result.add("purge");
             result.add("retention");
             result.add("help");
