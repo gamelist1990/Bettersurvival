@@ -165,7 +165,7 @@ public final class Loader extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new SitListener(this), this);
 
         // TreeMine モジュール登録
-        TreeMineModule treemine = new TreeMineModule(toggleModule);
+        TreeMineModule treemine = new TreeMineModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(treemine, this);
         getServer().getPluginManager().registerEvents(new AutoFeedModule(toggleModule), this);
         getServer().getPluginManager().registerEvents(new AutoFishingModule(toggleModule), this);
