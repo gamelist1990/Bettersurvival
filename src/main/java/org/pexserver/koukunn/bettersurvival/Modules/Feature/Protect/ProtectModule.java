@@ -31,6 +31,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,8 @@ public final class ProtectModule implements Listener {
     private final Map<UUID, ContainerSession> containerSessions = new ConcurrentHashMap<>();
     private final Set<UUID> pendingContainerScans = ConcurrentHashMap.newKeySet();
     private final Set<UUID> inspectors = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, List<Long>> redoIdsByAdmin = new ConcurrentHashMap<>();
+    private volatile boolean replaying;
 
     public ProtectModule(Loader plugin, ToggleModule toggle) {
         this.plugin = plugin;
@@ -68,6 +71,10 @@ public final class ProtectModule implements Listener {
 
     public boolean isEnabled() {
         return toggle.getGlobal(FEATURE_KEY);
+    }
+
+    public boolean isRecordingEnabled() {
+        return isEnabled() && !replaying;
     }
 
     public int getRetentionDays() {
@@ -226,41 +233,169 @@ public final class ProtectModule implements Listener {
     }
 
     public void rollback(Player admin, int radius, int hours, String actorName) {
-        if (!isEnabled()) {
-            admin.sendMessage("§cProtect は無効です");
+        rollbackFiltered(
+                admin,
+                admin.getLocation(),
+                System.currentTimeMillis() - TimeUnit.HOURS.toMillis(Math.max(1, Math.min(24 * 365, hours))),
+                normalizeActor(actorName),
+                null,
+                Math.max(0, Math.min(256, radius)),
+                MAX_ROLLBACK_EVENTS,
+                false);
+    }
+
+    public void lookup(
+            Player admin,
+            Location origin,
+            long sinceMs,
+            String actorName,
+            Set<ProtectAction> actions,
+            int radius,
+            int page,
+            int limit) {
+        if (!isEnabled() || origin == null || origin.getWorld() == null) {
+            admin.sendMessage("§c[Protect] Protectが無効、または検索地点が不正です");
             return;
         }
+        int pageSize = Math.max(1, Math.min(45, limit));
+        int safePage = Math.max(1, page);
+        int offset = (safePage - 1) * pageSize;
+        admin.sendMessage("§7[Protect] 履歴を検索中...");
+        database.queryNearby(
+                        origin.getWorld().getUID().toString(),
+                        origin.getBlockX(), origin.getBlockY(), origin.getBlockZ(),
+                        Math.max(0, Math.min(256, radius)),
+                        sinceMs,
+                        normalizeActor(actorName),
+                        actions,
+                        pageSize,
+                        offset)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!admin.isOnline()) return;
+                    if (throwable != null) {
+                        admin.sendMessage("§c[Protect] lookupに失敗しました");
+                        plugin.getLogger().warning("Protect lookup failed: " + throwable.getMessage());
+                        return;
+                    }
+                    admin.sendMessage("§b[Protect] lookup page=" + safePage + " results=" + records.size());
+                    for (ProtectRecord record : records) {
+                        admin.sendMessage(formatLookupRecord(record));
+                    }
+                    if (records.isEmpty()) admin.sendMessage("§e[Protect] 条件に一致する履歴はありません");
+                }));
+    }
 
-        int safeRadius = Math.max(0, Math.min(256, radius));
-        int safeHours = Math.max(1, Math.min(24 * 365, hours));
-        Location origin = admin.getLocation();
-        long since = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(safeHours);
-
+    public void rollbackFiltered(
+            Player admin,
+            Location origin,
+            long sinceMs,
+            String actorName,
+            Set<ProtectAction> actions,
+            int radius,
+            int limit,
+            boolean preview) {
+        if (!validateReplay(admin, origin)) return;
         admin.sendMessage("§e[Protect] ロールバック対象を検索中...");
         database.queryRollback(
                         origin.getWorld().getUID().toString(),
-                        origin.getBlockX(),
-                        origin.getBlockY(),
-                        origin.getBlockZ(),
-                        safeRadius,
-                        since,
+                        origin.getBlockX(), origin.getBlockY(), origin.getBlockZ(),
+                        Math.max(0, Math.min(256, radius)),
+                        sinceMs,
                         normalizeActor(actorName),
-                        MAX_ROLLBACK_EVENTS)
+                        actions,
+                        Math.max(1, Math.min(MAX_ROLLBACK_EVENTS, limit)))
                 .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (throwable != null) {
-                        plugin.getLogger().warning("Protect rollback query failed: " + throwable.getMessage());
-                        if (admin.isOnline()) {
-                            admin.sendMessage("§c[Protect] 検索に失敗しました");
-                        }
-                        return;
-                    }
-                    if (records == null || records.isEmpty()) {
-                        if (admin.isOnline()) {
-                            admin.sendMessage("§e[Protect] 対象ログはありません");
-                        }
+                    if (!handleReplayQuery(admin, records, throwable, "rollback")) return;
+                    if (preview) {
+                        admin.sendMessage("§e[Protect] PREVIEW: " + records.size()
+                                + "件がロールバック対象です。ワールドは変更していません。");
                         return;
                     }
                     applyRollback(admin, records);
+                }));
+    }
+
+    public void restoreFiltered(
+            Player admin,
+            Location origin,
+            long sinceMs,
+            String actorName,
+            Set<ProtectAction> actions,
+            int radius,
+            int limit,
+            boolean preview) {
+        if (!validateReplay(admin, origin)) return;
+        admin.sendMessage("§e[Protect] Restore対象を検索中...");
+        database.queryRestore(
+                        origin.getWorld().getUID().toString(),
+                        origin.getBlockX(), origin.getBlockY(), origin.getBlockZ(),
+                        Math.max(0, Math.min(256, radius)),
+                        sinceMs,
+                        normalizeActor(actorName),
+                        actions,
+                        Math.max(1, Math.min(MAX_ROLLBACK_EVENTS, limit)))
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!handleReplayQuery(admin, records, throwable, "restore")) return;
+                    if (preview) {
+                        admin.sendMessage("§e[Protect] PREVIEW: " + records.size()
+                                + "件がRestore対象です。ワールドは変更していません。");
+                        return;
+                    }
+                    applyRestore(admin, records, true);
+                }));
+    }
+
+    public void undo(Player admin) {
+        if (!isEnabled()) {
+            admin.sendMessage("§c[Protect] Protectは無効です");
+            return;
+        }
+        admin.sendMessage("§e[Protect] 最後のロールバックを検索中...");
+        database.queryLastRollback(admin.getName(), MAX_ROLLBACK_EVENTS)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!handleReplayQuery(admin, records, throwable, "undo")) return;
+                    applyRestore(admin, records, true);
+                }));
+    }
+
+    public void redo(Player admin) {
+        List<Long> ids = redoIdsByAdmin.get(admin.getUniqueId());
+        if (ids == null || ids.isEmpty()) {
+            admin.sendMessage("§e[Protect] このサーバー起動中にredoできるUndoはありません");
+            return;
+        }
+        database.queryByIds(ids)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!handleReplayQuery(admin, records, throwable, "redo")) return;
+                    applyRollback(admin, records);
+                    redoIdsByAdmin.remove(admin.getUniqueId());
+                }));
+    }
+
+    public void stats(Player admin) {
+        database.countRecords().whenComplete((count, throwable) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!admin.isOnline()) return;
+                    if (throwable != null) {
+                        admin.sendMessage("§c[Protect] 統計取得に失敗しました");
+                        return;
+                    }
+                    admin.sendMessage("§b[Protect] records=" + count
+                            + " size=" + getDatabaseSizeBytes()
+                            + "B dropped=" + getDroppedRecords()
+                            + " retention=" + getRetentionDays() + "d");
+                }));
+    }
+
+    public void purge(Player admin, long cutoffMs, String actorName) {
+        database.purgeOlderThan(cutoffMs, normalizeActor(actorName))
+                .whenComplete((deleted, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!admin.isOnline()) return;
+                    if (throwable != null) {
+                        admin.sendMessage("§c[Protect] purgeに失敗しました");
+                        return;
+                    }
+                    admin.sendMessage("§a[Protect] " + deleted + "件の古いログを削除しました");
                 }));
     }
 
@@ -276,6 +411,7 @@ public final class ProtectModule implements Listener {
         inspectors.clear();
         containerSessions.clear();
         pendingContainerScans.clear();
+        redoIdsByAdmin.clear();
         database.shutdown();
     }
 
@@ -321,27 +457,52 @@ public final class ProtectModule implements Listener {
     }
 
     private void applyRollback(Player admin, List<ProtectRecord> source) {
+        List<ProtectRecord> ordered = new ArrayList<>(source);
+        ordered.sort(Comparator.comparingLong(ProtectRecord::timeMs)
+                .thenComparingLong(ProtectRecord::id)
+                .reversed());
+        replay(admin, ordered, false, "ロールバック");
+    }
+
+    private void applyRestore(Player admin, List<ProtectRecord> source, boolean rememberForRedo) {
+        List<ProtectRecord> ordered = new ArrayList<>(source);
+        ordered.sort(Comparator.comparingLong(ProtectRecord::timeMs)
+                .thenComparingLong(ProtectRecord::id));
+        replay(admin, ordered, true, "Restore");
+        if (rememberForRedo) {
+            redoIdsByAdmin.put(admin.getUniqueId(), ordered.stream().map(ProtectRecord::id).toList());
+        }
+    }
+
+    private void replay(Player admin, List<ProtectRecord> source, boolean forward, String label) {
         Deque<ProtectRecord> remaining = new ArrayDeque<>(source);
         List<Long> appliedIds = new ArrayList<>();
         int total = source.size();
 
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
             int processed = 0;
-            while (processed < ROLLBACK_PER_TICK && !remaining.isEmpty()) {
-                ProtectRecord record = remaining.removeFirst();
-                if (applyRecord(record)) {
-                    appliedIds.add(record.id());
+            replaying = true;
+            try {
+                while (processed < ROLLBACK_PER_TICK && !remaining.isEmpty()) {
+                    ProtectRecord record = remaining.removeFirst();
+                    boolean applied = forward ? applyRecordForward(record) : applyRecord(record);
+                    if (applied) appliedIds.add(record.id());
+                    processed++;
                 }
-                processed++;
+            } finally {
+                replaying = false;
             }
 
-            if (!remaining.isEmpty()) {
-                return;
-            }
+            if (!remaining.isEmpty()) return;
 
-            database.markRolledBack(appliedIds, admin.getName());
+            if (forward) {
+                database.markRestored(appliedIds);
+            } else {
+                database.markRolledBack(appliedIds, admin.getName());
+                redoIdsByAdmin.remove(admin.getUniqueId());
+            }
             if (admin.isOnline()) {
-                admin.sendMessage("§a[Protect] ロールバック完了: "
+                admin.sendMessage("§a[Protect] " + label + "完了: "
                         + appliedIds.size() + "/" + total + " 件");
             }
             task.cancel();
@@ -374,6 +535,77 @@ public final class ProtectModule implements Listener {
                     + ": " + throwable.getMessage());
             return false;
         }
+    }
+
+    private boolean applyRecordForward(ProtectRecord record) {
+        World world;
+        try {
+            world = Bukkit.getWorld(UUID.fromString(record.worldUuid()));
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+        if (world == null) return false;
+
+        Block block = world.getBlockAt(record.x(), record.y(), record.z());
+        try {
+            if (record.action().isBlockMutation()) {
+                return restoreBlock(block, record.blockAfter());
+            }
+            if (record.action() == ProtectAction.CONTAINER_CHANGE) {
+                return restoreContainerSlot(block, record.slot(), record.itemAfter());
+            }
+            return false;
+        } catch (Throwable throwable) {
+            plugin.getLogger().warning("Protect restore apply failed at "
+                    + record.worldName() + " " + record.x() + "," + record.y() + "," + record.z()
+                    + ": " + throwable.getMessage());
+            return false;
+        }
+    }
+
+    private boolean validateReplay(Player admin, Location origin) {
+        if (!isEnabled()) {
+            admin.sendMessage("§c[Protect] Protectは無効です");
+            return false;
+        }
+        if (origin == null || origin.getWorld() == null) {
+            admin.sendMessage("§c[Protect] 対象地点が不正です");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean handleReplayQuery(
+            Player admin,
+            List<ProtectRecord> records,
+            Throwable throwable,
+            String operation) {
+        if (!admin.isOnline()) return false;
+        if (throwable != null) {
+            plugin.getLogger().warning("Protect " + operation + " query failed: " + throwable.getMessage());
+            admin.sendMessage("§c[Protect] " + operation + "検索に失敗しました");
+            return false;
+        }
+        if (records == null || records.isEmpty()) {
+            admin.sendMessage("§e[Protect] 条件に一致する復元可能なログはありません");
+            return false;
+        }
+        return true;
+    }
+
+    private String formatLookupRecord(ProtectRecord record) {
+        long ageSeconds = Math.max(0L, (System.currentTimeMillis() - record.timeMs()) / 1000L);
+        String age = ageSeconds < 60 ? ageSeconds + "s"
+                : ageSeconds < 3600 ? (ageSeconds / 60) + "m"
+                : ageSeconds < 86400 ? (ageSeconds / 3600) + "h"
+                : (ageSeconds / 86400) + "d";
+        return "§8#" + record.id()
+                + " §7" + age
+                + " §f" + (record.actorName() == null ? "#unknown" : record.actorName())
+                + " §b" + record.action().name().toLowerCase()
+                + " §7@" + record.x() + "," + record.y() + "," + record.z()
+                + (record.rolledBack() ? " §8[rolled-back]" : "")
+                + (record.detail() == null || record.detail().isBlank() ? "" : " §8" + record.detail());
     }
 
     private boolean restoreBlock(Block block, String blockDataText) {
@@ -464,7 +696,7 @@ public final class ProtectModule implements Listener {
             byte[] itemBefore,
             byte[] itemAfter,
             String detail) {
-        if (!isEnabled() || action == null || location == null || location.getWorld() == null) {
+        if (!isRecordingEnabled() || action == null || location == null || location.getWorld() == null) {
             return;
         }
         database.enqueue(new ProtectRecord(
