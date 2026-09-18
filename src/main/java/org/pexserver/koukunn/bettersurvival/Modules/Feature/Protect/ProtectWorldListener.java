@@ -15,6 +15,7 @@ import org.bukkit.entity.TNTPrimed;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockFadeEvent;
@@ -29,6 +30,7 @@ import org.bukkit.event.block.BlockSpreadEvent;
 import org.bukkit.event.block.EntityBlockFormEvent;
 import org.bukkit.event.block.LeavesDecayEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityInteractEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
@@ -358,6 +360,25 @@ public final class ProtectWorldListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityTrample(EntityInteractEvent event) {
+        if (!module.isEnabled()) return;
+        Block block = event.getBlock();
+        if (block.getType() != Material.TURTLE_EGG) return;
+
+        Location location = block.getLocation().clone();
+        String before = block.getBlockData().getAsString();
+        ActorRef actor = actorFor(
+                event.getEntity(),
+                "#" + event.getEntityType().name().toLowerCase(Locale.ROOT));
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            String after = location.getBlock().getBlockData().getAsString();
+            if (before.equals(after)) return;
+            recordActor(actor, location, ProtectAction.FARMLAND_TRAMPLE,
+                    before, after, "turtle egg trample");
+        });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
         if (!module.isEnabled()) return;
 
@@ -456,6 +477,19 @@ public final class ProtectWorldListener implements Listener {
 
         Material type = block.getType();
         ItemStack hand = event.getItem();
+
+        if (event.getAction() == Action.PHYSICAL && type == Material.TURTLE_EGG) {
+            Player player = event.getPlayer();
+            Location location = block.getLocation().clone();
+            String before = block.getBlockData().getAsString();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                String after = location.getBlock().getBlockData().getAsString();
+                if (before.equals(after)) return;
+                module.recordPlayer(player, location, ProtectAction.FARMLAND_TRAMPLE,
+                        before, after, null, null, null, "turtle egg trample");
+            });
+            return;
+        }
 
         if ((type == Material.SUSPICIOUS_SAND || type == Material.SUSPICIOUS_GRAVEL)
                 && hand != null && hand.getType() == Material.BRUSH) {
