@@ -1,7 +1,9 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Rotation;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Hanging;
@@ -30,6 +32,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.projectiles.ProjectileSource;
+import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.Locale;
 
@@ -224,14 +227,28 @@ public final class ProtectItemListener implements Listener {
     public void onItemFrameInteract(PlayerInteractEntityEvent event) {
         if (!module.isEnabled() || !(event.getRightClicked() instanceof ItemFrame frame)) return;
 
-        module.recordPlayer(
-                event.getPlayer(),
-                frame.getLocation(),
-                ProtectAction.ITEM_INTERACT,
-                null, null, null,
-                ProtectModule.serializeItem(frame.getItem()),
-                ProtectModule.serializeItem(event.getPlayer().getInventory().getItem(event.getHand())),
-                "ITEM_FRAME_INTERACT");
+        Player player = event.getPlayer();
+        Location location = frame.getLocation().clone();
+        ItemStack beforeItem = ProtectModule.copyItem(frame.getItem());
+        Rotation beforeRotation = frame.getRotation();
+
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> {
+            if (!frame.isValid()) return;
+            ItemStack afterItem = ProtectModule.copyItem(frame.getItem());
+            Rotation afterRotation = frame.getRotation();
+            if (java.util.Objects.equals(beforeItem, afterItem) && beforeRotation == afterRotation) {
+                return;
+            }
+
+            module.recordPlayer(
+                    player,
+                    location,
+                    ProtectAction.ITEM_INTERACT,
+                    null, null, null,
+                    ProtectModule.serializeItem(beforeItem),
+                    ProtectModule.serializeItem(afterItem),
+                    "ITEM_FRAME_INTERACT rotation=" + beforeRotation + "->" + afterRotation);
+        });
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
