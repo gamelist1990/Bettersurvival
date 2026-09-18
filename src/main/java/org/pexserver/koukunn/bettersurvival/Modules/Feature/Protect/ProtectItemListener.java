@@ -48,7 +48,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryMove(InventoryMoveItemEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Location source = resolveLocation(event.getSource());
         Location destination = resolveLocation(event.getDestination());
@@ -81,7 +81,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Item itemEntity = event.getItemDrop();
         ItemStack item = itemEntity.getItemStack();
@@ -96,7 +96,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPickup(EntityPickupItemEvent event) {
-        if (!module.isEnabled() || !(event.getEntity() instanceof Player player)) return;
+        if (!module.isRecordingEnabled() || !(event.getEntity() instanceof Player player)) return;
 
         Item itemEntity = event.getItem();
         ItemStack item = itemEntity.getItemStack();
@@ -111,7 +111,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onItemBreak(PlayerItemBreakEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         ItemStack broken = event.getBrokenItem();
         module.recordPlayer(
@@ -125,7 +125,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onCraft(CraftItemEvent event) {
-        if (!module.isEnabled() || !(event.getWhoClicked() instanceof Player player)) return;
+        if (!module.isRecordingEnabled() || !(event.getWhoClicked() instanceof Player player)) return;
 
         ItemStack result = event.getRecipe().getResult();
         module.recordPlayer(
@@ -139,7 +139,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Projectile projectile = event.getEntity();
         ProjectileSource shooter = projectile.getShooter();
@@ -156,7 +156,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTradeResult(InventoryClickEvent event) {
-        if (!module.isEnabled() || !(event.getWhoClicked() instanceof Player player)) return;
+        if (!module.isRecordingEnabled() || !(event.getWhoClicked() instanceof Player player)) return;
         if (event.getView().getTopInventory().getType() != InventoryType.MERCHANT) return;
         if (event.getRawSlot() != 2) return;
 
@@ -174,7 +174,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onHangingPlace(HangingPlaceEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Hanging hanging = event.getEntity();
         Player player = event.getPlayer();
@@ -201,7 +201,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onHangingBreak(HangingBreakByEntityEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
 
         Entity remover = event.getRemover();
         if (remover instanceof Player player) {
@@ -225,7 +225,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onItemFrameInteract(PlayerInteractEntityEvent event) {
-        if (!module.isEnabled() || !(event.getRightClicked() instanceof ItemFrame frame)) return;
+        if (!module.isRecordingEnabled() || !(event.getRightClicked() instanceof ItemFrame frame)) return;
 
         Player player = event.getPlayer();
         Location location = frame.getLocation().clone();
@@ -253,7 +253,7 @@ public final class ProtectItemListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onSpecialBlockItemInteraction(PlayerInteractEvent event) {
-        if (!module.isEnabled()) return;
+        if (!module.isRecordingEnabled()) return;
         if (event.getClickedBlock() == null) return;
 
         Material type = event.getClickedBlock().getType();
