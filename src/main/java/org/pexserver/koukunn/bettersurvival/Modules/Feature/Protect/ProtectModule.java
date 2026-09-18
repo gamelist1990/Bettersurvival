@@ -315,7 +315,7 @@ public final class ProtectModule implements Listener {
                     slot,
                     serializeItem(before),
                     serializeItem(after),
-                    itemSummary(before) + " -> " + itemSummary(after));
+                    describeContainerChange(before, after));
             previous[slot] = after;
         }
     }
@@ -530,6 +530,49 @@ public final class ProtectModule implements Listener {
             return null;
         }
         return item.clone();
+    }
+
+    public void logCustomBlockChange(
+            Player player,
+            Location location,
+            String beforeState,
+            String afterState,
+            String detail) {
+        recordPlayer(player, location, ProtectAction.CUSTOM_BLOCK,
+                beforeState, afterState, null, null, null, detail);
+    }
+
+    public void logCustomBlockChange(
+            String actorName,
+            Location location,
+            String beforeState,
+            String afterState,
+            String detail) {
+        recordSystem(actorName == null ? "#custom" : actorName, location,
+                ProtectAction.CUSTOM_BLOCK,
+                beforeState, afterState, null, null, null, detail);
+    }
+
+    private static String describeContainerChange(ItemStack before, ItemStack after) {
+        ItemStack oldItem = copyItem(before);
+        ItemStack newItem = copyItem(after);
+        if (oldItem == null && newItem != null) {
+            return "DEPOSIT " + itemSummary(newItem);
+        }
+        if (oldItem != null && newItem == null) {
+            return "WITHDRAW " + itemSummary(oldItem);
+        }
+        if (oldItem != null && newItem != null
+                && oldItem.isSimilar(newItem)) {
+            int delta = newItem.getAmount() - oldItem.getAmount();
+            if (delta > 0) {
+                return "DEPOSIT " + newItem.getType().name() + " x" + delta;
+            }
+            if (delta < 0) {
+                return "WITHDRAW " + oldItem.getType().name() + " x" + (-delta);
+            }
+        }
+        return "REPLACE " + itemSummary(oldItem) + " -> " + itemSummary(newItem);
     }
 
     static byte[] serializeItem(ItemStack item) {
