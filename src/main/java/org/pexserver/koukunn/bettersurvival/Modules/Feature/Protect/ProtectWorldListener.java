@@ -438,13 +438,13 @@ public final class ProtectWorldListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
         if (!module.isRecordingEnabled()) return;
-        trackPiston(event.getBlocks(), event.getDirection(), "extend");
+        trackPiston(event.getBlock(), event.getBlocks(), event.getDirection(), "extend");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
         if (!module.isRecordingEnabled()) return;
-        trackPiston(event.getBlocks(), event.getDirection(), "retract");
+        trackPiston(event.getBlock(), event.getBlocks(), event.getDirection(), "retract");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -545,15 +545,28 @@ public final class ProtectWorldListener implements Listener {
         }
     }
 
-    private void trackPiston(List<Block> blocks, BlockFace direction, String detail) {
-        if (blocks == null || blocks.isEmpty()) return;
+    private void trackPiston(
+            Block piston,
+            List<Block> blocks,
+            BlockFace direction,
+            String detail) {
+        if (piston == null) return;
 
         String operationId = ProtectModule.newOperationId("piston-" + detail);
         Map<BlockKey, PendingMutation> mutations = new LinkedHashMap<>();
-        for (Block source : blocks) {
-            Block target = source.getRelative(direction);
-            mutations.putIfAbsent(BlockKey.of(source), PendingMutation.capture(source));
-            mutations.putIfAbsent(BlockKey.of(target), PendingMutation.capture(target));
+
+        capturePistonCandidate(mutations, piston);
+        capturePistonCandidate(mutations, piston.getRelative(direction));
+        capturePistonCandidate(mutations, piston.getRelative(direction.getOppositeFace()));
+
+        if (blocks != null) {
+            for (Block source : blocks) {
+                capturePistonCandidate(mutations, source);
+                // 両側を取ることでextend/retractの方向解釈に依存せず、
+                // 翌tickに実際に変化した座標だけを記録できる。
+                capturePistonCandidate(mutations, source.getRelative(direction));
+                capturePistonCandidate(mutations, source.getRelative(direction.getOppositeFace()));
+            }
         }
 
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -574,6 +587,12 @@ public final class ProtectWorldListener implements Listener {
                         operationId);
             }
         });
+    }
+
+    private void capturePistonCandidate(
+            Map<BlockKey, PendingMutation> mutations,
+            Block block) {
+        mutations.putIfAbsent(BlockKey.of(block), PendingMutation.capture(block));
     }
 
     private void cleanupLiquidActorsOccasionally() {
