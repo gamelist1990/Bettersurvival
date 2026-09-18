@@ -78,6 +78,12 @@ public final class ProtectDatabase {
         return droppedRecords.get();
     }
 
+    public void requestCleanup() {
+        if (!closed) {
+            io.execute(this::cleanupSafely);
+        }
+    }
+
     public long getDatabaseSizeBytes() {
         long size = databaseFile.exists() ? databaseFile.length() : 0L;
         File wal = new File(databaseFile.getPath() + "-wal");
