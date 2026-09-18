@@ -587,36 +587,47 @@ public final class ProtectModule implements Listener {
             try {
                 while (processed < ROLLBACK_PER_TICK && !remaining.isEmpty()) {
                     ProtectRecord record = remaining.peekFirst();
-                    World world = worldFor(record);
-                    if (world == null) {
-                        remaining.removeFirst();
-                        processed++;
-                        continue;
-                    }
 
-                    int chunkX = record.x() >> 4;
-                    int chunkZ = record.z() >> 4;
-                    String chunkKey = record.worldUuid() + ":" + chunkX + ":" + chunkZ;
-
-                    if (unavailableChunks.contains(chunkKey)) {
-                        remaining.removeFirst();
-                        processed++;
-                        continue;
-                    }
-
-                    if (!world.isChunkLoaded(chunkX, chunkZ)) {
-                        if (loadingChunks.add(chunkKey)) {
-                            world.getChunkAtAsync(chunkX, chunkZ, false).whenComplete((chunk, throwable) -> {
-                                loadingChunks.remove(chunkKey);
-                                if (throwable != null || chunk == null) {
-                                    unavailableChunks.add(chunkKey);
-                                }
-                            });
+                    if (record.operationId() != null && !record.operationId().isBlank()) {
+                        String operationId = record.operationId();
+                        List<ProtectRecord> group = remaining.stream()
+                                .filter(candidate -> operationId.equals(candidate.operationId()))
+                                .toList();
+                        ChunkReadiness readiness = ensureChunksLoaded(
+                                group, loadingChunks, unavailableChunks);
+                        if (readiness == ChunkReadiness.LOADING) {
+                            break;
                         }
+                        remaining.removeIf(candidate -> operationId.equals(candidate.operationId()));
+                        if (readiness == ChunkReadiness.UNAVAILABLE) {
+                            processed += group.size();
+                            continue;
+                        }
+
+                        for (ProtectRecord groupedRecord : group) {
+                            boolean applied = forward
+                                    ? applyRecordForward(groupedRecord)
+                                    : applyRecord(groupedRecord);
+                            if (applied) {
+                                appliedIds.add(groupedRecord.id());
+                            }
+                        }
+                        processed += group.size();
+                        continue;
+                    }
+
+                    ChunkReadiness readiness = ensureChunksLoaded(
+                            List.of(record), loadingChunks, unavailableChunks);
+                    if (readiness == ChunkReadiness.LOADING) {
                         break;
                     }
 
                     remaining.removeFirst();
+                    if (readiness == ChunkReadiness.UNAVAILABLE) {
+                        processed++;
+                        continue;
+                    }
+
                     boolean applied = forward ? applyRecordForward(record) : applyRecord(record);
                     if (applied) {
                         appliedIds.add(record.id());
@@ -647,6 +658,52 @@ public final class ProtectModule implements Listener {
             }
             task.cancel();
         }, 1L, 1L);
+    }
+
+    private ChunkReadiness ensureChunksLoaded(
+            List<ProtectRecord> records,
+            Set<String> loadingChunks,
+            Set<String> unavailableChunks) {
+        boolean waiting = false;
+        for (ProtectRecord record : records) {
+            World world = worldFor(record);
+            if (world == null) {
+                return ChunkReadiness.UNAVAILABLE;
+            }
+
+            int chunkX = record.x() >> 4;
+            int chunkZ = record.z() >> 4;
+            String chunkKey = record.worldUuid() + ":" + chunkX + ":" + chunkZ;
+            if (unavailableChunks.contains(chunkKey)) {
+                return ChunkReadiness.UNAVAILABLE;
+            }
+            if (world.isChunkLoaded(chunkX, chunkZ)) {
+                continue;
+            }
+
+            waiting = true;
+            if (loadingChunks.add(chunkKey)) {
+                try {
+                    world.getChunkAtAsync(chunkX, chunkZ, false).whenComplete((chunk, throwable) -> {
+                        loadingChunks.remove(chunkKey);
+                        if (throwable != null || chunk == null) {
+                            unavailableChunks.add(chunkKey);
+                        }
+                    });
+                } catch (Throwable throwable) {
+                    loadingChunks.remove(chunkKey);
+                    unavailableChunks.add(chunkKey);
+                    return ChunkReadiness.UNAVAILABLE;
+                }
+            }
+        }
+        return waiting ? ChunkReadiness.LOADING : ChunkReadiness.READY;
+    }
+
+    private enum ChunkReadiness {
+        READY,
+        LOADING,
+        UNAVAILABLE
     }
 
     private boolean applyRecord(ProtectRecord record) {
