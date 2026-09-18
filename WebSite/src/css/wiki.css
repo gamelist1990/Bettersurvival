@@ -100,8 +100,18 @@
   color: var(--wiki-text);
 }
 
+.wiki-main {
+  min-width: 0;
+}
+
 @media (max-width: 900px) {
-  .wiki-shell { grid-template-columns: 1fr; }
+  .wiki-shell {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: clip;
+  }
 }
 
 /* --- Mobile drawer toggle button (hidden on desktop) --- */
@@ -382,9 +392,9 @@
 .wiki-card-summary { margin: 0; font-size: 13px; color: var(--wiki-muted); line-height: 1.7; }
 
 /* --- Section --- */
-.wiki-section { display: flex; flex-direction: column; gap: 20px; }
-.wiki-section-head { display: flex; flex-direction: column; gap: 12px; }
-.wiki-section-body { display: flex; flex-direction: column; gap: 18px; }
+.wiki-section { display: flex; min-width: 0; flex-direction: column; gap: 20px; }
+.wiki-section-head { display: flex; min-width: 0; flex-direction: column; gap: 12px; }
+.wiki-section-body { display: flex; min-width: 0; flex-direction: column; gap: 18px; }
 .wiki-section-body h3 { margin: 12px 0 4px; font-size: 18px; color: var(--wiki-text); }
 .wiki-section-body p { color: var(--wiki-muted); line-height: 1.85; }
 .wiki-bullets { padding-left: 20px; margin: 0; display: flex; flex-direction: column; gap: 8px; color: var(--wiki-muted); line-height: 1.75; }
