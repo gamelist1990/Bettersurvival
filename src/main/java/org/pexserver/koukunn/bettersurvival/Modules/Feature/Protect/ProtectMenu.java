@@ -1,0 +1,414 @@
+package org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
+import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
+import org.pexserver.koukunn.bettersurvival.Loader;
+
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Protect の OP 向けラージチェストGUI。
+ */
+public final class ProtectMenu {
+    private static final int PAGE_SIZE = 45;
+
+    private ProtectMenu() {
+    }
+
+    public static void openMain(Player player, ProtectModule module) {
+        String sizeText = humanBytes(module.getDatabaseSizeBytes());
+        ChestUI.builder()
+                .title("§3Protect §8- Audit & Rollback")
+                .size(54)
+                .type("protect_main")
+                .addButtonAt(10, "§b周辺の履歴", Material.SPYGLASS,
+                        "§7半径10ブロック / 保持期間内\n§7設置・破壊・コンテナ操作を表示")
+                .addButtonAt(12, "§6コンテナ履歴", Material.CHEST,
+                        "§7周辺10ブロックのチェスト等の\n§7OPEN/CLOSE/中身変更を表示")
+                .addButtonAt(14,
+                        module.isInspector(player) ? "§aInspector: ON" : "§cInspector: OFF",
+                        Material.RECOVERY_COMPASS,
+                        "§7ON中にブロックを左右クリックすると\n§7その座標の履歴を直接表示")
+                .addButtonAt(16, "§cロールバック", Material.CLOCK,
+                        "§7半径・時間・プレイヤーを指定して\n§7変更を逆順に復元")
+                .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.CALENDAR,
+                        "§7既定30日。1～3650日で変更可能")
+                .addButtonAt(32, "§dストレージ情報", Material.BOOK,
+                        "§7DBサイズ: " + sizeText + "\n§7Queue drop: " + module.getDroppedRecords())
+                .addButtonAt(49, "§7閉じる", Material.BARRIER, "")
+                .then((result, p) -> {
+                    if (!result.success || result.slot == null) {
+                        return;
+                    }
+                    switch (result.slot) {
+                        case 10 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, null);
+                        case 12 -> openHistoryAt(
+                                p,
+                                module,
+                                p.getLocation(),
+                                10,
+                                0,
+                                null,
+                                EnumSet.of(
+                                        ProtectAction.CONTAINER_OPEN,
+                                        ProtectAction.CONTAINER_CLOSE,
+                                        ProtectAction.CONTAINER_CHANGE));
+                        case 14 -> {
+                            boolean enabled = module.toggleInspector(p);
+                            p.sendMessage(enabled
+                                    ? "§a[Protect] Inspectorを有効にしました"
+                                    : "§e[Protect] Inspectorを無効にしました");
+                            openMain(p, module);
+                        }
+                        case 16 -> openRollbackDialog(p, module);
+                        case 30 -> openRetentionDialog(p, module);
+                        case 32 -> showStorageStats(p, module);
+                        case 49 -> ChestUI.closeMenu(p);
+                        default -> {
+                        }
+                    }
+                })
+                .show(player);
+    }
+
+    public static void openHistoryAt(
+            Player player,
+            ProtectModule module,
+            Location origin,
+            int radius,
+            String actorName,
+            Set<ProtectAction> actions) {
+        openHistoryAt(player, module, origin, radius, 0, actorName, actions);
+    }
+
+    public static void openHistoryAt(
+            Player player,
+            ProtectModule module,
+            Location origin,
+            int radius,
+            int page,
+            String actorName,
+            Set<ProtectAction> actions) {
+        if (origin == null || origin.getWorld() == null) {
+            return;
+        }
+
+        int safePage = Math.max(0, page);
+        long since = System.currentTimeMillis()
+                - TimeUnit.DAYS.toMillis(Math.max(1, module.getRetentionDays()));
+        player.sendMessage("§7[Protect] 履歴を検索中...");
+
+        module.getDatabase().queryNearby(
+                        origin.getWorld().getUID().toString(),
+                        origin.getBlockX(),
+                        origin.getBlockY(),
+                        origin.getBlockZ(),
+                        radius,
+                        since,
+                        actorName,
+                        actions,
+                        PAGE_SIZE,
+                        safePage * PAGE_SIZE)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(
+                        Loader.getPlugin(Loader.class),
+                        () -> {
+                            if (!player.isOnline()) {
+                                return;
+                            }
+                            if (throwable != null) {
+                                player.sendMessage("§c[Protect] 履歴検索に失敗しました");
+                                return;
+                            }
+                            showHistoryPage(
+                                    player,
+                                    module,
+                                    origin.clone(),
+                                    radius,
+                                    safePage,
+                                    actorName,
+                                    actions,
+                                    records == null ? List.of() : records);
+                        }));
+    }
+
+    private static void showHistoryPage(
+            Player player,
+            ProtectModule module,
+            Location origin,
+            int radius,
+            int page,
+            String actorName,
+            Set<ProtectAction> actions,
+            List<ProtectRecord> records) {
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§3Protect History §8[" + (page + 1) + "]")
+                .size(54)
+                .type("protect_history");
+
+        for (int i = 0; i < records.size() && i < PAGE_SIZE; i++) {
+            ProtectRecord record = records.get(i);
+            builder.addButtonAt(
+                    i,
+                    color(record.action()) + shortAction(record.action())
+                            + " §f" + safeName(record.actorName()),
+                    icon(record.action()),
+                    historyLore(record));
+        }
+
+        builder.addButtonAt(45, "§eメインへ", Material.ARROW, "");
+        if (page > 0) {
+            builder.addButtonAt(48, "§e前のページ", Material.SPECTRAL_ARROW, "");
+        }
+        builder.addButtonAt(49, "§7Page " + (page + 1), Material.PAPER,
+                "§7中心: " + origin.getBlockX() + "," + origin.getBlockY() + "," + origin.getBlockZ()
+                        + "\n§7半径: " + radius);
+        if (records.size() >= PAGE_SIZE) {
+            builder.addButtonAt(50, "§e次のページ", Material.ARROW, "");
+        }
+
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) {
+                return;
+            }
+            int slot = result.slot;
+            if (slot >= 0 && slot < records.size() && slot < PAGE_SIZE) {
+                openRecordDetail(p, module, records.get(slot), origin, radius, page, actorName, actions);
+                return;
+            }
+            if (slot == 45) {
+                openMain(p, module);
+            } else if (slot == 48 && page > 0) {
+                openHistoryAt(p, module, origin, radius, page - 1, actorName, actions);
+            } else if (slot == 50 && records.size() >= PAGE_SIZE) {
+                openHistoryAt(p, module, origin, radius, page + 1, actorName, actions);
+            }
+        }).show(player);
+    }
+
+    private static void openRecordDetail(
+            Player player,
+            ProtectModule module,
+            ProtectRecord record,
+            Location origin,
+            int radius,
+            int page,
+            String actorName,
+            Set<ProtectAction> actions) {
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§3Protect Log #" + record.id())
+                .size(27)
+                .type("protect_detail")
+                .addButtonAt(11, "§b" + shortAction(record.action()), icon(record.action()), historyLore(record))
+                .addButtonAt(15, "§e戻る", Material.ARROW, "");
+
+        if (record.reversible() && !record.rolledBack()) {
+            builder.addButtonAt(13, "§cこの1件をロールバック", Material.CLOCK,
+                    "§7この操作だけ元に戻します");
+        } else {
+            builder.addButtonAt(13,
+                    record.rolledBack() ? "§7ロールバック済み" : "§7復元対象外",
+                    Material.GRAY_DYE,
+                    "");
+        }
+
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) {
+                return;
+            }
+            if (result.slot == 13 && record.reversible() && !record.rolledBack()) {
+                module.rollbackSingle(p, record);
+                openMain(p, module);
+            } else if (result.slot == 15) {
+                openHistoryAt(p, module, origin, radius, page, actorName, actions);
+            }
+        }).show(player);
+    }
+
+    private static void openRollbackDialog(Player player, ProtectModule module) {
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect Rollback")
+                .body("現在地を中心に、指定時間内の変更を新しい順から復元します。")
+                .body("player は * で全プレイヤー。最大10,000件までをtick分割で処理します。")
+                .addTextInput("radius", "半径 (0-256)", "10", 3, false)
+                .addTextInput("hours", "何時間前まで", "24", 5, false)
+                .addTextInput("player", "Player", "*", 16, false)
+                .confirmation("ロールバック", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openMain(p, module);
+                        return;
+                    }
+                    Integer radius = parseInt(result.getText("radius"), 0, 256);
+                    Integer hours = parseInt(result.getText("hours"), 1, 24 * 365);
+                    if (radius == null || hours == null) {
+                        p.sendMessage("§c[Protect] 入力値が不正です");
+                        openMain(p, module);
+                        return;
+                    }
+                    module.rollback(p, radius, hours, result.getText("player"));
+                })
+                .show(player));
+    }
+
+    private static void openRetentionDialog(Player player, ProtectModule module) {
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect Retention")
+                .body("監査ログの保持日数を変更します。既定は30日です。")
+                .addTextInput("days", "保持日数 (1-3650)",
+                        String.valueOf(module.getRetentionDays()), 4, false)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openMain(p, module);
+                        return;
+                    }
+                    Integer days = parseInt(result.getText("days"), 1, 3650);
+                    if (days == null) {
+                        p.sendMessage("§c[Protect] 1～3650の数値を入力してください");
+                        openMain(p, module);
+                        return;
+                    }
+                    module.setRetentionDays(days);
+                    p.sendMessage("§a[Protect] 保持期間を " + days + " 日に変更しました");
+                    openMain(p, module);
+                })
+                .show(player));
+    }
+
+    private static void showStorageStats(Player player, ProtectModule module) {
+        module.getDatabase().countRecords().whenComplete((count, throwable) ->
+                Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    if (throwable != null) {
+                        player.sendMessage("§c[Protect] DB統計の取得に失敗しました");
+                        return;
+                    }
+                    player.sendMessage("§b[Protect] records=" + count
+                            + ", size=" + humanBytes(module.getDatabaseSizeBytes())
+                            + ", dropped=" + module.getDroppedRecords()
+                            + ", retention=" + module.getRetentionDays() + "d");
+                    openMain(player, module);
+                }));
+    }
+
+    private static String historyLore(ProtectRecord record) {
+        StringBuilder lore = new StringBuilder();
+        lore.append("§7").append(formatAge(record.timeMs())).append("前")
+                .append("\n§7World: ").append(record.worldName())
+                .append("\n§7XYZ: ").append(record.x()).append(", ")
+                .append(record.y()).append(", ").append(record.z());
+        if (record.slot() != null) {
+            lore.append("\n§7Slot: ").append(record.slot());
+        }
+        if (record.action() == ProtectAction.CONTAINER_CHANGE) {
+            lore.append("\n§7").append(ProtectModule.itemSummary(record.itemBefore()))
+                    .append(" -> ").append(ProtectModule.itemSummary(record.itemAfter()));
+        } else if (record.blockBefore() != null || record.blockAfter() != null) {
+            lore.append("\n§7")
+                    .append(shortBlock(record.blockBefore()))
+                    .append(" -> ")
+                    .append(shortBlock(record.blockAfter()));
+        }
+        if (record.rolledBack()) {
+            lore.append("\n§8Rollback済み");
+        }
+        return lore.toString();
+    }
+
+    private static String shortBlock(String blockData) {
+        if (blockData == null || blockData.isBlank()) {
+            return "-";
+        }
+        int bracket = blockData.indexOf('[');
+        String value = bracket >= 0 ? blockData.substring(0, bracket) : blockData;
+        int colon = value.indexOf(':');
+        return colon >= 0 ? value.substring(colon + 1) : value;
+    }
+
+    private static Material icon(ProtectAction action) {
+        return switch (action) {
+            case BLOCK_BREAK -> Material.IRON_PICKAXE;
+            case BLOCK_PLACE -> Material.GRASS_BLOCK;
+            case CONTAINER_OPEN -> Material.CHEST;
+            case CONTAINER_CLOSE -> Material.BARREL;
+            case CONTAINER_CHANGE -> Material.HOPPER;
+        };
+    }
+
+    private static String shortAction(ProtectAction action) {
+        return switch (action) {
+            case BLOCK_BREAK -> "破壊";
+            case BLOCK_PLACE -> "設置";
+            case CONTAINER_OPEN -> "開く";
+            case CONTAINER_CLOSE -> "閉じる";
+            case CONTAINER_CHANGE -> "中身変更";
+        };
+    }
+
+    private static String color(ProtectAction action) {
+        return switch (action) {
+            case BLOCK_BREAK -> "§c";
+            case BLOCK_PLACE -> "§a";
+            case CONTAINER_OPEN, CONTAINER_CLOSE -> "§6";
+            case CONTAINER_CHANGE -> "§d";
+        };
+    }
+
+    private static String safeName(String name) {
+        return name == null || name.isBlank() ? "unknown" : name;
+    }
+
+    private static String formatAge(long timeMs) {
+        long seconds = Math.max(0L, (System.currentTimeMillis() - timeMs) / 1000L);
+        if (seconds < 60L) {
+            return seconds + "秒";
+        }
+        long minutes = seconds / 60L;
+        if (minutes < 60L) {
+            return minutes + "分";
+        }
+        long hours = minutes / 60L;
+        if (hours < 24L) {
+            return hours + "時間";
+        }
+        return (hours / 24L) + "日";
+    }
+
+    private static Integer parseInt(String value, int min, int max) {
+        if (value == null || !value.trim().matches("\\d+")) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            return parsed >= min && parsed <= max ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static String humanBytes(long bytes) {
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        double kib = bytes / 1024.0;
+        if (kib < 1024.0) {
+            return String.format("%.1f KiB", kib);
+        }
+        double mib = kib / 1024.0;
+        if (mib < 1024.0) {
+            return String.format("%.1f MiB", mib);
+        }
+        return String.format("%.2f GiB", mib / 1024.0);
+    }
+}
