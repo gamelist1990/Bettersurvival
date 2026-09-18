@@ -23,8 +23,6 @@ public record ProtectRecord(
         boolean rolledBack) {
 
     public boolean reversible() {
-        return action == ProtectAction.BLOCK_BREAK
-                || action == ProtectAction.BLOCK_PLACE
-                || action == ProtectAction.CONTAINER_CHANGE;
+        return action != null && action.reversible();
     }
 }
