@@ -89,9 +89,9 @@ jobs:
             await page.waitForTimeout(100);
             await gui.screenshot({ path: out + '/' + file + '-main.png' });
 
-            const fallbacks = await gui.locator('.web-chest-fallback').evaluateAll((nodes) =>
+            const fallbacks = new Set(await gui.locator('.web-chest-fallback').evaluateAll((nodes) =>
               nodes.map((node) => node.closest('button')?.getAttribute('aria-label') ?? '(unknown)')
-            );
+            ));
 
             let index = 1;
             for (const name of clickNames) {
@@ -101,11 +101,15 @@ jobs:
                 await page.mouse.move(2, 2);
                 await page.waitForTimeout(120);
                 await gui.screenshot({ path: out + '/' + file + '-step-' + index + '.png' });
+                const stepFallbacks = await gui.locator('.web-chest-fallback').evaluateAll((nodes) =>
+                  nodes.map((node) => node.closest('button')?.getAttribute('aria-label') ?? '(unknown)')
+                );
+                stepFallbacks.forEach((label) => fallbacks.add(label));
                 index++;
               }
             }
             fs.writeFileSync(out + '/' + file + '-errors.txt', errors.join('\n'));
-            fs.writeFileSync(out + '/' + file + '-fallbacks.txt', fallbacks.join('\n'));
+            fs.writeFileSync(out + '/' + file + '-fallbacks.txt', [...fallbacks].join('\n'));
             await page.close();
           }
 
