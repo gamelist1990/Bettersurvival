@@ -43,6 +43,7 @@ import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -130,25 +131,47 @@ public final class ProtectWorldListener implements Listener {
             if (actor != null) {
                 liquidActors.put(BlockKey.of(to), actor.withExpiry(System.currentTimeMillis() + LIQUID_ACTOR_TTL_MS));
             }
-            recordActor(
-                    actor,
-                    to.getLocation(),
-                    ProtectAction.LIQUID_FLOW,
-                    to.getBlockData().getAsString(),
-                    from.getBlockData().getAsString(),
-                    sourceType.name());
+
+            Location targetLocation = to.getLocation().clone();
+            String before = to.getBlockData().getAsString();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                Block afterBlock = targetLocation.getBlock();
+                String after = afterBlock.getBlockData().getAsString();
+                if (before.equals(after)) return;
+                recordActor(
+                        actor,
+                        targetLocation,
+                        ProtectAction.LIQUID_FLOW,
+                        before,
+                        after,
+                        sourceType.name());
+            });
             return;
         }
 
         if (sourceType == Material.DRAGON_EGG) {
-            module.recordSystem(
-                    "#dragon_egg",
-                    from.getLocation(),
-                    ProtectAction.BLOCK_MOVE,
-                    from.getBlockData().getAsString(),
-                    Bukkit.createBlockData(Material.AIR).getAsString(),
-                    null, null, null,
-                    "dragon egg teleport");
+            String operationId = ProtectModule.newOperationId("dragon-egg");
+            List<PendingMutation> mutations = new ArrayList<>(2);
+            mutations.add(PendingMutation.capture(from));
+            mutations.add(PendingMutation.capture(to));
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                for (PendingMutation mutation : mutations) {
+                    Block afterBlock = mutation.location().getBlock();
+                    String after = afterBlock.getBlockData().getAsString();
+                    if (mutation.before().equals(after)) continue;
+                    module.recordSystemGrouped(
+                            "#dragon_egg",
+                            mutation.location(),
+                            ProtectAction.BLOCK_MOVE,
+                            mutation.before(),
+                            after,
+                            null,
+                            mutation.beforeSnapshot(),
+                            ProtectBlockSnapshot.capture(afterBlock.getState()),
+                            "dragon egg teleport",
+                            operationId);
+                }
+            });
         }
     }
 
@@ -180,7 +203,7 @@ public final class ProtectWorldListener implements Listener {
                 ProtectAction.FIRE_BURN,
                 block.getBlockData().getAsString(),
                 Bukkit.createBlockData(Material.AIR).getAsString(),
-                null, null, null,
+                null, ProtectBlockSnapshot.capture(block.getState()), null,
                 "burn");
     }
 
@@ -390,6 +413,8 @@ public final class ProtectWorldListener implements Listener {
                     ProtectAction.EXPLOSION,
                     block.getBlockData().getAsString(),
                     Bukkit.createBlockData(Material.AIR).getAsString(),
+                    ProtectBlockSnapshot.capture(block.getState()),
+                    null,
                     event.getEntityType().name());
         }
     }
@@ -405,7 +430,7 @@ public final class ProtectWorldListener implements Listener {
                     ProtectAction.EXPLOSION,
                     block.getBlockData().getAsString(),
                     Bukkit.createBlockData(Material.AIR).getAsString(),
-                    null, null, null,
+                    null, ProtectBlockSnapshot.capture(block.getState()), null,
                     "source=" + event.getBlock().getType().name());
         }
     }
@@ -501,7 +526,7 @@ public final class ProtectWorldListener implements Listener {
             return;
         }
 
-        if (isFlowerPot(type) || type == Material.DRAGON_EGG) {
+        if (isFlowerPot(type)) {
             Player player = event.getPlayer();
             Location location = block.getLocation().clone();
             String before = block.getBlockData().getAsString();
@@ -512,7 +537,7 @@ public final class ProtectWorldListener implements Listener {
                 if (before.equals(after)) return;
                 module.recordPlayer(
                         player, location,
-                        type == Material.DRAGON_EGG ? ProtectAction.BLOCK_MOVE : ProtectAction.POT_CHANGE,
+                        ProtectAction.POT_CHANGE,
                         before, after, null,
                         handBytes, null,
                         typeName);
@@ -521,20 +546,34 @@ public final class ProtectWorldListener implements Listener {
     }
 
     private void trackPiston(List<Block> blocks, BlockFace direction, String detail) {
+        if (blocks == null || blocks.isEmpty()) return;
+
+        String operationId = ProtectModule.newOperationId("piston-" + detail);
+        Map<BlockKey, PendingMutation> mutations = new LinkedHashMap<>();
         for (Block source : blocks) {
             Block target = source.getRelative(direction);
-            String moving = source.getBlockData().getAsString();
-            String targetBefore = target.getBlockData().getAsString();
-
-            module.recordSystem(
-                    "#piston", source.getLocation(), ProtectAction.BLOCK_MOVE,
-                    moving, Bukkit.createBlockData(Material.AIR).getAsString(),
-                    null, null, null, detail + " source");
-            module.recordSystem(
-                    "#piston", target.getLocation(), ProtectAction.BLOCK_MOVE,
-                    targetBefore, moving,
-                    null, null, null, detail + " target");
+            mutations.putIfAbsent(BlockKey.of(source), PendingMutation.capture(source));
+            mutations.putIfAbsent(BlockKey.of(target), PendingMutation.capture(target));
         }
+
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            for (PendingMutation mutation : mutations.values()) {
+                Block afterBlock = mutation.location().getBlock();
+                String after = afterBlock.getBlockData().getAsString();
+                if (mutation.before().equals(after)) continue;
+                module.recordSystemGrouped(
+                        "#piston",
+                        mutation.location(),
+                        ProtectAction.BLOCK_MOVE,
+                        mutation.before(),
+                        after,
+                        null,
+                        mutation.beforeSnapshot(),
+                        ProtectBlockSnapshot.capture(afterBlock.getState()),
+                        detail,
+                        operationId);
+            }
+        });
     }
 
     private void cleanupLiquidActorsOccasionally() {
@@ -561,12 +600,24 @@ public final class ProtectWorldListener implements Listener {
             String before,
             String after,
             String detail) {
+        recordActor(actor, location, action, before, after, null, null, detail);
+    }
+
+    private void recordActor(
+            ActorRef actor,
+            Location location,
+            ProtectAction action,
+            String before,
+            String after,
+            byte[] beforeSnapshot,
+            byte[] afterSnapshot,
+            String detail) {
         if (actor == null) {
             module.recordSystem("#liquid", location, action, before, after,
-                    null, null, null, detail);
+                    null, beforeSnapshot, afterSnapshot, detail);
         } else {
             module.recordActor(actor.uuid(), actor.name(), location, action, before, after,
-                    null, null, null, detail);
+                    null, beforeSnapshot, afterSnapshot, detail);
         }
     }
 
@@ -632,6 +683,18 @@ public final class ProtectWorldListener implements Listener {
 
         ActorRef withExpiry(long expiresAt) {
             return new ActorRef(uuid, name, expiresAt);
+        }
+    }
+
+    private record PendingMutation(
+            Location location,
+            String before,
+            byte[] beforeSnapshot) {
+        static PendingMutation capture(Block block) {
+            return new PendingMutation(
+                    block.getLocation().clone(),
+                    block.getBlockData().getAsString(),
+                    ProtectBlockSnapshot.capture(block.getState()));
         }
     }
 
