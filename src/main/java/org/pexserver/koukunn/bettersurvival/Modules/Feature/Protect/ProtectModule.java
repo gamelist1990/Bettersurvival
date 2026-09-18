@@ -398,6 +398,28 @@ public final class ProtectModule implements Listener {
                 }));
     }
 
+    public void resetDatabase(Player admin, Runnable onComplete) {
+        database.resetDatabase().whenComplete((result, throwable) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (throwable != null || result == null) {
+                        plugin.getLogger().warning("Protect database reset failed: "
+                                + (throwable == null ? "unknown" : throwable.getMessage()));
+                        if (admin.isOnline()) {
+                            admin.sendMessage("§c[Protect] DB初期化に失敗しました");
+                        }
+                        if (onComplete != null) onComplete.run();
+                        return;
+                    }
+                    redoIdsByAdmin.clear();
+                    if (admin.isOnline()) {
+                        admin.sendMessage("§a[Protect] DB初期化完了: "
+                                + result.deletedRecords() + "件削除 / Queue "
+                                + result.clearedQueuedRecords() + "件破棄");
+                    }
+                    if (onComplete != null) onComplete.run();
+                }));
+    }
+
     public void purge(Player admin, long cutoffMs, String actorName) {
         database.purgeOlderThan(cutoffMs, normalizeActor(actorName))
                 .whenComplete((deleted, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
