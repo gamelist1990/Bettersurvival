@@ -83,8 +83,8 @@ public final class ProtectMenu {
                         "§7CoreProtect風の詳細フィルタ画面を開きます")
                 .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
                         "§7既定30日。1～3650日で変更可能")
-                .addButtonAt(32, "§dストレージ情報", Material.BOOK,
-                        "§7DBサイズ: " + sizeText + "\n§7Queue drop: " + module.getDroppedRecords())
+                .addButtonAt(32, "§dProtect Status", Material.BOOK,
+                        "§7保存件数・DB容量・WAL・Queue・\n§7空きディスク・Retentionを確認")
                 .addButtonAt(49, "§7閉じる", Material.BARRIER, "")
                 .then((result, p) -> {
                     if (!result.success || result.slot == null) {
@@ -114,7 +114,7 @@ public final class ProtectMenu {
                         case 20 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, worldActions());
                         case 22 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, itemActions());
                         case 30 -> openRetentionDialog(p, module);
-                        case 32 -> showStorageStats(p, module);
+                        case 32 -> openStatusMenu(p, module, false);
                         case 49 -> ChestUI.closeMenu(p);
                         default -> {
                         }
@@ -342,7 +342,7 @@ public final class ProtectMenu {
                         case 24 -> openReplayPreview(p, module, true);
                         case 29 -> module.undo(p);
                         case 31 -> module.redo(p);
-                        case 33 -> showStorageStatsDialog(p, module);
+                        case 33 -> openStatusMenu(p, module, true);
                         case 40 -> openRetentionDialog(p, module);
                         case 42 -> openPurgeDialog(p, module);
                         case 45 -> openMain(p, module);
@@ -763,6 +763,91 @@ public final class ProtectMenu {
                                             filter.radius, filter.limit, false);
                                 }
                                 openAdvancedMenu(p, module);
+                            })
+                            .show(player);
+                }));
+    }
+
+    private static void openStatusMenu(Player player, ProtectModule module, boolean backToAdvanced) {
+        ChestUI.closeMenu(player);
+        module.getDatabase().getStatusSnapshot().whenComplete((status, throwable) ->
+                Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> {
+                    if (!player.isOnline()) return;
+                    if (throwable != null || status == null) {
+                        player.sendMessage("§c[Protect] Status取得に失敗しました");
+                        if (backToAdvanced) {
+                            openAdvancedMenu(player, module);
+                        } else {
+                            openMain(player, module);
+                        }
+                        return;
+                    }
+
+                    Material stateIcon = status.ready() ? Material.LIME_DYE : Material.RED_DYE;
+                    String stateText = status.ready() ? "§aONLINE" : "§cOFFLINE";
+                    String queueState = status.queueUsagePercent() >= 80.0
+                            ? "§c"
+                            : status.queueUsagePercent() >= 50.0 ? "§e" : "§a";
+
+                    ChestUI.builder()
+                            .title("§3Protect §8- Status")
+                            .size(54)
+                            .type("protect_status")
+                            .addButtonAt(10, stateText, stateIcon,
+                                    "§7SQLite: " + (status.ready() ? "Ready" : "Not ready")
+                                            + "\n§7Mode: WAL / synchronous=NORMAL")
+                            .addButtonAt(12, "§b保存ログ: §f" + status.totalRecords(), Material.BOOK,
+                                    "§7直近24時間: §f" + status.last24hRecords()
+                                            + "\n§7Rollback済み: §f" + status.rolledBackRecords())
+                            .addButtonAt(14, "§d保存容量: §f" + humanBytes(status.totalStorageBytes()), Material.CHEST,
+                                    "§7DB本体: §f" + humanBytes(status.databaseBytes())
+                                            + "\n§7WAL: §f" + humanBytes(status.walBytes())
+                                            + "\n§7SHM: §f" + humanBytes(status.shmBytes()))
+                            .addButtonAt(16, "§6ディスク空き: §f" + humanBytes(status.diskUsableBytes()), Material.ENDER_CHEST,
+                                    "§7Total: §f" + humanBytes(status.diskTotalBytes())
+                                            + "\n§7Protectはこのディスク領域へ保存")
+                            .addButtonAt(20,
+                                    queueState + "Write Queue: §f" + status.queueSize() + "/" + status.queueCapacity(),
+                                    Material.HOPPER,
+                                    String.format("§7使用率: §f%.1f%%", status.queueUsagePercent())
+                                            + "\n§7非同期DB書き込み待機件数")
+                            .addButtonAt(22, "§cDropped: §f" + status.droppedRecords(), Material.REDSTONE,
+                                    "§70が正常です"
+                                            + "\n§7Queueが満杯になると増加")
+                            .addButtonAt(24, "§eRetention: §f" + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
+                                    "§7ログ保持期間"
+                                            + "\n§7クリックで変更")
+                            .addButtonAt(29, "§b24h Activity", Material.CLOCK,
+                                    "§7直近24時間の保存件数: §f" + status.last24hRecords())
+                            .addButtonAt(31, "§7Storage Engine", Material.COMPARATOR,
+                                    "§7SQLite / WAL"
+                                            + "\n§7Batch INSERT: 最大256件"
+                                            + "\n§7Flush interval: 250ms")
+                            .addButtonAt(33, "§aStatus更新", Material.SPYGLASS,
+                                    "§7最新状態を再取得")
+                            .addButtonAt(40, "§eRetention変更", Material.CLOCK,
+                                    "§7現在: " + module.getRetentionDays() + "日")
+                            .addButtonAt(45,
+                                    backToAdvanced ? "§e詳細調査へ戻る" : "§eメインへ戻る",
+                                    Material.ARROW,
+                                    "")
+                            .addButtonAt(49, "§7閉じる", Material.BARRIER, "")
+                            .then((result, p) -> {
+                                if (!result.success || result.slot == null) return;
+                                switch (result.slot) {
+                                    case 24, 40 -> openRetentionDialog(p, module);
+                                    case 33 -> openStatusMenu(p, module, backToAdvanced);
+                                    case 45 -> {
+                                        if (backToAdvanced) {
+                                            openAdvancedMenu(p, module);
+                                        } else {
+                                            openMain(p, module);
+                                        }
+                                    }
+                                    case 49 -> ChestUI.closeMenu(p);
+                                    default -> {
+                                    }
+                                }
                             })
                             .show(player);
                 }));
