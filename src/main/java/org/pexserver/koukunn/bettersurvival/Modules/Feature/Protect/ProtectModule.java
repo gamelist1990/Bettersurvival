@@ -361,11 +361,13 @@ public final class ProtectModule implements Listener {
 
         Block block = world.getBlockAt(record.x(), record.y(), record.z());
         try {
-            return switch (record.action()) {
-                case BLOCK_BREAK, BLOCK_PLACE -> restoreBlock(block, record.blockBefore());
-                case CONTAINER_CHANGE -> restoreContainerSlot(block, record.slot(), record.itemBefore());
-                default -> false;
-            };
+            if (record.action().isBlockMutation()) {
+                return restoreBlock(block, record.blockBefore());
+            }
+            if (record.action() == ProtectAction.CONTAINER_CHANGE) {
+                return restoreContainerSlot(block, record.slot(), record.itemBefore());
+            }
+            return false;
         } catch (Throwable throwable) {
             plugin.getLogger().warning("Protect rollback apply failed at "
                     + record.worldName() + " " + record.x() + "," + record.y() + "," + record.z()
@@ -409,7 +411,7 @@ public final class ProtectModule implements Listener {
         record(player, location, action, before, after, null, null, null, detail);
     }
 
-    private void record(
+    void recordPlayer(
             Player player,
             Location location,
             ProtectAction action,
@@ -419,14 +421,57 @@ public final class ProtectModule implements Listener {
             byte[] itemBefore,
             byte[] itemAfter,
             String detail) {
-        if (location == null || location.getWorld() == null) {
+        if (player == null) {
+            recordActor(null, "#unknown", location, action, blockBefore, blockAfter, slot,
+                    itemBefore, itemAfter, detail);
+            return;
+        }
+        recordActor(
+                player.getUniqueId().toString(),
+                player.getName(),
+                location,
+                action,
+                blockBefore,
+                blockAfter,
+                slot,
+                itemBefore,
+                itemAfter,
+                detail);
+    }
+
+    void recordSystem(
+            String actorName,
+            Location location,
+            ProtectAction action,
+            String blockBefore,
+            String blockAfter,
+            Integer slot,
+            byte[] itemBefore,
+            byte[] itemAfter,
+            String detail) {
+        recordActor(null, actorName, location, action, blockBefore, blockAfter, slot,
+                itemBefore, itemAfter, detail);
+    }
+
+    void recordActor(
+            String actorUuid,
+            String actorName,
+            Location location,
+            ProtectAction action,
+            String blockBefore,
+            String blockAfter,
+            Integer slot,
+            byte[] itemBefore,
+            byte[] itemAfter,
+            String detail) {
+        if (!isEnabled() || action == null || location == null || location.getWorld() == null) {
             return;
         }
         database.enqueue(new ProtectRecord(
                 0L,
                 System.currentTimeMillis(),
-                player.getUniqueId().toString(),
-                player.getName(),
+                actorUuid,
+                actorName == null || actorName.isBlank() ? "#unknown" : actorName,
                 location.getWorld().getUID().toString(),
                 location.getWorld().getName(),
                 location.getBlockX(),
@@ -440,6 +485,20 @@ public final class ProtectModule implements Listener {
                 itemAfter,
                 detail,
                 false));
+    }
+
+    private void record(
+            Player player,
+            Location location,
+            ProtectAction action,
+            String blockBefore,
+            String blockAfter,
+            Integer slot,
+            byte[] itemBefore,
+            byte[] itemAfter,
+            String detail) {
+        recordPlayer(player, location, action, blockBefore, blockAfter, slot,
+                itemBefore, itemAfter, detail);
     }
 
     private Location resolveInventoryLocation(Inventory inventory) {
@@ -466,14 +525,14 @@ public final class ProtectModule implements Listener {
         return result;
     }
 
-    private static ItemStack copyItem(ItemStack item) {
+    static ItemStack copyItem(ItemStack item) {
         if (item == null || item.getAmount() <= 0 || item.getType().isAir()) {
             return null;
         }
         return item.clone();
     }
 
-    private static byte[] serializeItem(ItemStack item) {
+    static byte[] serializeItem(ItemStack item) {
         ItemStack copy = copyItem(item);
         return copy == null ? null : copy.serializeAsBytes();
     }
