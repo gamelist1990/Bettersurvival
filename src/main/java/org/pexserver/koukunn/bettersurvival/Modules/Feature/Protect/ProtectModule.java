@@ -373,17 +373,28 @@ public final class ProtectModule implements Listener {
     }
 
     public void stats(Player admin) {
-        database.countRecords().whenComplete((count, throwable) ->
+        database.getStatusSnapshot().whenComplete((status, throwable) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!admin.isOnline()) return;
-                    if (throwable != null) {
-                        admin.sendMessage("§c[Protect] 統計取得に失敗しました");
+                    if (throwable != null || status == null) {
+                        admin.sendMessage("§c[Protect] Status取得に失敗しました");
                         return;
                     }
-                    admin.sendMessage("§b[Protect] records=" + count
-                            + " size=" + getDatabaseSizeBytes()
-                            + "B dropped=" + getDroppedRecords()
-                            + " retention=" + getRetentionDays() + "d");
+                    admin.sendMessage("§b[Protect Status] "
+                            + (status.ready() ? "§aONLINE" : "§cOFFLINE"));
+                    admin.sendMessage("§7Records: §f" + status.totalRecords()
+                            + " §8(24h: " + status.last24hRecords()
+                            + ", rolled-back: " + status.rolledBackRecords() + ")");
+                    admin.sendMessage("§7Storage: §f" + formatBytes(status.totalStorageBytes())
+                            + " §8(DB " + formatBytes(status.databaseBytes())
+                            + " / WAL " + formatBytes(status.walBytes())
+                            + " / SHM " + formatBytes(status.shmBytes()) + ")");
+                    admin.sendMessage("§7Disk free: §f" + formatBytes(status.diskUsableBytes())
+                            + " §8/ " + formatBytes(status.diskTotalBytes()));
+                    admin.sendMessage("§7Queue: §f" + status.queueSize() + "/" + status.queueCapacity()
+                            + String.format(" §8(%.1f%%)", status.queueUsagePercent())
+                            + " §7Dropped: §f" + status.droppedRecords());
+                    admin.sendMessage("§7Retention: §f" + getRetentionDays() + "d");
                 }));
     }
 
@@ -849,6 +860,16 @@ public final class ProtectModule implements Listener {
             return "空";
         }
         return copy.getType().name() + " x" + copy.getAmount();
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024L) return bytes + " B";
+        double kib = bytes / 1024.0;
+        if (kib < 1024.0) return String.format("%.1f KiB", kib);
+        double mib = kib / 1024.0;
+        if (mib < 1024.0) return String.format("%.1f MiB", mib);
+        double gib = mib / 1024.0;
+        return String.format("%.2f GiB", gib);
     }
 
     private static String normalizeActor(String actorName) {
