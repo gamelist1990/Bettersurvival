@@ -37,12 +37,20 @@ jobs:
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/protect-vite.log 2>&1 &
           echo $! > /tmp/protect-vite.pid
+          ready=0
           for i in {1..40}; do
-            if curl -fsS http://127.0.0.1:4173/wiki/protect >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:4173/wiki/protect >/dev/null; then
+              ready=1
+              break
+            fi
             sleep 0.5
           done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/protect-vite.log
+            exit 1
+          fi
 
-          cat > /tmp/protect-shot.mjs <<'EOF'
+          cat > protect-shot.mjs <<'EOF'
           import { chromium } from 'playwright';
           import fs from 'node:fs';
 
@@ -94,7 +102,7 @@ jobs:
           await browser.close();
           EOF
 
-          node /tmp/protect-shot.mjs
+          node protect-shot.mjs
           kill "$(cat /tmp/protect-vite.pid)" || true
 
       - uses: actions/upload-artifact@v4
