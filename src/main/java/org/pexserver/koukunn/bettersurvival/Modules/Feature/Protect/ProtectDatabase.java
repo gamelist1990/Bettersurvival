@@ -667,7 +667,7 @@ public final class ProtectDatabase {
                     time_ms, actor_uuid, actor_name, world_uuid, world_name,
                     x, y, z, action, block_before, block_after, slot,
                     item_before, item_after, detail, operation_id, rolled_back
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         boolean previousAutoCommit = connection.getAutoCommit();
