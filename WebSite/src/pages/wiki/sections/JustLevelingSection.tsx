@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { SectionShell } from '../components/SectionShell';
 import { FetchedWikiImage } from '../components/FetchedWikiImage';
 import { WikiLink } from '../components/WikiNavContext';
-import { TextureLayout } from '../components/TextureLayout';
+import { ChestGuiMock } from '../components/ChestGuiMock';
 
 const asset = (name: string) => `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/26.1/items/${name}.png`;
 
@@ -24,26 +25,36 @@ const guiItems = [
 ] as const;
 
 function LevelingGuiMock() {
-  const slotPositions: Record<number, [number, number]> = {
-    10: [19.5, 34.4], 12: [40.2, 34.4], 14: [60.9, 34.4], 16: [81.6, 34.4],
-    20: [29.9, 48.4], 22: [50.6, 48.4], 24: [71.3, 48.4],
-    28: [19.5, 62.5], 30: [40.2, 62.5], 32: [60.9, 62.5], 34: [81.6, 62.5],
-    45: [9.2, 90.6], 47: [29.9, 90.6], 49: [50.6, 90.6], 51: [71.3, 90.6],
-  };
-  return <TextureLayout
-    src="/images/wiki/just-leveling-chest-ui.png"
-    alt="ラージチェストUIの土台"
-    className="just-leveling-gui-mock"
-    items={guiItems.map(([slot, label, item]) => ({
-      id: `slot-${slot}`,
-      src: asset(item),
-      left: slotPositions[slot][0],
-      top: slotPositions[slot][1],
-      size: 10.34,
-      imageSize: 48,
-      label: <span>{label}</span>,
-    }))}
-  />;
+  const [notice, setNotice] = useState('能力値や補助ボタンをクリックできます。');
+  return (
+    <div className="protect-demo">
+      <ChestGuiMock
+        title="Just Leveling"
+        rows={6}
+        slots={guiItems.map(([slot, label, item]) => ({
+          slot,
+          label,
+          item,
+          lore: label === 'CLOSE'
+            ? ['GUIを閉じる']
+            : label === 'TITLE'
+              ? ['称号一覧を開く']
+              : label === 'XP'
+                ? ['現在の経験値Levelを確認']
+                : ['Webモック用クリック操作'],
+          onClick: () => setNotice(
+            label === 'CLOSE'
+              ? 'GUIを閉じる操作を再現しました。'
+              : `${label} をクリックしました。`
+          ),
+        }))}
+        caption="共通Web ChestGUIコンポーネントを使った54スロットモックです。Hover/FocusでLore、クリックで操作イベントを確認できます。"
+      />
+      <div className="protect-demo-console" aria-live="polite">
+        <strong>Mock event</strong><span>{notice}</span>
+      </div>
+    </div>
+  );
 }
 
 export function JustLevelingSection() {
