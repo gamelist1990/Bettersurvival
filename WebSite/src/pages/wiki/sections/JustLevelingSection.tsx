@@ -130,7 +130,7 @@ export function JustLevelingSection() {
         </table>
       </div>
 
-      <small className="just-leveling-source">アイテム画像: <a href="https://github.com/Mojang/bedrock-samples/tree/main/resource_pack/textures" target="_blank" rel="noreferrer">Mojang/bedrock-samples（main）</a>。Minecraft アセット側に26.1より新しいデータが追加された場合は、利用バージョンに合わせて参照先を更新します。</small>
+      <small className="just-leveling-source">アイテム画像: <a href="https://github.com/Mojang/bedrock-samples/tree/main/resource_pack/textures" target="_blank" rel="noreferrer">Mojang/bedrock-samples（main）</a>。Mojang公式サンプルのmainブランチを参照するため、Wiki側は最新の公開textureへ追従します。</small>
     </SectionShell>
   );
 }
