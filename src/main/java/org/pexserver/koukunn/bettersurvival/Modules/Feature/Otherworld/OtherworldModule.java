@@ -449,8 +449,33 @@ public class OtherworldModule implements Listener {
                 .generateStructures(false)
                 .generator(new ChunkGenerator() {
                     @Override
-                    public ChunkData generateChunkData(World world, java.util.Random random, int chunkX, int chunkZ, BiomeGrid biome) {
-                        return createChunkData(world);
+                    public boolean shouldGenerateNoise() {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean shouldGenerateSurface() {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean shouldGenerateCaves() {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean shouldGenerateDecorations() {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean shouldGenerateMobs() {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean shouldGenerateStructures() {
+                        return false;
                     }
                 });
         World lobby = Bukkit.createWorld(creator);
@@ -461,8 +486,8 @@ public class OtherworldModule implements Listener {
                     lobby.getBlockAt(x, 63, z).setType(Material.BLACK_CONCRETE);
                 }
             }
-            lobby.setGameRule(org.bukkit.GameRule.DO_DAYLIGHT_CYCLE, false);
-            lobby.setGameRule(org.bukkit.GameRule.DO_WEATHER_CYCLE, false);
+            lobby.setGameRule(org.bukkit.GameRules.ADVANCE_TIME, false);
+            lobby.setGameRule(org.bukkit.GameRules.ADVANCE_WEATHER, false);
             lobby.setTime(6000L);
         }
         return lobby;
