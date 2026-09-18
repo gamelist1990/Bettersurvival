@@ -81,8 +81,8 @@ public final class ProtectMenu {
                         "§7ドロップ・拾得・破損・クラフト・\n§7発射・取引・特殊ブロック操作")
                 .addButtonAt(24, "§d高度な検索条件", Material.COMPARATOR,
                         "§7CoreProtect風の詳細フィルタ画面を開きます")
-                .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
-                        "§7既定30日。1～3650日で変更可能")
+                .addButtonAt(30, "§eProtect Settings", Material.WRITABLE_BOOK,
+                        "§7Retention / DB初期化 / Cleanup / Status")
                 .addButtonAt(32, "§dProtect Status", Material.BOOK,
                         "§7保存件数・DB容量・WAL・Queue・\n§7空きディスク・Retentionを確認")
                 .addButtonAt(49, "§7閉じる", Material.BARRIER, "")
@@ -113,7 +113,7 @@ public final class ProtectMenu {
                         case 16, 24 -> openAdvancedMenu(p, module);
                         case 20 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, worldActions());
                         case 22 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, itemActions());
-                        case 30 -> openRetentionDialog(p, module);
+                        case 30 -> openSettingsMenu(p, module);
                         case 32 -> openStatusMenu(p, module, false);
                         case 49 -> ChestUI.closeMenu(p);
                         default -> {
@@ -317,8 +317,8 @@ public final class ProtectMenu {
                         "§7この起動中にUndoした内容を再Rollback")
                 .addButtonAt(33, "§dDB Stats", Material.BOOK,
                         "§7件数 / DBサイズ / Drop / 保持日数")
-                .addButtonAt(40, "§eRetention", Material.WRITABLE_BOOK,
-                        "§7現在: " + module.getRetentionDays() + "日")
+                .addButtonAt(40, "§eSettings", Material.WRITABLE_BOOK,
+                        "§7Retention / DB初期化 / Cleanup")
                 .addButtonAt(42, "§4Purge", Material.LAVA_BUCKET,
                         "§c古いログを完全削除\n§cRollbackではありません")
                 .addButtonAt(45, "§eメインへ", Material.ARROW, "")
@@ -343,7 +343,7 @@ public final class ProtectMenu {
                         case 29 -> module.undo(p);
                         case 31 -> module.redo(p);
                         case 33 -> openStatusMenu(p, module, true);
-                        case 40 -> openRetentionDialog(p, module);
+                        case 40 -> openSettingsMenu(p, module);
                         case 42 -> openPurgeDialog(p, module);
                         case 45 -> openMain(p, module);
                         case 49 -> ChestUI.closeMenu(p);
@@ -835,7 +835,7 @@ public final class ProtectMenu {
                             .then((result, p) -> {
                                 if (!result.success || result.slot == null) return;
                                 switch (result.slot) {
-                                    case 24, 40 -> openRetentionDialog(p, module);
+                                    case 24, 40 -> openSettingsMenu(p, module);
                                     case 33 -> openStatusMenu(p, module, backToAdvanced);
                                     case 45 -> {
                                         if (backToAdvanced) {
@@ -1009,6 +1009,88 @@ public final class ProtectMenu {
                         return;
                     }
                     module.rollback(p, radius, hours, result.getText("player"));
+                })
+                .show(player));
+    }
+
+    private static void openSettingsMenu(Player player, ProtectModule module) {
+        ChestUI.builder()
+                .title("§3Protect §8- Settings")
+                .size(54)
+                .type("protect_settings")
+                .addButtonAt(11, "§eRetention: §f" + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
+                        "§7ログ保持期間を1～3650日で変更")
+                .addButtonAt(13, "§bStatus", Material.BOOK,
+                        "§7保存件数・容量・WAL・Queue・空き容量を確認")
+                .addButtonAt(15, "§aCleanup Now", Material.BRUSH,
+                        "§7保持期間を超えた古いログの削除を今すぐ要求")
+                .addButtonAt(22, "§4DBを初期化", Material.TNT,
+                        "§c全監査ログを削除します"
+                                + "\n§cRollback履歴も消えます"
+                                + "\n§7SQLiteスキーマは維持して即時再利用可能")
+                .addButtonAt(45, "§eメインへ", Material.ARROW, "")
+                .addButtonAt(49, "§7閉じる", Material.BARRIER, "")
+                .then((result, p) -> {
+                    if (!result.success || result.slot == null) return;
+                    switch (result.slot) {
+                        case 11 -> openRetentionDialog(p, module);
+                        case 13 -> openStatusMenu(p, module, false);
+                        case 15 -> {
+                            module.getDatabase().requestCleanup();
+                            p.sendMessage("§a[Protect] Retention cleanupを要求しました");
+                            openSettingsMenu(p, module);
+                        }
+                        case 22 -> openDatabaseResetWarning(p, module);
+                        case 45 -> openMain(p, module);
+                        case 49 -> ChestUI.closeMenu(p);
+                        default -> {
+                        }
+                    }
+                })
+                .show(player);
+    }
+
+    private static void openDatabaseResetWarning(Player player, ProtectModule module) {
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect DB 初期化")
+                .body("全ての監査ログ・Rollback状態を削除します。")
+                .body("この操作は取り消せません。SQLiteのスキーマ自体は維持されます。")
+                .confirmation("次へ", "キャンセル")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openSettingsMenu(p, module);
+                        return;
+                    }
+                    openDatabaseResetConfirmText(p, module);
+                })
+                .show(player));
+    }
+
+    private static void openDatabaseResetConfirmText(Player player, ProtectModule module) {
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect DB 初期化 - 最終確認")
+                .body("実行するには RESET と入力してください。")
+                .addTextInput("confirm", "確認文字", "", 16, false)
+                .confirmation("DB初期化", "キャンセル")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openSettingsMenu(p, module);
+                        return;
+                    }
+                    String confirm = result.getText("confirm");
+                    if (confirm == null || !confirm.trim().equalsIgnoreCase("RESET")) {
+                        p.sendMessage("§c[Protect] RESET が一致しないため初期化を中止しました");
+                        openSettingsMenu(p, module);
+                        return;
+                    }
+                    p.sendMessage("§e[Protect] DBを初期化しています...");
+                    ADVANCED_FILTERS.remove(p.getUniqueId());
+                    module.resetDatabase(p, () -> {
+                        if (p.isOnline()) {
+                            openStatusMenu(p, module, false);
+                        }
+                    });
                 })
                 .show(player));
     }
