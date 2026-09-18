@@ -199,19 +199,28 @@
     border-radius: 20px 0 0 20px;
     border-right: 0;
     z-index: 1001;
-    transform: translateX(100%);
-    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: scaleX(0.985);
+    transform-origin: right center;
+    transition:
+      opacity 180ms ease,
+      transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 260ms;
     padding-top: max(20px, env(safe-area-inset-top));
     padding-bottom: max(20px, env(safe-area-inset-bottom));
     padding-right: max(12px, env(safe-area-inset-right));
     box-shadow: -14px 0 40px rgba(78, 58, 40, 0.28);
-    /* 内部スクロールを iOS で滑らかに */
     -webkit-overflow-scrolling: touch;
-    /* ドロワー本体は縦スクロールのみ、横方向はブラウザ操作扱い */
     touch-action: pan-y;
   }
   .wiki-shell > .wiki-side.is-open {
-    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: scaleX(1);
+    transition-delay: 0s;
   }
 }
 
