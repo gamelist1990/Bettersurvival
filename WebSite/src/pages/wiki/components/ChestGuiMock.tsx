@@ -54,17 +54,12 @@ function fallbackForItem(item?: string) {
 }
 
 function PlayerHeadIcon() {
-  const texture = minecraftPlayerSkin();
   return (
-    <svg
-      className="web-chest-special-icon web-chest-player-head"
-      viewBox="0 0 8 8"
+    <span
+      className="web-chest-player-head"
       aria-hidden="true"
-      focusable="false"
-    >
-      <image href={texture} x="-8" y="-8" width="64" height="64" />
-      <image href={texture} x="-40" y="-8" width="64" height="64" />
-    </svg>
+      style={{ backgroundImage: `url("${minecraftPlayerSkin()}")` }}
+    />
   );
 }
 
@@ -78,6 +73,10 @@ function SlotIcon({
   const [failed, setFailed] = useState(false);
 
   if (!src && item === 'player_head') return <PlayerHeadIcon />;
+
+  if (!src && !item) {
+    return null;
+  }
 
   const resolvedSrc = src ?? (item ? minecraftItemAsset(item) : undefined);
   if (!resolvedSrc || failed) {
