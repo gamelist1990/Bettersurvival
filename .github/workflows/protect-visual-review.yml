@@ -76,15 +76,18 @@ jobs:
             await gui.screenshot({ path: out + '/02-protect-main-gui.png' });
 
             await page.getByRole('button', { name: '詳細調査 / 復旧' }).click();
-            await page.waitForTimeout(100);
+            await page.mouse.move(2, 2);
+            await page.waitForTimeout(150);
             await gui.screenshot({ path: out + '/03-protect-advanced-gui.png' });
 
             await page.getByRole('button', { name: 'DB Stats' }).click();
-            await page.waitForTimeout(100);
+            await page.mouse.move(2, 2);
+            await page.waitForTimeout(150);
             await gui.screenshot({ path: out + '/04-protect-status-gui.png' });
 
             await page.getByRole('button', { name: 'Settings' }).click();
-            await page.waitForTimeout(100);
+            await page.mouse.move(2, 2);
+            await page.waitForTimeout(150);
             await gui.screenshot({ path: out + '/05-protect-settings-gui.png' });
 
             fs.writeFileSync(out + '/desktop-errors.txt', errors.join('\n'));
