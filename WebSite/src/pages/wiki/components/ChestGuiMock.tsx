@@ -22,7 +22,7 @@ type ChestGuiMockProps = {
 };
 
 export const minecraftItemAsset = (name: string) =>
-  `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/26.1/items/${name}.png`;
+  `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.21.8/items/${name}.png`;
 
 function normalizeLore(lore?: string | string[]) {
   if (!lore) return [];
