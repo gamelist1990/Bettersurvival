@@ -352,9 +352,10 @@ public final class ProtectDatabase {
         io.execute(() -> {
             try {
                 flushBatch();
-                future.complete(runNearbyQuery(
+                List<ProtectRecord> initial = runNearbyQuery(
                         worldUuid, x, y, z, safeRadius, sinceMs, actorName,
-                        reversible, safeLimit, 0, rolledBackState));
+                        reversible, safeLimit, 0, rolledBackState);
+                future.complete(expandOperationGroups(initial, rolledBackState));
             } catch (Throwable throwable) {
                 future.completeExceptionally(throwable);
             }
@@ -375,7 +376,7 @@ public final class ProtectDatabase {
                 String sql = """
                         SELECT id, time_ms, actor_uuid, actor_name, world_uuid, world_name,
                                x, y, z, action, block_before, block_after, slot,
-                               item_before, item_after, detail, rolled_back
+                               item_before, item_after, detail, operation_id, rolled_back
                         FROM protect_events
                         WHERE rolled_back = 1
                           AND rollback_actor = ? COLLATE NOCASE
@@ -421,7 +422,7 @@ public final class ProtectDatabase {
                 StringBuilder sql = new StringBuilder("""
                         SELECT id, time_ms, actor_uuid, actor_name, world_uuid, world_name,
                                x, y, z, action, block_before, block_after, slot,
-                               item_before, item_after, detail, rolled_back
+                               item_before, item_after, detail, operation_id, rolled_back
                         FROM protect_events WHERE id IN (
                         """);
                 for (int i = 0; i < copy.size(); i++) {
@@ -589,10 +590,16 @@ public final class ProtectDatabase {
                             item_before BLOB,
                             item_after BLOB,
                             detail TEXT,
+                            operation_id TEXT,
                             rolled_back INTEGER NOT NULL DEFAULT 0,
                             rollback_actor TEXT,
                             rollback_time_ms INTEGER
                         )
+                        """);
+                ensureColumn(statement, "protect_events", "operation_id", "TEXT");
+                statement.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_protect_operation
+                        ON protect_events(operation_id)
                         """);
                 statement.execute("""
                         CREATE INDEX IF NOT EXISTS idx_protect_location_time
@@ -614,6 +621,25 @@ public final class ProtectDatabase {
         } catch (Throwable throwable) {
             connection = null;
             plugin.getLogger().log(Level.SEVERE, "Protect DB initialization failed", throwable);
+        }
+    }
+
+    private void ensureColumn(
+            Statement statement,
+            String table,
+            String column,
+            String definition) throws SQLException {
+        boolean exists = false;
+        try (ResultSet rs = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+        if (!exists) {
+            statement.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
         }
     }
 
@@ -640,7 +666,7 @@ public final class ProtectDatabase {
                 INSERT INTO protect_events (
                     time_ms, actor_uuid, actor_name, world_uuid, world_name,
                     x, y, z, action, block_before, block_after, slot,
-                    item_before, item_after, detail, rolled_back
+                    item_before, item_after, detail, operation_id, rolled_back
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
@@ -686,7 +712,62 @@ public final class ProtectDatabase {
         ps.setBytes(13, record.itemBefore());
         ps.setBytes(14, record.itemAfter());
         ps.setString(15, record.detail());
-        ps.setInt(16, record.rolledBack() ? 1 : 0);
+        ps.setString(16, record.operationId());
+        ps.setInt(17, record.rolledBack() ? 1 : 0);
+    }
+
+    private List<ProtectRecord> expandOperationGroups(
+            List<ProtectRecord> initial,
+            int rolledBackState) throws SQLException {
+        if (connection == null || initial == null || initial.isEmpty()) {
+            return initial == null ? List.of() : initial;
+        }
+
+        Set<String> operationIds = new java.util.LinkedHashSet<>();
+        java.util.LinkedHashMap<Long, ProtectRecord> merged = new java.util.LinkedHashMap<>();
+        for (ProtectRecord record : initial) {
+            merged.put(record.id(), record);
+            if (record.operationId() != null && !record.operationId().isBlank()) {
+                operationIds.add(record.operationId());
+            }
+        }
+        if (operationIds.isEmpty()) {
+            return new ArrayList<>(merged.values());
+        }
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, time_ms, actor_uuid, actor_name, world_uuid, world_name,
+                       x, y, z, action, block_before, block_after, slot,
+                       item_before, item_after, detail, operation_id, rolled_back
+                FROM protect_events
+                WHERE operation_id IN (
+                """);
+        for (int i = 0; i < operationIds.size(); i++) {
+            if (i > 0) sql.append(',');
+            sql.append('?');
+        }
+        sql.append(')');
+        if (rolledBackState == 0) {
+            sql.append(" AND rolled_back = 0");
+        } else if (rolledBackState == 1) {
+            sql.append(" AND rolled_back = 1");
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(sql.toString())) {
+            int index = 1;
+            for (String operationId : operationIds) {
+                ps.setString(index++, operationId);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    ProtectRecord record = readRecord(rs);
+                    if (record.reversible()) {
+                        merged.put(record.id(), record);
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(merged.values());
     }
 
     private List<ProtectRecord> runNearbyQuery(
@@ -708,7 +789,7 @@ public final class ProtectDatabase {
         StringBuilder sql = new StringBuilder("""
                 SELECT id, time_ms, actor_uuid, actor_name, world_uuid, world_name,
                        x, y, z, action, block_before, block_after, slot,
-                       item_before, item_after, detail, rolled_back
+                       item_before, item_after, detail, operation_id, rolled_back
                 FROM protect_events
                 WHERE world_uuid = ?
                   AND time_ms >= ?
@@ -784,6 +865,7 @@ public final class ProtectDatabase {
                 rs.getBytes("item_before"),
                 rs.getBytes("item_after"),
                 rs.getString("detail"),
+                rs.getString("operation_id"),
                 rs.getInt("rolled_back") != 0);
     }
 
@@ -819,6 +901,9 @@ public final class ProtectDatabase {
                 try (Statement statement = connection.createStatement()) {
                     statement.execute("PRAGMA optimize");
                 }
+            }
+            if (totalDeleted >= 50_000 && !closed) {
+                io.schedule(this::cleanupSafely, 1L, TimeUnit.SECONDS);
             }
         } catch (SQLException e) {
             plugin.getLogger().log(Level.WARNING, "Protect retention cleanup failed", e);
