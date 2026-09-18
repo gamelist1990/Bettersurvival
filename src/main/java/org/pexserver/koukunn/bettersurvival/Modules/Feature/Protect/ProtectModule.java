@@ -14,6 +14,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockMultiPlaceEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -40,6 +41,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * CoreProtect 風の軽量監査・ロールバック機能。
@@ -60,6 +63,7 @@ public final class ProtectModule implements Listener {
     private final Set<UUID> pendingContainerScans = ConcurrentHashMap.newKeySet();
     private final Set<UUID> inspectors = ConcurrentHashMap.newKeySet();
     private final Map<UUID, List<Long>> redoIdsByAdmin = new ConcurrentHashMap<>();
+    private final AtomicBoolean replayActive = new AtomicBoolean();
     private volatile boolean replaying;
 
     public ProtectModule(Loader plugin, ToggleModule toggle) {
@@ -117,27 +121,57 @@ public final class ProtectModule implements Listener {
             return;
         }
         Block block = event.getBlock();
-        recordBlock(
+        BlockState beforeState = block.getState();
+        record(
                 event.getPlayer(),
                 block.getLocation(),
                 ProtectAction.BLOCK_BREAK,
                 block.getBlockData().getAsString(),
                 "minecraft:air",
+                null,
+                ProtectBlockSnapshot.capture(beforeState),
+                null,
                 block.getType().name());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
+        if (!isEnabled() || event instanceof BlockMultiPlaceEvent) {
+            return;
+        }
+        Block placed = event.getBlockPlaced();
+        record(
+                event.getPlayer(),
+                placed.getLocation(),
+                ProtectAction.BLOCK_PLACE,
+                event.getBlockReplacedState().getBlockData().getAsString(),
+                placed.getBlockData().getAsString(),
+                null,
+                ProtectBlockSnapshot.capture(event.getBlockReplacedState()),
+                ProtectBlockSnapshot.capture(placed.getState()),
+                placed.getType().name());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockMultiPlace(BlockMultiPlaceEvent event) {
         if (!isEnabled()) {
             return;
         }
-        recordBlock(
-                event.getPlayer(),
-                event.getBlockPlaced().getLocation(),
-                ProtectAction.BLOCK_PLACE,
-                event.getBlockReplacedState().getBlockData().getAsString(),
-                event.getBlockPlaced().getBlockData().getAsString(),
-                event.getBlockPlaced().getType().name());
+        String operationId = newOperationId("multi-place");
+        for (BlockState replaced : event.getReplacedBlockStates()) {
+            Block placed = replaced.getBlock();
+            recordPlayerGrouped(
+                    event.getPlayer(),
+                    placed.getLocation(),
+                    ProtectAction.BLOCK_PLACE,
+                    replaced.getBlockData().getAsString(),
+                    placed.getBlockData().getAsString(),
+                    null,
+                    ProtectBlockSnapshot.capture(replaced),
+                    ProtectBlockSnapshot.capture(placed.getState()),
+                    placed.getType().name(),
+                    operationId);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -502,22 +536,36 @@ public final class ProtectModule implements Listener {
         ordered.sort(Comparator.comparingLong(ProtectRecord::timeMs)
                 .thenComparingLong(ProtectRecord::id)
                 .reversed());
-        replay(admin, ordered, false, "ロールバック");
+        replay(admin, ordered, false, "ロールバック", appliedIds ->
+                redoIdsByAdmin.remove(admin.getUniqueId()));
     }
 
     private void applyRestore(Player admin, List<ProtectRecord> source, boolean rememberForRedo) {
         List<ProtectRecord> ordered = new ArrayList<>(source);
         ordered.sort(Comparator.comparingLong(ProtectRecord::timeMs)
                 .thenComparingLong(ProtectRecord::id));
-        replay(admin, ordered, true, "Restore");
-        if (rememberForRedo) {
-            redoIdsByAdmin.put(admin.getUniqueId(), ordered.stream().map(ProtectRecord::id).toList());
-        }
+        replay(admin, ordered, true, "Restore", appliedIds -> {
+            if (rememberForRedo) {
+                redoIdsByAdmin.put(admin.getUniqueId(), List.copyOf(appliedIds));
+            }
+        });
     }
 
-    private void replay(Player admin, List<ProtectRecord> source, boolean forward, String label) {
+    private void replay(
+            Player admin,
+            List<ProtectRecord> source,
+            boolean forward,
+            String label,
+            Consumer<List<Long>> completion) {
+        if (!replayActive.compareAndSet(false, true)) {
+            admin.sendMessage("§c[Protect] 別のRollback/Restoreが実行中です。完了後に再実行してください");
+            return;
+        }
+
         Deque<ProtectRecord> remaining = new ArrayDeque<>(source);
         List<Long> appliedIds = new ArrayList<>();
+        Set<String> loadingChunks = new java.util.HashSet<>();
+        Set<String> unavailableChunks = new java.util.HashSet<>();
         int total = source.size();
 
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
@@ -525,38 +573,71 @@ public final class ProtectModule implements Listener {
             replaying = true;
             try {
                 while (processed < ROLLBACK_PER_TICK && !remaining.isEmpty()) {
-                    ProtectRecord record = remaining.removeFirst();
+                    ProtectRecord record = remaining.peekFirst();
+                    World world = worldFor(record);
+                    if (world == null) {
+                        remaining.removeFirst();
+                        processed++;
+                        continue;
+                    }
+
+                    int chunkX = record.x() >> 4;
+                    int chunkZ = record.z() >> 4;
+                    String chunkKey = record.worldUuid() + ":" + chunkX + ":" + chunkZ;
+
+                    if (unavailableChunks.contains(chunkKey)) {
+                        remaining.removeFirst();
+                        processed++;
+                        continue;
+                    }
+
+                    if (!world.isChunkLoaded(chunkX, chunkZ)) {
+                        if (loadingChunks.add(chunkKey)) {
+                            world.getChunkAtAsync(chunkX, chunkZ, false).whenComplete((chunk, throwable) -> {
+                                loadingChunks.remove(chunkKey);
+                                if (throwable != null || chunk == null) {
+                                    unavailableChunks.add(chunkKey);
+                                }
+                            });
+                        }
+                        break;
+                    }
+
+                    remaining.removeFirst();
                     boolean applied = forward ? applyRecordForward(record) : applyRecord(record);
-                    if (applied) appliedIds.add(record.id());
+                    if (applied) {
+                        appliedIds.add(record.id());
+                    }
                     processed++;
                 }
             } finally {
                 replaying = false;
             }
 
-            if (!remaining.isEmpty()) return;
+            if (!remaining.isEmpty()) {
+                return;
+            }
 
             if (forward) {
                 database.markRestored(appliedIds);
             } else {
                 database.markRolledBack(appliedIds, admin.getName());
-                redoIdsByAdmin.remove(admin.getUniqueId());
             }
+            if (completion != null) {
+                completion.accept(List.copyOf(appliedIds));
+            }
+            replayActive.set(false);
             if (admin.isOnline()) {
                 admin.sendMessage("§a[Protect] " + label + "完了: "
-                        + appliedIds.size() + "/" + total + " 件");
+                        + appliedIds.size() + "/" + total + " 件"
+                        + (unavailableChunks.isEmpty() ? "" : " §e(未読込Chunkを一部スキップ)"));
             }
             task.cancel();
         }, 1L, 1L);
     }
 
     private boolean applyRecord(ProtectRecord record) {
-        World world;
-        try {
-            world = Bukkit.getWorld(UUID.fromString(record.worldUuid()));
-        } catch (IllegalArgumentException ignored) {
-            return false;
-        }
+        World world = worldFor(record);
         if (world == null) {
             return false;
         }
@@ -564,7 +645,7 @@ public final class ProtectModule implements Listener {
         Block block = world.getBlockAt(record.x(), record.y(), record.z());
         try {
             if (record.action().isBlockMutation()) {
-                return restoreBlock(block, record.blockBefore());
+                return restoreBlock(block, record.blockBefore(), record.itemBefore());
             }
             if (record.action() == ProtectAction.CONTAINER_CHANGE) {
                 return restoreContainerSlot(block, record.slot(), record.itemBefore());
@@ -579,18 +660,13 @@ public final class ProtectModule implements Listener {
     }
 
     private boolean applyRecordForward(ProtectRecord record) {
-        World world;
-        try {
-            world = Bukkit.getWorld(UUID.fromString(record.worldUuid()));
-        } catch (IllegalArgumentException ignored) {
-            return false;
-        }
+        World world = worldFor(record);
         if (world == null) return false;
 
         Block block = world.getBlockAt(record.x(), record.y(), record.z());
         try {
             if (record.action().isBlockMutation()) {
-                return restoreBlock(block, record.blockAfter());
+                return restoreBlock(block, record.blockAfter(), record.itemAfter());
             }
             if (record.action() == ProtectAction.CONTAINER_CHANGE) {
                 return restoreContainerSlot(block, record.slot(), record.itemAfter());
@@ -649,13 +725,26 @@ public final class ProtectModule implements Listener {
                 + (record.detail() == null || record.detail().isBlank() ? "" : " §8" + record.detail());
     }
 
-    private boolean restoreBlock(Block block, String blockDataText) {
+    private boolean restoreBlock(Block block, String blockDataText, byte[] blockSnapshot) {
         if (blockDataText == null || blockDataText.isBlank()) {
             return false;
         }
         BlockData blockData = Bukkit.createBlockData(blockDataText);
         block.setBlockData(blockData, false);
+        if (blockSnapshot != null && blockSnapshot.length > 0) {
+            BlockState state = block.getState();
+            ProtectBlockSnapshot.apply(state, blockSnapshot);
+            state.update(true, false);
+        }
         return true;
+    }
+
+    private World worldFor(ProtectRecord record) {
+        try {
+            return Bukkit.getWorld(UUID.fromString(record.worldUuid()));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private boolean restoreContainerSlot(Block block, Integer slot, byte[] itemBytes) {
@@ -694,12 +783,27 @@ public final class ProtectModule implements Listener {
             byte[] itemBefore,
             byte[] itemAfter,
             String detail) {
+        recordPlayerGrouped(player, location, action, blockBefore, blockAfter, slot,
+                itemBefore, itemAfter, detail, null);
+    }
+
+    void recordPlayerGrouped(
+            Player player,
+            Location location,
+            ProtectAction action,
+            String blockBefore,
+            String blockAfter,
+            Integer slot,
+            byte[] itemBefore,
+            byte[] itemAfter,
+            String detail,
+            String operationId) {
         if (player == null) {
-            recordActor(null, "#unknown", location, action, blockBefore, blockAfter, slot,
-                    itemBefore, itemAfter, detail);
+            recordActorGrouped(null, "#unknown", location, action, blockBefore, blockAfter, slot,
+                    itemBefore, itemAfter, detail, operationId);
             return;
         }
-        recordActor(
+        recordActorGrouped(
                 player.getUniqueId().toString(),
                 player.getName(),
                 location,
@@ -709,7 +813,8 @@ public final class ProtectModule implements Listener {
                 slot,
                 itemBefore,
                 itemAfter,
-                detail);
+                detail,
+                operationId);
     }
 
     void recordSystem(
@@ -722,8 +827,23 @@ public final class ProtectModule implements Listener {
             byte[] itemBefore,
             byte[] itemAfter,
             String detail) {
-        recordActor(null, actorName, location, action, blockBefore, blockAfter, slot,
-                itemBefore, itemAfter, detail);
+        recordSystemGrouped(actorName, location, action, blockBefore, blockAfter, slot,
+                itemBefore, itemAfter, detail, null);
+    }
+
+    void recordSystemGrouped(
+            String actorName,
+            Location location,
+            ProtectAction action,
+            String blockBefore,
+            String blockAfter,
+            Integer slot,
+            byte[] itemBefore,
+            byte[] itemAfter,
+            String detail,
+            String operationId) {
+        recordActorGrouped(null, actorName, location, action, blockBefore, blockAfter, slot,
+                itemBefore, itemAfter, detail, operationId);
     }
 
     void recordActor(
@@ -737,6 +857,22 @@ public final class ProtectModule implements Listener {
             byte[] itemBefore,
             byte[] itemAfter,
             String detail) {
+        recordActorGrouped(actorUuid, actorName, location, action, blockBefore, blockAfter, slot,
+                itemBefore, itemAfter, detail, null);
+    }
+
+    void recordActorGrouped(
+            String actorUuid,
+            String actorName,
+            Location location,
+            ProtectAction action,
+            String blockBefore,
+            String blockAfter,
+            Integer slot,
+            byte[] itemBefore,
+            byte[] itemAfter,
+            String detail,
+            String operationId) {
         if (!isRecordingEnabled() || action == null || location == null || location.getWorld() == null) {
             return;
         }
@@ -757,7 +893,13 @@ public final class ProtectModule implements Listener {
                 itemBefore,
                 itemAfter,
                 detail,
+                operationId,
                 false));
+    }
+
+    static String newOperationId(String kind) {
+        String prefix = kind == null || kind.isBlank() ? "op" : kind;
+        return prefix + ":" + UUID.randomUUID();
     }
 
     private void record(
