@@ -49,6 +49,7 @@ public final class ProtectItemListener implements Listener {
 
         Location source = resolveLocation(event.getSource());
         Location destination = resolveLocation(event.getDestination());
+        String automationActor = automationActor(event.getSource());
         ItemStack item = ProtectModule.copyItem(event.getItem());
         String summary = ProtectModule.itemSummary(item);
         String tag = item != null && item.getType() == Material.BUNDLE ? "#bundle " : "";
@@ -57,7 +58,7 @@ public final class ProtectItemListener implements Listener {
         // type/amountをdetailへ記録してDBサイズとserialize負荷を抑える。
         if (source != null) {
             module.recordSystem(
-                    "#hopper",
+                    automationActor,
                     source,
                     ProtectAction.CONTAINER_TRANSFER,
                     null, null, null,
@@ -66,7 +67,7 @@ public final class ProtectItemListener implements Listener {
         }
         if (destination != null) {
             module.recordSystem(
-                    "#hopper",
+                    automationActor,
                     destination,
                     ProtectAction.CONTAINER_TRANSFER,
                     null, null, null,
@@ -264,6 +265,16 @@ public final class ProtectItemListener implements Listener {
                 || type == Material.DECORATED_POT
                 || name.contains("CHISELED_BOOKSHELF")
                 || name.contains("SHELF");
+    }
+
+    private String automationActor(Inventory inventory) {
+        if (inventory != null && inventory.getHolder() instanceof BlockInventoryHolder blockHolder) {
+            try {
+                return "#" + blockHolder.getBlock().getType().name().toLowerCase(Locale.ROOT);
+            } catch (IllegalStateException ignored) {
+            }
+        }
+        return "#transfer";
     }
 
     private Location resolveLocation(Inventory inventory) {
