@@ -29,7 +29,7 @@ public final class ProtectMenu {
                 .size(54)
                 .type("protect_main")
                 .addButtonAt(10, "§b周辺の履歴", Material.SPYGLASS,
-                        "§7半径10ブロック / 保持期間内\n§7設置・破壊・コンテナ操作を表示")
+                        "§7半径10ブロック / 保持期間内\n§7世界変化・爆発・液体・火災・アイテム操作を表示")
                 .addButtonAt(12, "§6コンテナ履歴", Material.CHEST,
                         "§7周辺10ブロックのチェスト等の\n§7OPEN/CLOSE/中身変更を表示")
                 .addButtonAt(14,
@@ -311,10 +311,12 @@ public final class ProtectMenu {
         if (record.slot() != null) {
             lore.append("\n§7Slot: ").append(record.slot());
         }
-        if (record.action() == ProtectAction.CONTAINER_CHANGE) {
+        if ((record.action().isContainerAction() || record.action().isItemAction())
+                && (record.itemBefore() != null || record.itemAfter() != null)) {
             lore.append("\n§7").append(ProtectModule.itemSummary(record.itemBefore()))
                     .append(" -> ").append(ProtectModule.itemSummary(record.itemAfter()));
-        } else if (record.blockBefore() != null || record.blockAfter() != null) {
+        }
+        if (record.blockBefore() != null || record.blockAfter() != null) {
             lore.append("\n§7")
                     .append(shortBlock(record.blockBefore()))
                     .append(" -> ")
@@ -340,9 +342,29 @@ public final class ProtectMenu {
         return switch (action) {
             case BLOCK_BREAK -> Material.IRON_PICKAXE;
             case BLOCK_PLACE -> Material.GRASS_BLOCK;
+            case BLOCK_PHYSICS, BLOCK_MOVE -> Material.PISTON;
+            case LIQUID_PLACE, LIQUID_REMOVE, LIQUID_FLOW -> Material.WATER_BUCKET;
+            case FIRE_IGNITE, FIRE_BURN, FIRE_FADE -> Material.FLINT_AND_STEEL;
+            case EXPLOSION -> Material.TNT;
+            case ENTITY_CHANGE -> Material.ENDERMAN_SPAWN_EGG;
+            case LEAF_DECAY -> Material.OAK_LEAVES;
+            case GROWTH -> Material.OAK_SAPLING;
+            case SCULK_SPREAD -> Material.SCULK;
+            case PORTAL_CREATE -> Material.OBSIDIAN;
+            case FARMLAND_TRAMPLE -> Material.DIRT;
+            case NATURAL_FORM -> Material.COBBLESTONE;
+            case POT_CHANGE -> Material.FLOWER_POT;
+            case BRUSH -> Material.BRUSH;
+            case CUSTOM_BLOCK -> Material.COMMAND_BLOCK;
             case CONTAINER_OPEN -> Material.CHEST;
             case CONTAINER_CLOSE -> Material.BARREL;
-            case CONTAINER_CHANGE -> Material.HOPPER;
+            case CONTAINER_CHANGE, CONTAINER_TRANSFER -> Material.HOPPER;
+            case ITEM_DROP, ITEM_PICKUP -> Material.BUNDLE;
+            case ITEM_BREAK -> Material.DAMAGED_ANVIL;
+            case ITEM_CRAFT -> Material.CRAFTING_TABLE;
+            case ITEM_SHOOT -> Material.BOW;
+            case ITEM_TRADE -> Material.EMERALD;
+            case ITEM_INTERACT -> Material.LEVER;
         };
     }
 
@@ -350,18 +372,50 @@ public final class ProtectMenu {
         return switch (action) {
             case BLOCK_BREAK -> "破壊";
             case BLOCK_PLACE -> "設置";
+            case BLOCK_PHYSICS -> "自然破損";
+            case BLOCK_MOVE -> "ブロック移動";
+            case LIQUID_PLACE -> "液体設置";
+            case LIQUID_REMOVE -> "液体回収";
+            case LIQUID_FLOW -> "液体流動";
+            case FIRE_IGNITE -> "発火";
+            case FIRE_BURN -> "燃焼";
+            case FIRE_FADE -> "消火";
+            case EXPLOSION -> "爆発";
+            case ENTITY_CHANGE -> "Entity変更";
+            case LEAF_DECAY -> "葉の腐敗";
+            case GROWTH -> "成長";
+            case SCULK_SPREAD -> "スカルク拡散";
+            case PORTAL_CREATE -> "ポータル生成";
+            case FARMLAND_TRAMPLE -> "踏み荒らし";
+            case NATURAL_FORM -> "自然生成";
+            case POT_CHANGE -> "植木鉢";
+            case BRUSH -> "ブラシ";
+            case CUSTOM_BLOCK -> "カスタムブロック";
             case CONTAINER_OPEN -> "開く";
             case CONTAINER_CLOSE -> "閉じる";
             case CONTAINER_CHANGE -> "中身変更";
+            case CONTAINER_TRANSFER -> "自動移送";
+            case ITEM_DROP -> "ドロップ";
+            case ITEM_PICKUP -> "拾得";
+            case ITEM_BREAK -> "アイテム破損";
+            case ITEM_CRAFT -> "クラフト";
+            case ITEM_SHOOT -> "発射";
+            case ITEM_TRADE -> "取引";
+            case ITEM_INTERACT -> "アイテム操作";
         };
     }
 
     private static String color(ProtectAction action) {
+        if (action.isItemAction()) return "§b";
+        if (action.isContainerAction()) return "§d";
         return switch (action) {
-            case BLOCK_BREAK -> "§c";
-            case BLOCK_PLACE -> "§a";
-            case CONTAINER_OPEN, CONTAINER_CLOSE -> "§6";
-            case CONTAINER_CHANGE -> "§d";
+            case BLOCK_BREAK, EXPLOSION, FIRE_BURN -> "§c";
+            case BLOCK_PLACE, GROWTH, NATURAL_FORM, PORTAL_CREATE -> "§a";
+            case LIQUID_PLACE, LIQUID_REMOVE, LIQUID_FLOW -> "§9";
+            case FIRE_IGNITE, FIRE_FADE -> "§6";
+            case ENTITY_CHANGE, BLOCK_MOVE, BLOCK_PHYSICS, FARMLAND_TRAMPLE -> "§e";
+            case LEAF_DECAY, SCULK_SPREAD, POT_CHANGE, BRUSH, CUSTOM_BLOCK -> "§2";
+            default -> "§7";
         };
     }
 
