@@ -44,9 +44,11 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Protect のワールド変化トラッカー。
@@ -61,6 +63,8 @@ public final class ProtectWorldListener implements Listener {
     private final Loader plugin;
     private final ProtectModule module;
     private final Map<BlockKey, ActorRef> liquidActors = new ConcurrentHashMap<>();
+    private final Set<BlockKey> pendingPhysics = ConcurrentHashMap.newKeySet();
+    private final AtomicInteger liquidFlowOps = new AtomicInteger();
 
     public ProtectWorldListener(Loader plugin, ProtectModule module) {
         this.plugin = plugin;
@@ -113,6 +117,7 @@ public final class ProtectWorldListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFlow(BlockFromToEvent event) {
         if (!module.isEnabled()) return;
+        cleanupLiquidActorsOccasionally();
 
         Block from = event.getBlock();
         Block to = event.getToBlock();
@@ -243,6 +248,7 @@ public final class ProtectWorldListener implements Listener {
     public void onStructureGrow(StructureGrowEvent event) {
         if (!module.isEnabled()) return;
 
+        String speciesName = event.getSpecies().name();
         List<BlockMutation> mutations = new ArrayList<>(event.getBlocks().size());
         for (BlockState newState : event.getBlocks()) {
             Block block = newState.getBlock();
@@ -424,16 +430,21 @@ public final class ProtectWorldListener implements Listener {
         Block block = event.getBlock();
         if (!shouldTrackPhysics(block.getType())) return;
 
+        BlockKey key = BlockKey.of(block);
+        if (!pendingPhysics.add(key)) return;
+
         Location location = block.getLocation().clone();
         String before = block.getBlockData().getAsString();
+        String changedType = event.getChangedType().name();
         Bukkit.getScheduler().runTask(plugin, () -> {
+            pendingPhysics.remove(key);
             Block afterBlock = location.getBlock();
             String after = afterBlock.getBlockData().getAsString();
             if (before.equals(after)) return;
             module.recordSystem(
                     "#physics", location, ProtectAction.BLOCK_PHYSICS,
                     before, after, null, null, null,
-                    event.getChangedType().name());
+                    changedType);
         });
     }
 
@@ -457,17 +468,20 @@ public final class ProtectWorldListener implements Listener {
         }
 
         if (isFlowerPot(type) || type == Material.DRAGON_EGG) {
+            Player player = event.getPlayer();
             Location location = block.getLocation().clone();
             String before = block.getBlockData().getAsString();
+            byte[] handBytes = ProtectModule.serializeItem(hand);
+            String typeName = type.name();
             Bukkit.getScheduler().runTask(plugin, () -> {
                 String after = location.getBlock().getBlockData().getAsString();
                 if (before.equals(after)) return;
                 module.recordPlayer(
-                        event.getPlayer(), location,
+                        player, location,
                         type == Material.DRAGON_EGG ? ProtectAction.BLOCK_MOVE : ProtectAction.POT_CHANGE,
                         before, after, null,
-                        ProtectModule.serializeItem(hand), null,
-                        type.name());
+                        handBytes, null,
+                        typeName);
             });
         }
     }
@@ -487,6 +501,12 @@ public final class ProtectWorldListener implements Listener {
                     targetBefore, moving,
                     null, null, null, detail + " target");
         }
+    }
+
+    private void cleanupLiquidActorsOccasionally() {
+        if ((liquidFlowOps.incrementAndGet() & 1023) != 0) return;
+        long now = System.currentTimeMillis();
+        liquidActors.entrySet().removeIf(entry -> entry.getValue().expiresAt() < now);
     }
 
     private ActorRef resolveLiquidActor(Block source) {
