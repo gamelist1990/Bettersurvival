@@ -1,4 +1,4 @@
-name: Temporary Protect Visual Review
+name: Temporary Wiki Visual Review
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ jobs:
   screenshot:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 7 }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,16 +39,16 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: protect-local-debug-bundle
+          name: wiki-local-debug-bundle
           path: local-debug-bundle.tar.gz
           if-no-files-found: error
           retention-days: 1
 
-      - name: Capture Protect UI
+      - name: Capture interactive Wiki UIs
         working-directory: WebSite
         run: |
-          bun run preview -- --host 127.0.0.1 --port 4173 > /tmp/protect-vite.log 2>&1 &
-          echo $! > /tmp/protect-vite.pid
+          bun run preview -- --host 127.0.0.1 --port 4173 > /tmp/wiki-vite.log 2>&1 &
+          echo $! > /tmp/wiki-vite.pid
           ready=0
           for i in {1..40}; do
             if curl -fsS http://127.0.0.1:4173/wiki/protect >/dev/null; then
@@ -58,11 +58,11 @@ jobs:
             sleep 0.5
           done
           if [ "$ready" -ne 1 ]; then
-            cat /tmp/protect-vite.log
+            cat /tmp/wiki-vite.log
             exit 1
           fi
 
-          cat > protect-shot.mjs <<'EOF'
+          cat > wiki-shot.mjs <<'EOF'
           import { chromium } from 'playwright';
           import fs from 'node:fs';
 
@@ -70,46 +70,56 @@ jobs:
           fs.mkdirSync(out, { recursive: true });
           const browser = await chromium.launch({ headless: true });
 
-          async function openPage(width, height) {
+          async function openPage(slug, width = 1440, height = 1100) {
             const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
             const errors = [];
             page.on('console', msg => {
               if (msg.type() === 'error') errors.push('console: ' + msg.text());
             });
             page.on('pageerror', err => errors.push('pageerror: ' + err.message));
-            await page.goto('http://127.0.0.1:4173/wiki/protect', { waitUntil: 'networkidle' });
+            await page.goto('http://127.0.0.1:4173/wiki/' + slug, { waitUntil: 'networkidle' });
             return { page, errors };
           }
 
-          {
-            const { page, errors } = await openPage(1440, 1100);
-            await page.screenshot({ path: out + '/01-protect-desktop-full.png', fullPage: true });
+          async function shotGui(slug, file, clickNames = []) {
+            const { page, errors } = await openPage(slug);
             const gui = page.locator('.web-chest-gui').first();
-            await gui.screenshot({ path: out + '/02-protect-main-gui.png' });
-
-            await page.getByRole('button', { name: '詳細調査 / 復旧' }).click();
+            await gui.scrollIntoViewIfNeeded();
             await page.mouse.move(2, 2);
-            await page.waitForTimeout(150);
-            await gui.screenshot({ path: out + '/03-protect-advanced-gui.png' });
+            await page.waitForTimeout(100);
+            await gui.screenshot({ path: out + '/' + file + '-main.png' });
 
-            await page.getByRole('button', { name: 'DB Stats' }).click();
-            await page.mouse.move(2, 2);
-            await page.waitForTimeout(150);
-            await gui.screenshot({ path: out + '/04-protect-status-gui.png' });
-
-            await page.getByRole('button', { name: 'Settings' }).click();
-            await page.mouse.move(2, 2);
-            await page.waitForTimeout(150);
-            await gui.screenshot({ path: out + '/05-protect-settings-gui.png' });
-
-            fs.writeFileSync(out + '/desktop-errors.txt', errors.join('\n'));
+            let index = 1;
+            for (const name of clickNames) {
+              const button = page.getByRole('button', { name, exact: true }).first();
+              if (await button.count()) {
+                await button.click();
+                await page.mouse.move(2, 2);
+                await page.waitForTimeout(120);
+                await gui.screenshot({ path: out + '/' + file + '-step-' + index + '.png' });
+                index++;
+              }
+            }
+            fs.writeFileSync(out + '/' + file + '-errors.txt', errors.join('\n'));
             await page.close();
           }
 
+          await shotGui('protect', '01-protect', ['詳細調査 / 復旧', 'DB Stats', 'Settings']);
+          await shotGui('custom-enchants', '02-custom-enchants', ['空きスロット', '採掘加速 を付与']);
+          await shotGui('copper-golem', '03-copper-golem', ['モード切替', '保管先設定']);
+          await shotGui('shared-storage', '04-shared-storage', ['sub接続範囲を変更', '戻る']);
+          await shotGui('land-protection', '05-land-protection', ['保護設定', '[有効] コンテナを開けなくする']);
+          await shotGui('party', '06-party', ['パーティー設定']);
+          await shotGui('chestshop', '07-chestshop', ['Diamond ×1']);
+          await shotGui('warp-stone', '08-warp-stone', ['✈ GTA Animation: ON']);
+          await shotGui('parallel-furnace', '09-parallel-furnace', ['＋コア']);
+          await shotGui('recycler', '10-recycler', ['鉄のツルハシ']);
+          await shotGui('just-leveling', '11-just-leveling', ['STR']);
+
           {
-            const { page, errors } = await openPage(390, 844);
-            await page.screenshot({ path: out + '/06-protect-mobile-full.png', fullPage: true });
-            await page.locator('.web-chest-gui').first().screenshot({ path: out + '/07-protect-mobile-gui.png' });
+            const { page, errors } = await openPage('copper-golem', 390, 844);
+            await page.screenshot({ path: out + '/12-copper-golem-mobile-full.png', fullPage: true });
+            await page.locator('.web-chest-gui').first().screenshot({ path: out + '/13-copper-golem-mobile-gui.png' });
             fs.writeFileSync(out + '/mobile-errors.txt', errors.join('\n'));
             await page.close();
           }
@@ -117,12 +127,12 @@ jobs:
           await browser.close();
           EOF
 
-          node protect-shot.mjs
-          kill "$(cat /tmp/protect-vite.pid)" || true
+          node wiki-shot.mjs
+          kill "$(cat /tmp/wiki-vite.pid)" || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: protect-visual-review
+          name: wiki-visual-review
           path: WebSite/visual-review/
           if-no-files-found: error
           retention-days: 1
