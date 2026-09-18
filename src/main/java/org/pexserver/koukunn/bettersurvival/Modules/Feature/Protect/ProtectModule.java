@@ -433,6 +433,11 @@ public final class ProtectModule implements Listener {
     }
 
     public void resetDatabase(Player admin, Runnable onComplete) {
+        if (replayActive.get()) {
+            admin.sendMessage("§c[Protect] Rollback/Restore実行中はDBを初期化できません");
+            if (onComplete != null) onComplete.run();
+            return;
+        }
         database.resetDatabase().whenComplete((result, throwable) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (throwable != null || result == null) {
@@ -471,7 +476,11 @@ public final class ProtectModule implements Listener {
             admin.sendMessage("§c[Protect] このログはロールバックできません");
             return;
         }
-        applyRollback(admin, List.of(record));
+        database.queryOperationGroup(record, 0)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!handleReplayQuery(admin, records, throwable, "single rollback")) return;
+                    applyRollback(admin, records);
+                }));
     }
 
     public void restoreSingle(Player admin, ProtectRecord record) {
@@ -479,7 +488,11 @@ public final class ProtectModule implements Listener {
             admin.sendMessage("§c[Protect] このログはRestoreできません");
             return;
         }
-        applyRestore(admin, List.of(record), true);
+        database.queryOperationGroup(record, 1)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!handleReplayQuery(admin, records, throwable, "single restore")) return;
+                    applyRestore(admin, records, true);
+                }));
     }
 
     public void shutdown() {
