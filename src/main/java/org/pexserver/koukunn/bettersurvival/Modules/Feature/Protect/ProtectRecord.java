@@ -20,6 +20,7 @@ public record ProtectRecord(
         byte[] itemBefore,
         byte[] itemAfter,
         String detail,
+        String operationId,
         boolean rolledBack) {
 
     public boolean reversible() {
