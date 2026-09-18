@@ -6,9 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
-import org.bukkit.block.data.BlockData;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.TNTPrimed;
@@ -273,7 +271,6 @@ public final class ProtectWorldListener implements Listener {
     public void onStructureGrow(StructureGrowEvent event) {
         if (!module.isRecordingEnabled()) return;
 
-        String speciesName = event.getSpecies().name();
         List<BlockMutation> mutations = new ArrayList<>(event.getBlocks().size());
         for (BlockState newState : event.getBlocks()) {
             Block block = newState.getBlock();

@@ -393,10 +393,14 @@ public class OtherworldModule implements Listener {
             enterSelectionLobby(player);
             return;
         }
-        if (isSelectionLobby(event.getFrom()) || isSelectionLobby(player.getWorld())) return;
+        if (isSelectionLobby(event.getFrom())) {
+            playerDataStore.load(player, getGroup(player.getWorld()));
+            return;
+        }
         String source = getGroup(event.getFrom());
         String target = getGroup(player.getWorld());
         if (source.equals(target)) return;
+        playerDataStore.save(player, source);
         playerDataStore.ensureDefaultMigration(player);
         playerDataStore.load(player, target);
     }
@@ -405,6 +409,7 @@ public class OtherworldModule implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         if (isSelectionLobby(player.getWorld())) {
+            playerDataStore.save(player, "default");
             selectionLobbyGameModes.remove(player.getUniqueId());
             return;
         }

@@ -15,8 +15,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -169,19 +171,41 @@ public class DeathChestModule implements Listener {
         if (!isDeathChestBlock(block)) return;
         event.setDropItems(false);
         event.setExpToDrop(0);
-        BlockState state = block.getState(false);
-        if (state instanceof Chest chest) {
-            // PDC から復元してドロップ
-            String encoded = chest.getPersistentDataContainer().get(contentsKey, PersistentDataType.STRING);
-            ItemStack[] items = decodeItems(encoded);
-            Location dropLocation = block.getLocation().add(0.5, 0.5, 0.5);
-            World world = block.getWorld();
-            for (ItemStack item : items) {
-                if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
-                world.dropItemNaturally(dropLocation, item);
-            }
-            chest.getInventory().clear();
+        dropDeathChest(block);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        dropExplodedDeathChests(event.blockList());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        dropExplodedDeathChests(event.blockList());
+    }
+
+    private void dropExplodedDeathChests(java.util.List<Block> blocks) {
+        for (Block block : new java.util.ArrayList<>(blocks)) {
+            if (!isDeathChestBlock(block)) continue;
+            blocks.remove(block);
+            dropDeathChest(block);
         }
+    }
+
+    private void dropDeathChest(Block block) {
+        BlockState state = block.getState(false);
+        if (!(state instanceof Chest chest)) return;
+
+        String encoded = chest.getPersistentDataContainer().get(contentsKey, PersistentDataType.STRING);
+        ItemStack[] items = decodeItems(encoded);
+        Location dropLocation = block.getLocation().add(0.5, 0.5, 0.5);
+        World world = block.getWorld();
+        for (ItemStack item : items) {
+            if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
+            world.dropItemNaturally(dropLocation, item);
+        }
+        chest.getInventory().clear();
+        block.setType(Material.AIR, false);
     }
 
     @EventHandler(ignoreCancelled = true)

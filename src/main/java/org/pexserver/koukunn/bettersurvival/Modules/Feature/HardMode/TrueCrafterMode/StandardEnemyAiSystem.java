@@ -629,10 +629,6 @@ public final class StandardEnemyAiSystem {
         return ticks.merge(entity.getUniqueId(), 1, Integer::sum);
     }
 
-    private boolean clearAhead(LivingEntity entity) {
-        return entity.getEyeLocation().add(entity.getLocation().getDirection()).getBlock().isPassable();
-    }
-
     private boolean isSpear(LivingEntity entity) {
         if (entity.getEquipment() == null) return false;
         return switch (entity.getEquipment().getItemInMainHand().getType()) {

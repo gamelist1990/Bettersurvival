@@ -6,6 +6,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.Chest;
 import org.bukkit.block.Container;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.block.data.BlockData;
@@ -26,12 +27,12 @@ import org.bukkit.inventory.BlockInventoryHolder;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.DoubleChestInventory;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
@@ -180,6 +181,7 @@ public final class ProtectModule implements Listener {
             return;
         }
         Inventory inventory = event.getInventory();
+        inventory = normalizeContainerInventory(inventory);
         Location location = resolveInventoryLocation(inventory);
         if (location == null) {
             return;
@@ -189,7 +191,7 @@ public final class ProtectModule implements Listener {
                 location.clone(),
                 inventory,
                 snapshot(inventory),
-                inventory.getType().name());
+            containerType(inventory));
         containerSessions.put(player.getUniqueId(), session);
         record(
                 player,
@@ -263,7 +265,7 @@ public final class ProtectModule implements Listener {
         }
 
         event.setCancelled(true);
-        ProtectMenu.openHistoryAt(player, this, clicked.getLocation(), 0, null, null);
+        ProtectMenu.openHistoryAt(player, this, inspectorLocation(clicked), 0, null, null);
     }
 
     public void rollback(Player admin, int radius, int hours, String actorName) {
@@ -826,22 +828,14 @@ public final class ProtectModule implements Listener {
         if (!(state instanceof Container container)) {
             return false;
         }
-        Inventory inventory = container.getInventory();
+        Inventory inventory = state instanceof org.bukkit.block.Chest chest
+                ? chest.getBlockInventory()
+                : container.getInventory();
         if (slot < 0 || slot >= inventory.getSize()) {
             return false;
         }
         inventory.setItem(slot, deserializeItem(itemBytes));
         return true;
-    }
-
-    private void recordBlock(
-            Player player,
-            Location location,
-            ProtectAction action,
-            String before,
-            String after,
-            String detail) {
-        record(player, location, action, before, after, null, null, null, detail);
     }
 
     void recordPlayer(
@@ -988,9 +982,21 @@ public final class ProtectModule implements Listener {
     }
 
     private Location resolveInventoryLocation(Inventory inventory) {
+        inventory = normalizeContainerInventory(inventory);
+        if (inventory == null) {
+            return null;
+        }
         InventoryHolder holder = inventory.getHolder();
         if (holder instanceof DoubleChest doubleChest) {
-            return doubleChest.getLocation();
+            Location left = holderLocation(doubleChest.getLeftSide());
+            Location right = holderLocation(doubleChest.getRightSide());
+            if (left == null) {
+                return right;
+            }
+            if (right == null) {
+                return left;
+            }
+            return compareBlockLocations(left, right) <= 0 ? left : right;
         }
         if (holder instanceof BlockInventoryHolder blockHolder) {
             try {
@@ -1004,6 +1010,65 @@ public final class ProtectModule implements Listener {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private Inventory normalizeContainerInventory(Inventory inventory) {
+        if (inventory == null) {
+            return null;
+        }
+        if (inventory instanceof DoubleChestInventory) {
+            return inventory;
+        }
+        InventoryHolder holder = inventory.getHolder();
+        if (holder instanceof DoubleChest doubleChest) {
+            return doubleChest.getInventory();
+        }
+        return inventory;
+    }
+
+    private Location inspectorLocation(Block clicked) {
+        BlockState state = clicked.getState();
+        if (state instanceof Chest chest) {
+            Location normalized = resolveInventoryLocation(chest.getInventory());
+            if (normalized != null) {
+                return normalized;
+            }
+        }
+        return clicked.getLocation();
+    }
+
+    private String containerType(Inventory inventory) {
+        if (inventory instanceof DoubleChestInventory) {
+            return "LARGE_CHEST";
+        }
+        return inventory.getType().name();
+    }
+
+    private Location holderLocation(InventoryHolder holder) {
+        if (holder instanceof BlockInventoryHolder blockHolder) {
+            try {
+                return blockHolder.getBlock().getLocation();
+            } catch (IllegalStateException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private int compareBlockLocations(Location first, Location second) {
+        int world = first.getWorld().getUID().compareTo(second.getWorld().getUID());
+        if (world != 0) {
+            return world;
+        }
+        int x = Integer.compare(first.getBlockX(), second.getBlockX());
+        if (x != 0) {
+            return x;
+        }
+        int y = Integer.compare(first.getBlockY(), second.getBlockY());
+        if (y != 0) {
+            return y;
+        }
+        return Integer.compare(first.getBlockZ(), second.getBlockZ());
     }
 
     private ItemStack[] snapshot(Inventory inventory) {

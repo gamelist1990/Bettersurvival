@@ -36,7 +36,6 @@ public class ItemCombineModule implements Listener {
     private static final long DEFAULT_AIR_RETRY_INTERVAL_TICKS = 5L;
     private static final long DEFAULT_AIR_TRACK_DURATION_TICKS = 60L;
 
-    private final Loader plugin;
     private final Map<String, CombineRegistration> registrations = new LinkedHashMap<>();
     /** Item UUID -> 追跡開始 tick。メインスレッドでのみ操作する。 */
     private final Map<UUID, Long> trackedSeeds = new LinkedHashMap<>();
@@ -44,7 +43,6 @@ public class ItemCombineModule implements Listener {
     private long schedulerTick;
 
     public ItemCombineModule(Loader plugin) {
-        this.plugin = plugin;
         this.trackingTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickTrackedSeeds, 1L, 1L);
     }
 
@@ -290,7 +288,6 @@ public class ItemCombineModule implements Listener {
 
         public void then(Consumer<CombineMatch> handler) {
             registrations.put(key, new CombineRegistration(
-                    key,
                     firstMatcher,
                     secondMatcher,
                     groundRadius,
@@ -305,7 +302,6 @@ public class ItemCombineModule implements Listener {
     }
 
     private static final class CombineRegistration {
-        private final String key;
         private final Predicate<ItemStack> firstMatcher;
         private final Predicate<ItemStack> secondMatcher;
         private final double groundRadius;
@@ -319,7 +315,6 @@ public class ItemCombineModule implements Listener {
         private final Consumer<CombineMatch> handler;
 
         private CombineRegistration(
-                String key,
                 Predicate<ItemStack> firstMatcher,
                 Predicate<ItemStack> secondMatcher,
                 double groundRadius,
@@ -330,7 +325,6 @@ public class ItemCombineModule implements Listener {
                 long airRetryIntervalTicks,
                 long airTrackDurationTicks,
                 Consumer<CombineMatch> handler) {
-            this.key = key;
             this.firstMatcher = firstMatcher;
             this.secondMatcher = secondMatcher;
             this.groundRadius = groundRadius;

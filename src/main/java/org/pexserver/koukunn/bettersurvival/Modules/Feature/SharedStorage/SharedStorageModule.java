@@ -736,10 +736,6 @@ public class SharedStorageModule implements Listener {
                 });
     }
 
-    private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage) {
-        openChestPageSubMenu(player, network, categoryKey, categoryPage, subPage, false);
-    }
-
     private void openChestPageSubMenu(Player player, SharedNetwork network, String categoryKey, int categoryPage, int subPage,
                                       boolean getBarrelView) {
         List<SubCategoryEntry> categories = resolveSubCategoryEntries(network, player);

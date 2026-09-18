@@ -12,6 +12,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -124,8 +125,40 @@ public final class ProtectDatabase {
         return !closed && connection != null;
     }
 
+    public CompletableFuture<List<String>> findActorNames() {
+        return findDistinctText("actor_name");
+    }
+
+    public CompletableFuture<List<String>> findWorldNames() {
+        return findDistinctText("world_name");
+    }
+
     public String getDatabaseFileName() {
         return databaseFile.getName();
+    }
+
+    private CompletableFuture<List<String>> findDistinctText(String column) {
+        CompletableFuture<List<String>> future = new CompletableFuture<>();
+        io.execute(() -> {
+            if (connection == null) {
+                future.complete(List.of());
+                return;
+            }
+            String sql = "SELECT DISTINCT " + column + " FROM protect_events"
+                    + " WHERE " + column + " IS NOT NULL AND TRIM(" + column + ") <> ''"
+                    + " ORDER BY " + column + " COLLATE NOCASE LIMIT 500";
+            try (PreparedStatement statement = connection.prepareStatement(sql);
+                 ResultSet resultSet = statement.executeQuery()) {
+                Set<String> values = new LinkedHashSet<>();
+                while (resultSet.next()) {
+                    values.add(resultSet.getString(1));
+                }
+                future.complete(new ArrayList<>(values));
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
     }
 
     public CompletableFuture<StatusSnapshot> getStatusSnapshot() {

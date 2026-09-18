@@ -22,12 +22,12 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemBreakEvent;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.inventory.BlockInventoryHolder;
+import org.bukkit.inventory.DoubleChestInventory;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -296,9 +296,17 @@ public final class ProtectItemListener implements Listener {
 
     private Location resolveLocation(Inventory inventory) {
         if (inventory == null) return null;
+        if (inventory instanceof DoubleChestInventory doubleChestInventory) {
+            DoubleChest doubleChest = doubleChestInventory.getHolder();
+            Location left = holderLocation(doubleChest.getLeftSide());
+            Location right = holderLocation(doubleChest.getRightSide());
+            if (left == null) return right;
+            if (right == null) return left;
+            return compareBlockLocations(left, right) <= 0 ? left : right;
+        }
         InventoryHolder holder = inventory.getHolder();
         if (holder instanceof DoubleChest doubleChest) {
-            return doubleChest.getLocation();
+            return resolveLocation(doubleChest.getInventory());
         }
         if (holder instanceof BlockInventoryHolder blockHolder) {
             try {
@@ -308,6 +316,27 @@ public final class ProtectItemListener implements Listener {
             }
         }
         return inventory.getLocation();
+    }
+
+    private Location holderLocation(InventoryHolder holder) {
+        if (holder instanceof BlockInventoryHolder blockHolder) {
+            try {
+                return blockHolder.getBlock().getLocation();
+            } catch (IllegalStateException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private int compareBlockLocations(Location first, Location second) {
+        int world = first.getWorld().getUID().compareTo(second.getWorld().getUID());
+        if (world != 0) return world;
+        int x = Integer.compare(first.getBlockX(), second.getBlockX());
+        if (x != 0) return x;
+        int y = Integer.compare(first.getBlockY(), second.getBlockY());
+        if (y != 0) return y;
+        return Integer.compare(first.getBlockZ(), second.getBlockZ());
     }
 
     private String destinationText(Location location) {

@@ -8,21 +8,40 @@ import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Command.BaseCommand;
 import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectMenu;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectAction;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect.ProtectModule;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 
 /**
  * /protect - OP向け監査・検索・ロールバック。
  */
 public final class ProtectCommand extends BaseCommand {
+    private static final long SUGGESTION_REFRESH_INTERVAL_MS = TimeUnit.SECONDS.toMillis(10);
+    private static final List<String> SUBCOMMANDS = List.of(
+        "lookup", "rollback", "restore", "undo", "redo", "inspect", "status", "purge", "retention", "help");
+    private static final List<String> ACTION_VALUES = Arrays.stream(ProtectAction.values())
+        .map(action -> action.name().toLowerCase(Locale.ROOT))
+        .sorted()
+        .toList();
+    private static final List<String> ACTION_GROUPS = List.of(
+        "all", "block", "container", "item", "break", "place", "explosion", "liquid", "fire", "growth");
+
     private final ProtectModule module;
+    private final Set<String> actorSuggestions = new ConcurrentSkipListSet<>(String.CASE_INSENSITIVE_ORDER);
+    private final Set<String> worldSuggestions = new ConcurrentSkipListSet<>(String.CASE_INSENSITIVE_ORDER);
+    private volatile long lastSuggestionRefresh;
 
     public ProtectCommand(ProtectModule module) {
         this.module = module;
+        refreshSuggestions(true);
     }
 
     @Override
@@ -220,46 +239,121 @@ public final class ProtectCommand extends BaseCommand {
 
     @Override
     public List<String> getTabCompletions(CommandSender sender, String[] args) {
-        List<String> result = new ArrayList<>();
+        refreshSuggestions(false);
+        String current = args.length == 0 ? "" : args[args.length - 1];
         if (args.length == 1) {
-            result.add("lookup");
-            result.add("rollback");
-            result.add("restore");
-            result.add("undo");
-            result.add("redo");
-            result.add("inspect");
-            result.add("status");
-            result.add("purge");
-            result.add("retention");
-            result.add("help");
-            return result;
+            return matching(SUBCOMMANDS, current);
         }
 
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (sub.equals("lookup") || sub.equals("l")
                 || sub.equals("rollback") || sub.equals("rb")
                 || sub.equals("restore") || sub.equals("rs")) {
-            result.add("user:");
-            result.add("time:24h");
-            result.add("radius:10");
-            result.add("action:block");
-            result.add("limit:10000");
-            result.add("page:1");
-            result.add("world:");
-            result.add("x:");
-            result.add("y:");
-            result.add("z:");
-            result.add("preview:true");
+            return completeFilterArguments(args, current, false);
         } else if (sub.equals("purge")) {
-            result.add("time:30d");
-            result.add("user:");
-            result.add("confirm:true");
+            return completeFilterArguments(args, current, true);
         } else if (sub.equals("retention")) {
-            result.add("days:30");
-            result.add("30");
-            result.add("90");
+            return matching(List.of("days:30", "30", "90"), current);
+        }
+        return List.of();
+    }
+
+    private List<String> completeFilterArguments(String[] args, String current, boolean purge) {
+        int colon = current.indexOf(':');
+        if (colon > 0) {
+            String key = current.substring(0, colon).toLowerCase(Locale.ROOT);
+            String valuePrefix = current.substring(colon + 1);
+            List<String> values = switch (key) {
+                case "user", "u", "player", "p" -> prefixed("user:", actorSuggestions, valuePrefix, true);
+                case "world", "w" -> prefixed("world:", worldSuggestions, valuePrefix, false);
+                case "action", "a" -> prefixed("action:", actionSuggestions(), valuePrefix, false);
+                case "time", "t" -> matching(List.of("time:30m", "time:2h", "time:24h", "time:7d", "time:1w2d"), current);
+                case "radius", "r" -> matching(List.of("radius:10", "radius:50", "radius:100"), current);
+                case "limit", "l" -> matching(List.of("limit:100", "limit:1000", "limit:10000"), current);
+                case "page" -> matching(List.of("page:1", "page:2", "page:3"), current);
+                case "preview", "dryrun", "confirm" -> matching(List.of(key + ":true", key + ":false"), current);
+                case "x", "y", "z" -> List.of(current);
+                default -> List.of();
+            };
+            return values;
+        }
+
+        Set<String> usedKeys = usedKeys(args);
+        List<String> result = new ArrayList<>();
+        addIfUnused(result, usedKeys, "user:" + (actorSuggestions.isEmpty() ? "" : firstSuggestion(actorSuggestions)));
+        addIfUnused(result, usedKeys, "time:24h");
+        addIfUnused(result, usedKeys, "radius:10");
+        addIfUnused(result, usedKeys, "action:block");
+        addIfUnused(result, usedKeys, "limit:10000");
+        addIfUnused(result, usedKeys, "page:1");
+        addIfUnused(result, usedKeys, "world:" + (worldSuggestions.isEmpty() ? "" : firstSuggestion(worldSuggestions)));
+        if (!purge) {
+            addIfUnused(result, usedKeys, "x:");
+            addIfUnused(result, usedKeys, "y:");
+            addIfUnused(result, usedKeys, "z:");
+            addIfUnused(result, usedKeys, "preview:true");
+        } else {
+            addIfUnused(result, usedKeys, "confirm:true");
+        }
+        return matching(result, current);
+    }
+
+    private List<String> actionSuggestions() {
+        List<String> values = new ArrayList<>(ACTION_GROUPS.size() + ACTION_VALUES.size());
+        values.addAll(ACTION_GROUPS);
+        values.addAll(ACTION_VALUES);
+        return values;
+    }
+
+    private List<String> prefixed(String key, Iterable<String> values, String prefix, boolean allowAll) {
+        List<String> result = new ArrayList<>();
+        if (allowAll && matches("*", prefix)) result.add(key + "*");
+        for (String value : values) {
+            if (matches(value, prefix)) result.add(key + value);
         }
         return result;
+    }
+
+    private List<String> matching(Iterable<String> candidates, String prefix) {
+        String normalized = prefix == null ? "" : prefix.toLowerCase(Locale.ROOT);
+        return java.util.stream.StreamSupport.stream(candidates.spliterator(), false)
+                .filter(candidate -> candidate.toLowerCase(Locale.ROOT).startsWith(normalized))
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+    }
+
+    private boolean matches(String value, String prefix) {
+        return value.toLowerCase(Locale.ROOT).startsWith(prefix.toLowerCase(Locale.ROOT));
+    }
+
+    private Set<String> usedKeys(String[] args) {
+        Set<String> keys = new HashSet<>();
+        for (int i = 1; i < args.length - 1; i++) {
+            int colon = args[i].indexOf(':');
+            if (colon > 0) keys.add(args[i].substring(0, colon).toLowerCase(Locale.ROOT));
+        }
+        return keys;
+    }
+
+    private void addIfUnused(List<String> result, Set<String> usedKeys, String candidate) {
+        int colon = candidate.indexOf(':');
+        if (colon <= 0 || !usedKeys.contains(candidate.substring(0, colon).toLowerCase(Locale.ROOT))) {
+            result.add(candidate);
+        }
+    }
+
+    private String firstSuggestion(Set<String> values) {
+        return values.stream().findFirst().orElse("");
+    }
+
+    private void refreshSuggestions(boolean force) {
+        long now = System.currentTimeMillis();
+        if (!force && now - lastSuggestionRefresh < SUGGESTION_REFRESH_INTERVAL_MS) return;
+        lastSuggestionRefresh = now;
+        Bukkit.getOnlinePlayers().forEach(player -> actorSuggestions.add(player.getName()));
+        Bukkit.getWorlds().forEach(world -> worldSuggestions.add(world.getName()));
+        module.getDatabase().findActorNames().thenAccept(names -> actorSuggestions.addAll(names));
+        module.getDatabase().findWorldNames().thenAccept(names -> worldSuggestions.addAll(names));
     }
 
     private boolean usesLegacyPositional(String[] args, int start) {

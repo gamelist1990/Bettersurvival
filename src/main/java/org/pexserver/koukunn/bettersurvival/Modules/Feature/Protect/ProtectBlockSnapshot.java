@@ -90,7 +90,7 @@ final class ProtectBlockSnapshot {
 
             if ((flags & FLAG_INVENTORY) != 0) {
                 byte[] inventoryBytes = readBytes(in);
-                if (state instanceof InventoryHolder holder && inventoryBytes != null) {
+                if (state instanceof InventoryHolder && inventoryBytes != null) {
                     ItemStack[] items = ItemStack.deserializeItemsFromBytes(inventoryBytes);
                     Inventory inventory = inventoryFor(state);
                     for (int slot = 0; slot < inventory.getSize(); slot++) {

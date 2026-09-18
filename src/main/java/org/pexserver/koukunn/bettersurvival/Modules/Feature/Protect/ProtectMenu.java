@@ -5,7 +5,12 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import net.kyori.adventure.text.Component;
 import org.pexserver.koukunn.bettersurvival.Commands.protect.ProtectQuery;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
@@ -60,7 +65,6 @@ public final class ProtectMenu {
     }
 
     public static void openMain(Player player, ProtectModule module) {
-        String sizeText = humanBytes(module.getDatabaseSizeBytes());
         ChestUI.builder()
                 .title("§3Protect §8- Audit & Rollback")
                 .size(54)
@@ -199,12 +203,12 @@ public final class ProtectMenu {
 
         for (int i = 0; i < records.size() && i < PAGE_SIZE; i++) {
             ProtectRecord record = records.get(i);
-            builder.addButtonAt(
+                builder.addCustomItemAt(
                     i,
                     color(record.action()) + shortAction(record.action())
                             + " §f" + safeName(record.actorName()),
-                    icon(record.action()),
-                    historyLore(record));
+                    historyButton(record, player),
+                    "");
         }
 
         builder.addButtonAt(45, "§eメインへ", Material.ARROW, "");
@@ -250,7 +254,7 @@ public final class ProtectMenu {
                 .title("§3Protect Log #" + record.id())
                 .size(27)
                 .type("protect_detail")
-                .addButtonAt(11, "§b" + shortAction(record.action()), icon(record.action()), historyLore(record))
+                .addCustomItemAt(11, "§b" + shortAction(record.action()), historyButton(record, player), "")
                 .addButtonAt(15, "§e戻る", Material.ARROW, "");
 
         if (record.reversible()) {
@@ -625,12 +629,12 @@ public final class ProtectMenu {
 
         for (int i = 0; i < records.size() && i < PAGE_SIZE; i++) {
             ProtectRecord record = records.get(i);
-            builder.addButtonAt(
+                builder.addCustomItemAt(
                     i,
                     color(record.action()) + shortAction(record.action())
                             + " §f" + safeName(record.actorName()),
-                    icon(record.action()),
-                    historyLore(record));
+                    historyButton(record, player),
+                    "");
         }
 
         builder.addButtonAt(45, "§e条件画面へ", Material.COMPARATOR, advancedFilterLore(filter));
@@ -672,7 +676,7 @@ public final class ProtectMenu {
                 .title("§3Protect Log #" + record.id())
                 .size(27)
                 .type("protect_advanced_detail")
-                .addButtonAt(11, "§b" + shortAction(record.action()), icon(record.action()), historyLore(record))
+                .addCustomItemAt(11, "§b" + shortAction(record.action()), historyButton(record, player), "")
                 .addButtonAt(15, "§e履歴へ戻る", Material.ARROW, "")
                 .addButtonAt(17, "§d条件画面", Material.COMPARATOR, advancedFilterLore(filterFor(player)));
 
@@ -853,28 +857,6 @@ public final class ProtectMenu {
                 }));
     }
 
-    private static void showStorageStatsDialog(Player player, ProtectModule module) {
-        ChestUI.closeMenu(player);
-        module.getDatabase().countRecords().whenComplete((count, throwable) ->
-                Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> {
-                    if (!player.isOnline()) return;
-                    if (throwable != null) {
-                        player.sendMessage("§c[Protect] DB統計の取得に失敗しました");
-                        openAdvancedMenu(player, module);
-                        return;
-                    }
-                    DialogUI.builder()
-                            .title("Protect DB Stats")
-                            .body("Records: " + count)
-                            .body("DB size: " + humanBytes(module.getDatabaseSizeBytes()))
-                            .body("Queue dropped: " + module.getDroppedRecords())
-                            .body("Retention: " + module.getRetentionDays() + " days")
-                            .notice("戻る")
-                            .onResponse((result, p) -> openAdvancedMenu(p, module))
-                            .show(player);
-                }));
-    }
-
     private static void openPurgeDialog(Player player, ProtectModule module) {
         AdvancedFilter filter = filterFor(player);
         ChestUI.closeMenu(player);
@@ -986,33 +968,6 @@ public final class ProtectMenu {
         }
     }
 
-    private static void openRollbackDialog(Player player, ProtectModule module) {
-        ChestUI.closeMenu(player);
-        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
-                .title("Protect Rollback")
-                .body("現在地を中心に、指定時間内の変更を新しい順から復元します。")
-                .body("player は * で全プレイヤー。最大10,000件までをtick分割で処理します。")
-                .addTextInput("radius", "半径 (0-256)", "10", 3, false)
-                .addTextInput("hours", "何時間前まで", "24", 5, false)
-                .addTextInput("player", "Player", "*", 16, false)
-                .confirmation("ロールバック", "戻る")
-                .onResponse((result, p) -> {
-                    if (!result.isConfirmed()) {
-                        openMain(p, module);
-                        return;
-                    }
-                    Integer radius = parseInt(result.getText("radius"), 0, 256);
-                    Integer hours = parseInt(result.getText("hours"), 1, 24 * 365);
-                    if (radius == null || hours == null) {
-                        p.sendMessage("§c[Protect] 入力値が不正です");
-                        openMain(p, module);
-                        return;
-                    }
-                    module.rollback(p, radius, hours, result.getText("player"));
-                })
-                .show(player));
-    }
-
     private static void openSettingsMenu(Player player, ProtectModule module) {
         ChestUI.builder()
                 .title("§3Protect §8- Settings")
@@ -1121,51 +1076,59 @@ public final class ProtectMenu {
                 .show(player));
     }
 
-    private static void showStorageStats(Player player, ProtectModule module) {
-        module.getDatabase().countRecords().whenComplete((count, throwable) ->
-                Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> {
-                    if (!player.isOnline()) {
-                        return;
-                    }
-                    if (throwable != null) {
-                        player.sendMessage("§c[Protect] DB統計の取得に失敗しました");
-                        return;
-                    }
-                    player.sendMessage("§b[Protect] records=" + count
-                            + ", size=" + humanBytes(module.getDatabaseSizeBytes())
-                            + ", dropped=" + module.getDroppedRecords()
-                            + ", retention=" + module.getRetentionDays() + "d");
-                    openMain(player, module);
-                }));
+    private static ItemStack historyButton(ProtectRecord record, Player player) {
+        ItemStack button = new ItemStack(icon(record.action()), 1);
+        ItemMeta meta = button.getItemMeta();
+        if (meta != null) {
+            meta.lore(historyLore(record, player));
+            button.setItemMeta(meta);
+        }
+        return button;
     }
 
-    private static String historyLore(ProtectRecord record) {
-        StringBuilder lore = new StringBuilder();
-        lore.append("§7").append(formatAge(record.timeMs())).append("前")
-                .append("\n§7World: ").append(record.worldName())
-                .append("\n§7XYZ: ").append(record.x()).append(", ")
-                .append(record.y()).append(", ").append(record.z());
+    private static List<Component> historyLore(ProtectRecord record, Player player) {
+        List<Component> lore = new ArrayList<>();
+        lore.add(ComponentUtils.legacy("§7" + formatAge(record.timeMs()) + "前"));
+        lore.add(ComponentUtils.legacy("§7World: " + record.worldName()));
+        lore.add(ComponentUtils.legacy("§7XYZ: " + record.x() + ", "
+                + record.y() + ", " + record.z()));
         if (record.slot() != null) {
-            lore.append("\n§7Slot: ").append(record.slot());
+            lore.add(ComponentUtils.legacy("§7Slot: " + record.slot()));
         }
         if ((record.action().isContainerAction() || record.action().isItemAction())
                 && (record.itemBefore() != null || record.itemAfter() != null)) {
-            lore.append("\n§7").append(ProtectModule.itemSummary(record.itemBefore()))
-                    .append(" -> ").append(ProtectModule.itemSummary(record.itemAfter()));
+            lore.add(localizedItemSummary(record.itemBefore(), record.itemAfter(), player));
         }
         if (record.blockBefore() != null || record.blockAfter() != null) {
-            lore.append("\n§7")
-                    .append(shortBlock(record.blockBefore()))
-                    .append(" -> ")
-                    .append(shortBlock(record.blockAfter()));
+            lore.add(ComponentUtils.legacy("§7" + shortBlock(record.blockBefore())
+                    + " -> " + shortBlock(record.blockAfter())));
         }
         if (record.detail() != null && !record.detail().isBlank()) {
-            lore.append("\n§8").append(record.detail());
+            lore.add(ComponentUtils.legacy("§8" + record.detail()));
         }
         if (record.rolledBack()) {
-            lore.append("\n§8Rollback済み");
+            lore.add(ComponentUtils.legacy("§8Rollback済み"));
         }
-        return lore.toString();
+        return lore;
+    }
+
+    private static Component localizedItemSummary(byte[] beforeData, byte[] afterData, Player player) {
+        return ComponentUtils.legacy("§7")
+                .append(localizedItemComponent(beforeData, player))
+                .append(Component.text(" x" + itemAmount(beforeData)))
+                .append(Component.text(" -> "))
+                .append(localizedItemComponent(afterData, player))
+                .append(Component.text(" x" + itemAmount(afterData)));
+    }
+
+    private static Component localizedItemComponent(byte[] data, Player player) {
+        ItemStack item = ProtectModule.deserializeItem(data);
+        return item == null ? Component.text("空") : ItemNameUtil.localizedComponent(item);
+    }
+
+    private static int itemAmount(byte[] data) {
+        ItemStack item = ProtectModule.deserializeItem(data);
+        return item == null ? 0 : item.getAmount();
     }
 
     private static String shortBlock(String blockData) {

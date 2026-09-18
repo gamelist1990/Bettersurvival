@@ -1111,8 +1111,4 @@ public final class TrueCrafterModeModule implements Listener {
         return ThreadLocalRandom.current().nextDouble() < probability;
     }
 
-    private double random(double minimum, double maximum) {
-        return ThreadLocalRandom.current().nextDouble(minimum, maximum);
-    }
-
 }

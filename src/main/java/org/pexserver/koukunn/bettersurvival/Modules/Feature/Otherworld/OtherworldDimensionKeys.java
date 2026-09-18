@@ -1,6 +1,5 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld;
 
-import net.kyori.adventure.key.Key;
 import org.bukkit.NamespacedKey;
 
 import java.util.Locale;
