@@ -137,7 +137,7 @@ public final class ProtectDatabase {
                 flushBatch();
                 future.complete(runNearbyQuery(
                         worldUuid, x, y, z, safeRadius, sinceMs, actorName,
-                        safeActions, safeLimit, safeOffset, false));
+                        safeActions, safeLimit, safeOffset, -1));
             } catch (Throwable throwable) {
                 future.completeExceptionally(throwable);
             }
@@ -153,15 +153,52 @@ public final class ProtectDatabase {
             int radius,
             long sinceMs,
             String actorName,
+            Set<ProtectAction> actions,
             int limit) {
+        return queryReplayCandidates(
+                worldUuid, x, y, z, radius, sinceMs, actorName, actions, limit, 0);
+    }
+
+    public CompletableFuture<List<ProtectRecord>> queryRestore(
+            String worldUuid,
+            int x,
+            int y,
+            int z,
+            int radius,
+            long sinceMs,
+            String actorName,
+            Set<ProtectAction> actions,
+            int limit) {
+        return queryReplayCandidates(
+                worldUuid, x, y, z, radius, sinceMs, actorName, actions, limit, 1);
+    }
+
+    private CompletableFuture<List<ProtectRecord>> queryReplayCandidates(
+            String worldUuid,
+            int x,
+            int y,
+            int z,
+            int radius,
+            long sinceMs,
+            String actorName,
+            Set<ProtectAction> actions,
+            int limit,
+            int rolledBackState) {
         CompletableFuture<List<ProtectRecord>> future = new CompletableFuture<>();
         int safeRadius = Math.max(0, Math.min(256, radius));
         int safeLimit = Math.max(1, Math.min(QUERY_LIMIT_MAX, limit));
         Set<ProtectAction> reversible = EnumSet.noneOf(ProtectAction.class);
-        for (ProtectAction action : ProtectAction.values()) {
+        Set<ProtectAction> requested = actions == null || actions.isEmpty()
+                ? EnumSet.allOf(ProtectAction.class)
+                : EnumSet.copyOf(actions);
+        for (ProtectAction action : requested) {
             if (action.reversible()) {
                 reversible.add(action);
             }
+        }
+        if (reversible.isEmpty()) {
+            future.complete(List.of());
+            return future;
         }
 
         io.execute(() -> {
@@ -169,7 +206,119 @@ public final class ProtectDatabase {
                 flushBatch();
                 future.complete(runNearbyQuery(
                         worldUuid, x, y, z, safeRadius, sinceMs, actorName,
-                        reversible, safeLimit, 0, true));
+                        reversible, safeLimit, 0, rolledBackState));
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
+    }
+
+    public CompletableFuture<List<ProtectRecord>> queryLastRollback(String rollbackActor, int limit) {
+        CompletableFuture<List<ProtectRecord>> future = new CompletableFuture<>();
+        int safeLimit = Math.max(1, Math.min(QUERY_LIMIT_MAX, limit));
+        io.execute(() -> {
+            try {
+                flushBatch();
+                if (connection == null) {
+                    future.complete(List.of());
+                    return;
+                }
+                String sql = """
+                        SELECT id, time_ms, actor_uuid, actor_name, world_uuid, world_name,
+                               x, y, z, action, block_before, block_after, slot,
+                               item_before, item_after, detail, rolled_back
+                        FROM protect_events
+                        WHERE rolled_back = 1
+                          AND rollback_actor = ? COLLATE NOCASE
+                          AND rollback_time_ms = (
+                              SELECT MAX(rollback_time_ms)
+                              FROM protect_events
+                              WHERE rolled_back = 1 AND rollback_actor = ? COLLATE NOCASE
+                          )
+                        ORDER BY time_ms ASC, id ASC
+                        LIMIT ?
+                        """;
+                List<ProtectRecord> result = new ArrayList<>();
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    ps.setString(1, rollbackActor);
+                    ps.setString(2, rollbackActor);
+                    ps.setInt(3, safeLimit);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) result.add(readRecord(rs));
+                    }
+                }
+                future.complete(result);
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
+    }
+
+    public CompletableFuture<List<ProtectRecord>> queryByIds(Collection<Long> ids) {
+        CompletableFuture<List<ProtectRecord>> future = new CompletableFuture<>();
+        if (ids == null || ids.isEmpty()) {
+            future.complete(List.of());
+            return future;
+        }
+        List<Long> copy = ids.stream().filter(java.util.Objects::nonNull).limit(QUERY_LIMIT_MAX).toList();
+        io.execute(() -> {
+            try {
+                flushBatch();
+                if (connection == null || copy.isEmpty()) {
+                    future.complete(List.of());
+                    return;
+                }
+                StringBuilder sql = new StringBuilder("""
+                        SELECT id, time_ms, actor_uuid, actor_name, world_uuid, world_name,
+                               x, y, z, action, block_before, block_after, slot,
+                               item_before, item_after, detail, rolled_back
+                        FROM protect_events WHERE id IN (
+                        """);
+                for (int i = 0; i < copy.size(); i++) {
+                    if (i > 0) sql.append(',');
+                    sql.append('?');
+                }
+                sql.append(") ORDER BY time_ms DESC, id DESC");
+                List<ProtectRecord> result = new ArrayList<>();
+                try (PreparedStatement ps = connection.prepareStatement(sql.toString())) {
+                    int index = 1;
+                    for (Long id : copy) ps.setLong(index++, id);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) result.add(readRecord(rs));
+                    }
+                }
+                future.complete(result);
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
+    }
+
+    public CompletableFuture<Integer> purgeOlderThan(long cutoffMs, String actorName) {
+        CompletableFuture<Integer> future = new CompletableFuture<>();
+        io.execute(() -> {
+            try {
+                flushBatch();
+                if (connection == null) {
+                    future.complete(0);
+                    return;
+                }
+                String sql = actorName == null || actorName.isBlank()
+                        ? "DELETE FROM protect_events WHERE time_ms < ?"
+                        : "DELETE FROM protect_events WHERE time_ms < ? AND actor_name = ? COLLATE NOCASE";
+                int deleted;
+                try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                    ps.setLong(1, cutoffMs);
+                    if (actorName != null && !actorName.isBlank()) ps.setString(2, actorName);
+                    deleted = ps.executeUpdate();
+                }
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("PRAGMA optimize");
+                }
+                future.complete(deleted);
             } catch (Throwable throwable) {
                 future.completeExceptionally(throwable);
             }
@@ -205,6 +354,31 @@ public final class ProtectDatabase {
                 ps.executeBatch();
             } catch (SQLException e) {
                 plugin.getLogger().log(Level.WARNING, "Protect rollback mark failed", e);
+            }
+        });
+    }
+
+    public void markRestored(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty() || closed) {
+            return;
+        }
+        List<Long> copy = List.copyOf(ids);
+        io.execute(() -> {
+            if (connection == null) return;
+            String sql = """
+                    UPDATE protect_events
+                    SET rolled_back = 0, rollback_actor = NULL, rollback_time_ms = NULL
+                    WHERE id = ?
+                    """;
+            try (PreparedStatement ps = connection.prepareStatement(sql)) {
+                for (Long id : copy) {
+                    if (id == null) continue;
+                    ps.setLong(1, id);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.WARNING, "Protect restore mark failed", e);
             }
         });
     }
@@ -378,7 +552,7 @@ public final class ProtectDatabase {
             Set<ProtectAction> actions,
             int limit,
             int offset,
-            boolean onlyNotRolledBack) throws SQLException {
+            int rolledBackState) throws SQLException {
         if (connection == null) {
             return List.of();
         }
@@ -398,8 +572,10 @@ public final class ProtectDatabase {
         if (actorName != null && !actorName.isBlank()) {
             sql.append(" AND actor_name = ? COLLATE NOCASE");
         }
-        if (onlyNotRolledBack) {
+        if (rolledBackState == 0) {
             sql.append(" AND rolled_back = 0");
+        } else if (rolledBackState == 1) {
+            sql.append(" AND rolled_back = 1");
         }
         sql.append(" AND action IN (");
         int actionCount = 0;
