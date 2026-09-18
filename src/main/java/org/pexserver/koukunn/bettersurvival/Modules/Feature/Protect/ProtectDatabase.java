@@ -195,6 +195,52 @@ public final class ProtectDatabase {
         }
     }
 
+    public CompletableFuture<ResetResult> resetDatabase() {
+        CompletableFuture<ResetResult> future = new CompletableFuture<>();
+        io.execute(() -> {
+            try {
+                if (connection == null) {
+                    future.completeExceptionally(new IllegalStateException("Protect database is not ready"));
+                    return;
+                }
+
+                // 初期化要求以前にまだDBへ入っていないイベントは破棄する。
+                // このclear以降にenqueueされたイベントは初期化完了後の新しい履歴として残る。
+                int clearedQueue = queue.size();
+                queue.clear();
+
+                int deleted;
+                boolean previousAutoCommit = connection.getAutoCommit();
+                connection.setAutoCommit(false);
+                try (Statement statement = connection.createStatement()) {
+                    deleted = statement.executeUpdate("DELETE FROM protect_events");
+                    statement.executeUpdate("DELETE FROM sqlite_sequence WHERE name = 'protect_events'");
+                    connection.commit();
+                } catch (SQLException e) {
+                    connection.rollback();
+                    throw e;
+                } finally {
+                    connection.setAutoCommit(previousAutoCommit);
+                }
+
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+                    statement.execute("VACUUM");
+                    statement.execute("PRAGMA optimize");
+                }
+
+                droppedRecords.set(0L);
+                future.complete(new ResetResult(deleted, clearedQueue));
+            } catch (Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        });
+        return future;
+    }
+
+    public record ResetResult(int deletedRecords, int clearedQueuedRecords) {
+    }
+
     public CompletableFuture<Long> countRecords() {
         CompletableFuture<Long> future = new CompletableFuture<>();
         io.execute(() -> {
