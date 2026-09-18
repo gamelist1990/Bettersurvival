@@ -19,6 +19,7 @@ public record ProtectQuery(
         int limit,
         int page,
         boolean preview,
+        boolean confirm,
         String world,
         Integer x,
         Integer y,
@@ -34,6 +35,7 @@ public record ProtectQuery(
         int limit = 10_000;
         int page = 1;
         boolean preview = false;
+        boolean confirm = false;
         String world = null;
         Integer x = null;
         Integer y = null;
@@ -56,6 +58,7 @@ public record ProtectQuery(
                 case "limit", "l" -> limit = parseInt(value, 1, 10_000, "limit");
                 case "page" -> page = parseInt(value, 1, 10_000, "page");
                 case "preview", "dryrun" -> preview = parseBoolean(value);
+                case "confirm" -> confirm = parseBoolean(value);
                 case "world", "w" -> world = value;
                 case "x" -> x = parseCoordinate(value, "x");
                 case "y" -> y = parseCoordinate(value, "y");
@@ -69,7 +72,7 @@ public record ProtectQuery(
         }
 
         return new ProtectQuery(user, duration, radius, Set.copyOf(actions), limit, page,
-                preview, world, x, y, z);
+                preview, confirm, world, x, y, z);
     }
 
     public static long parseDuration(String raw) {
