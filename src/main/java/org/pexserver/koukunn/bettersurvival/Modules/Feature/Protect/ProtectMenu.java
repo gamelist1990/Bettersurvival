@@ -276,6 +276,625 @@ public final class ProtectMenu {
         }).show(player);
     }
 
+    private static void openAdvancedMenu(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        String actionText = actionSummary(filter.actions);
+        String locationText = locationSummary(filter.origin);
+
+        ChestUI.builder()
+                .title("§3Protect §8- 詳細調査 / 復旧")
+                .size(54)
+                .type("protect_advanced")
+                .addButtonAt(10, "§bPlayer: §f" + displayActor(filter.actor), Material.PLAYER_HEAD,
+                        "§7対象プレイヤーを指定\n§7* = 全プレイヤー")
+                .addButtonAt(11, "§eTime: §f" + filter.timeText, Material.CLOCK,
+                        "§7例: 30m / 2h / 7d / 1w2d / 1mo")
+                .addButtonAt(12, "§aRadius: §f" + filter.radius, Material.COMPASS,
+                        "§70～256ブロック")
+                .addButtonAt(13, "§dAction: §f" + actionText, Material.COMPARATOR,
+                        actionsLore(filter.actions))
+                .addButtonAt(14, "§6Location", Material.LODESTONE,
+                        "§7" + locationText + "\n§7現在地または手動座標を指定")
+                .addButtonAt(15, "§fLimit: §b" + filter.limit, Material.HOPPER,
+                        "§7検索/復旧の最大件数 1～10000")
+                .addButtonAt(16, "§c条件をリセット", Material.REDSTONE,
+                        "§7Player=* / Time=24h / Radius=100 / Action=ALL")
+                .addButtonAt(20, "§bLookup", Material.SPYGLASS,
+                        "§7この条件で履歴をGUI表示")
+                .addButtonAt(22, "§cRollback Preview", Material.TNT,
+                        "§7対象件数を確認してからRollback")
+                .addButtonAt(24, "§aRestore Preview", Material.SLIME_BALL,
+                        "§7Rollback済みの対象件数を確認してRestore")
+                .addButtonAt(29, "§eUndo", Material.ARROW,
+                        "§7自分が最後に実行したRollbackを取り消す")
+                .addButtonAt(31, "§6Redo", Material.SPECTRAL_ARROW,
+                        "§7この起動中にUndoした内容を再Rollback")
+                .addButtonAt(33, "§dDB Stats", Material.BOOK,
+                        "§7件数 / DBサイズ / Drop / 保持日数")
+                .addButtonAt(40, "§eRetention", Material.WRITABLE_BOOK,
+                        "§7現在: " + module.getRetentionDays() + "日")
+                .addButtonAt(42, "§4Purge", Material.LAVA_BUCKET,
+                        "§c古いログを完全削除\n§cRollbackではありません")
+                .addButtonAt(45, "§eメインへ", Material.ARROW, "")
+                .addButtonAt(49, "§7閉じる", Material.BARRIER, "")
+                .then((result, p) -> {
+                    if (!result.success || result.slot == null) return;
+                    switch (result.slot) {
+                        case 10 -> openAdvancedActorDialog(p, module);
+                        case 11 -> openAdvancedTimeDialog(p, module);
+                        case 12 -> openAdvancedRadiusDialog(p, module);
+                        case 13 -> openActionSelector(p, module);
+                        case 14 -> openAdvancedLocationMenu(p, module);
+                        case 15 -> openAdvancedLimitDialog(p, module);
+                        case 16 -> {
+                            filterFor(p).reset(p);
+                            p.sendMessage("§a[Protect] 詳細検索条件をリセットしました");
+                            openAdvancedMenu(p, module);
+                        }
+                        case 20 -> openAdvancedHistory(p, module, 0);
+                        case 22 -> openReplayPreview(p, module, false);
+                        case 24 -> openReplayPreview(p, module, true);
+                        case 29 -> module.undo(p);
+                        case 31 -> module.redo(p);
+                        case 33 -> showStorageStatsDialog(p, module);
+                        case 40 -> openRetentionDialog(p, module);
+                        case 42 -> openPurgeDialog(p, module);
+                        case 45 -> openMain(p, module);
+                        case 49 -> ChestUI.closeMenu(p);
+                        default -> {
+                        }
+                    }
+                })
+                .show(player);
+    }
+
+    private static void openAdvancedActorDialog(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect - Player Filter")
+                .body("荒らし復旧では対象プレイヤー名を指定します。* は全プレイヤーです。")
+                .addTextInput("player", "Player", filter.actor, 32, false)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (result.isConfirmed()) {
+                        String value = result.getText("player");
+                        filter.actor = value == null || value.isBlank() ? "*" : value.trim();
+                    }
+                    openAdvancedMenu(p, module);
+                })
+                .show(player));
+    }
+
+    private static void openAdvancedTimeDialog(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect - Time Filter")
+                .body("どこまで過去を対象にするか指定します。例: 30m / 2h / 7d / 1w2d / 1mo")
+                .addTextInput("time", "期間", filter.timeText, 24, false)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openAdvancedMenu(p, module);
+                        return;
+                    }
+                    String raw = result.getText("time");
+                    try {
+                        long duration = ProtectQuery.parseDuration(raw == null ? "" : raw.trim());
+                        filter.timeText = raw.trim();
+                        filter.durationMs = duration;
+                    } catch (IllegalArgumentException e) {
+                        p.sendMessage("§c[Protect] " + e.getMessage());
+                    }
+                    openAdvancedMenu(p, module);
+                })
+                .show(player));
+    }
+
+    private static void openAdvancedRadiusDialog(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect - Radius")
+                .body("検索中心からの半径を0～256で指定します。")
+                .addTextInput("radius", "Radius", String.valueOf(filter.radius), 3, false)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (result.isConfirmed()) {
+                        Integer value = parseInt(result.getText("radius"), 0, 256);
+                        if (value == null) {
+                            p.sendMessage("§c[Protect] Radiusは0～256で指定してください");
+                        } else {
+                            filter.radius = value;
+                        }
+                    }
+                    openAdvancedMenu(p, module);
+                })
+                .show(player));
+    }
+
+    private static void openAdvancedLimitDialog(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect - Limit")
+                .body("検索・Rollback・Restoreで扱う最大件数です。")
+                .addTextInput("limit", "Limit (1-10000)", String.valueOf(filter.limit), 5, false)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (result.isConfirmed()) {
+                        Integer value = parseInt(result.getText("limit"), 1, 10_000);
+                        if (value == null) {
+                            p.sendMessage("§c[Protect] Limitは1～10000で指定してください");
+                        } else {
+                            filter.limit = value;
+                        }
+                    }
+                    openAdvancedMenu(p, module);
+                })
+                .show(player));
+    }
+
+    private static void openAdvancedLocationMenu(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.builder()
+                .title("§3Protect §8- 検索地点")
+                .size(27)
+                .type("protect_location")
+                .addButtonAt(11, "§a現在地を使用", Material.COMPASS,
+                        "§7" + locationSummary(player.getLocation()))
+                .addButtonAt(13, "§6手動座標", Material.LODESTONE,
+                        "§7現在: " + locationSummary(filter.origin))
+                .addButtonAt(15, "§e戻る", Material.ARROW, "")
+                .then((result, p) -> {
+                    if (!result.success || result.slot == null) return;
+                    if (result.slot == 11) {
+                        filter.origin = p.getLocation().clone();
+                        openAdvancedMenu(p, module);
+                    } else if (result.slot == 13) {
+                        openManualLocationDialog(p, module);
+                    } else if (result.slot == 15) {
+                        openAdvancedMenu(p, module);
+                    }
+                })
+                .show(player);
+    }
+
+    private static void openManualLocationDialog(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        Location origin = filter.origin == null ? player.getLocation() : filter.origin;
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect - Manual Location")
+                .body("WorldとX/Y/Zを指定します。")
+                .addTextInput("world", "World", origin.getWorld().getName(), 64, false)
+                .addTextInput("x", "X", String.valueOf(origin.getBlockX()), 16, false)
+                .addTextInput("y", "Y", String.valueOf(origin.getBlockY()), 16, false)
+                .addTextInput("z", "Z", String.valueOf(origin.getBlockZ()), 16, false)
+                .confirmation("保存", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openAdvancedMenu(p, module);
+                        return;
+                    }
+                    World world = Bukkit.getWorld(result.getText("world"));
+                    Integer x = parseSignedInt(result.getText("x"));
+                    Integer y = parseSignedInt(result.getText("y"));
+                    Integer z = parseSignedInt(result.getText("z"));
+                    if (world == null || x == null || y == null || z == null) {
+                        p.sendMessage("§c[Protect] Worldまたは座標が不正です");
+                    } else {
+                        filter.origin = new Location(world, x, y, z);
+                    }
+                    openAdvancedMenu(p, module);
+                })
+                .show(player));
+    }
+
+    private static void openActionSelector(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§3Protect §8- Action Filter")
+                .size(54)
+                .type("protect_actions")
+                .addButtonAt(0, "§bALL", Material.NETHER_STAR, "§7全Actionを選択")
+                .addButtonAt(1, "§aWORLD", Material.GRASS_BLOCK, "§7世界変化のみ")
+                .addButtonAt(2, "§6CONTAINER", Material.CHEST, "§7コンテナ操作のみ")
+                .addButtonAt(3, "§dITEM", Material.BUNDLE, "§7アイテム操作のみ")
+                .addButtonAt(49, "§e条件画面へ", Material.ARROW,
+                        "§7選択中: " + actionSummary(filter.actions));
+
+        ProtectAction[] values = ProtectAction.values();
+        for (int i = 0; i < values.length && 9 + i <= 44; i++) {
+            ProtectAction action = values[i];
+            boolean selected = filter.actions.contains(action);
+            builder.addButtonAt(
+                    9 + i,
+                    (selected ? "§a✓ " : "§7") + shortAction(action),
+                    icon(action),
+                    "§8" + action.name() + "\n§7クリックでON/OFF");
+        }
+
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) return;
+            int slot = result.slot;
+            if (slot == 0) {
+                filter.actions = EnumSet.allOf(ProtectAction.class);
+                openActionSelector(p, module);
+                return;
+            }
+            if (slot == 1) {
+                filter.actions = EnumSet.copyOf(worldActions());
+                openActionSelector(p, module);
+                return;
+            }
+            if (slot == 2) {
+                filter.actions = EnumSet.copyOf(containerActions());
+                openActionSelector(p, module);
+                return;
+            }
+            if (slot == 3) {
+                filter.actions = EnumSet.copyOf(itemActions());
+                openActionSelector(p, module);
+                return;
+            }
+            if (slot == 49) {
+                openAdvancedMenu(p, module);
+                return;
+            }
+            int index = slot - 9;
+            if (index >= 0 && index < values.length) {
+                ProtectAction action = values[index];
+                if (filter.actions.contains(action)) {
+                    if (filter.actions.size() <= 1) {
+                        p.sendMessage("§e[Protect] Actionは最低1つ必要です");
+                    } else {
+                        filter.actions.remove(action);
+                    }
+                } else {
+                    filter.actions.add(action);
+                }
+                openActionSelector(p, module);
+            }
+        }).show(player);
+    }
+
+    private static void openAdvancedHistory(Player player, ProtectModule module, int page) {
+        AdvancedFilter filter = filterFor(player);
+        Location origin = filter.origin == null ? player.getLocation().clone() : filter.origin.clone();
+        if (origin.getWorld() == null) {
+            player.sendMessage("§c[Protect] 検索地点のWorldが不正です");
+            openAdvancedMenu(player, module);
+            return;
+        }
+
+        int safePage = Math.max(0, page);
+        int offset = safePage * PAGE_SIZE;
+        if (offset >= filter.limit) {
+            openAdvancedMenu(player, module);
+            return;
+        }
+        int queryLimit = Math.min(PAGE_SIZE, filter.limit - offset);
+        long since = System.currentTimeMillis() - filter.durationMs;
+        player.sendMessage("§7[Protect] 詳細条件で履歴を検索中...");
+
+        module.getDatabase().queryNearby(
+                        origin.getWorld().getUID().toString(),
+                        origin.getBlockX(), origin.getBlockY(), origin.getBlockZ(),
+                        filter.radius,
+                        since,
+                        normalizeActor(filter.actor),
+                        filter.actions,
+                        queryLimit,
+                        offset)
+                .whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(
+                        Loader.getPlugin(Loader.class),
+                        () -> {
+                            if (!player.isOnline()) return;
+                            if (throwable != null) {
+                                player.sendMessage("§c[Protect] 詳細履歴検索に失敗しました");
+                                return;
+                            }
+                            showAdvancedHistoryPage(
+                                    player,
+                                    module,
+                                    safePage,
+                                    records == null ? List.of() : records,
+                                    queryLimit);
+                        }));
+    }
+
+    private static void showAdvancedHistoryPage(
+            Player player,
+            ProtectModule module,
+            int page,
+            List<ProtectRecord> records,
+            int queryLimit) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§3Protect Detail Lookup §8[" + (page + 1) + "]")
+                .size(54)
+                .type("protect_advanced_history");
+
+        for (int i = 0; i < records.size() && i < PAGE_SIZE; i++) {
+            ProtectRecord record = records.get(i);
+            builder.addButtonAt(
+                    i,
+                    color(record.action()) + shortAction(record.action())
+                            + " §f" + safeName(record.actorName()),
+                    icon(record.action()),
+                    historyLore(record));
+        }
+
+        builder.addButtonAt(45, "§e条件画面へ", Material.COMPARATOR, advancedFilterLore(filter));
+        if (page > 0) {
+            builder.addButtonAt(48, "§e前のページ", Material.SPECTRAL_ARROW, "");
+        }
+        builder.addButtonAt(49, "§7Page " + (page + 1), Material.PAPER, advancedFilterLore(filter));
+
+        int nextOffset = (page + 1) * PAGE_SIZE;
+        boolean hasNext = records.size() >= queryLimit && nextOffset < filter.limit;
+        if (hasNext) {
+            builder.addButtonAt(50, "§e次のページ", Material.ARROW, "");
+        }
+        builder.addButtonAt(53, "§b再検索", Material.SPYGLASS, "§7同じ条件で最新状態を再検索");
+
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) return;
+            int slot = result.slot;
+            if (slot >= 0 && slot < records.size() && slot < PAGE_SIZE) {
+                openAdvancedRecordDetail(p, module, records.get(slot), page);
+            } else if (slot == 45) {
+                openAdvancedMenu(p, module);
+            } else if (slot == 48 && page > 0) {
+                openAdvancedHistory(p, module, page - 1);
+            } else if (slot == 50 && hasNext) {
+                openAdvancedHistory(p, module, page + 1);
+            } else if (slot == 53) {
+                openAdvancedHistory(p, module, page);
+            }
+        }).show(player);
+    }
+
+    private static void openAdvancedRecordDetail(
+            Player player,
+            ProtectModule module,
+            ProtectRecord record,
+            int page) {
+        ChestUI.Builder builder = ChestUI.builder()
+                .title("§3Protect Log #" + record.id())
+                .size(27)
+                .type("protect_advanced_detail")
+                .addButtonAt(11, "§b" + shortAction(record.action()), icon(record.action()), historyLore(record))
+                .addButtonAt(15, "§e履歴へ戻る", Material.ARROW, "")
+                .addButtonAt(17, "§d条件画面", Material.COMPARATOR, advancedFilterLore(filterFor(player)));
+
+        if (record.reversible()) {
+            if (record.rolledBack()) {
+                builder.addButtonAt(13, "§aこの1件をRestore", Material.SLIME_BALL,
+                        "§7Rollback済みの変更を再適用します");
+            } else {
+                builder.addButtonAt(13, "§cこの1件をRollback", Material.CLOCK,
+                        "§7この変更だけ元に戻します");
+            }
+        } else {
+            builder.addButtonAt(13, "§7復元対象外", Material.GRAY_DYE, "");
+        }
+
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) return;
+            if (result.slot == 13 && record.reversible()) {
+                if (record.rolledBack()) {
+                    module.restoreSingle(p, record);
+                } else {
+                    module.rollbackSingle(p, record);
+                }
+                openAdvancedHistory(p, module, page);
+            } else if (result.slot == 15) {
+                openAdvancedHistory(p, module, page);
+            } else if (result.slot == 17) {
+                openAdvancedMenu(p, module);
+            }
+        }).show(player);
+    }
+
+    private static void openReplayPreview(Player player, ProtectModule module, boolean restore) {
+        AdvancedFilter filter = filterFor(player);
+        Location origin = filter.origin == null ? player.getLocation().clone() : filter.origin.clone();
+        if (origin.getWorld() == null) {
+            player.sendMessage("§c[Protect] 検索地点が不正です");
+            return;
+        }
+
+        ChestUI.closeMenu(player);
+        long since = System.currentTimeMillis() - filter.durationMs;
+        var future = restore
+                ? module.getDatabase().queryRestore(
+                        origin.getWorld().getUID().toString(),
+                        origin.getBlockX(), origin.getBlockY(), origin.getBlockZ(),
+                        filter.radius, since, normalizeActor(filter.actor), filter.actions, filter.limit)
+                : module.getDatabase().queryRollback(
+                        origin.getWorld().getUID().toString(),
+                        origin.getBlockX(), origin.getBlockY(), origin.getBlockZ(),
+                        filter.radius, since, normalizeActor(filter.actor), filter.actions, filter.limit);
+
+        future.whenComplete((records, throwable) -> Bukkit.getScheduler().runTask(
+                Loader.getPlugin(Loader.class),
+                () -> {
+                    if (!player.isOnline()) return;
+                    if (throwable != null) {
+                        player.sendMessage("§c[Protect] Preview検索に失敗しました");
+                        openAdvancedMenu(player, module);
+                        return;
+                    }
+                    int count = records == null ? 0 : records.size();
+                    String operation = restore ? "Restore" : "Rollback";
+                    DialogUI.builder()
+                            .title("Protect " + operation + " Preview")
+                            .body("対象: " + count + "件")
+                            .body(filterSummaryPlain(filter))
+                            .body(count == 0
+                                    ? "条件に一致する復元可能なログはありません。"
+                                    : "実行するとtick分割でワールドへ反映します。")
+                            .confirmation(count == 0 ? "戻る" : operation + "実行", "キャンセル")
+                            .onResponse((result, p) -> {
+                                if (!result.isConfirmed() || count == 0) {
+                                    openAdvancedMenu(p, module);
+                                    return;
+                                }
+                                if (restore) {
+                                    module.restoreFiltered(
+                                            p, origin,
+                                            System.currentTimeMillis() - filter.durationMs,
+                                            normalizeActor(filter.actor), filter.actions,
+                                            filter.radius, filter.limit, false);
+                                } else {
+                                    module.rollbackFiltered(
+                                            p, origin,
+                                            System.currentTimeMillis() - filter.durationMs,
+                                            normalizeActor(filter.actor), filter.actions,
+                                            filter.radius, filter.limit, false);
+                                }
+                                openAdvancedMenu(p, module);
+                            })
+                            .show(player);
+                }));
+    }
+
+    private static void showStorageStatsDialog(Player player, ProtectModule module) {
+        ChestUI.closeMenu(player);
+        module.getDatabase().countRecords().whenComplete((count, throwable) ->
+                Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> {
+                    if (!player.isOnline()) return;
+                    if (throwable != null) {
+                        player.sendMessage("§c[Protect] DB統計の取得に失敗しました");
+                        openAdvancedMenu(player, module);
+                        return;
+                    }
+                    DialogUI.builder()
+                            .title("Protect DB Stats")
+                            .body("Records: " + count)
+                            .body("DB size: " + humanBytes(module.getDatabaseSizeBytes()))
+                            .body("Queue dropped: " + module.getDroppedRecords())
+                            .body("Retention: " + module.getRetentionDays() + " days")
+                            .notice("戻る")
+                            .onResponse((result, p) -> openAdvancedMenu(p, module))
+                            .show(player);
+                }));
+    }
+
+    private static void openPurgeDialog(Player player, ProtectModule module) {
+        AdvancedFilter filter = filterFor(player);
+        ChestUI.closeMenu(player);
+        Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                .title("Protect Purge")
+                .body("指定期間より古いログを完全削除します。Rollbackでは戻せません。")
+                .addTextInput("time", "これより古いログ (例: 30d)", "30d", 24, false)
+                .addTextInput("player", "Player (* = 全員)", filter.actor, 32, false)
+                .confirmation("次へ", "戻る")
+                .onResponse((result, p) -> {
+                    if (!result.isConfirmed()) {
+                        openAdvancedMenu(p, module);
+                        return;
+                    }
+                    String rawTime = result.getText("time");
+                    String rawActor = result.getText("player");
+                    final long duration;
+                    try {
+                        duration = ProtectQuery.parseDuration(rawTime == null ? "" : rawTime.trim());
+                    } catch (IllegalArgumentException e) {
+                        p.sendMessage("§c[Protect] " + e.getMessage());
+                        openAdvancedMenu(p, module);
+                        return;
+                    }
+                    String actor = normalizeActor(rawActor);
+                    Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
+                            .title("Protect Purge - 最終確認")
+                            .body("削除条件: " + (rawTime == null ? "" : rawTime.trim())
+                                    + " より古い / Player=" + displayActor(actor))
+                            .body("この操作は不可逆です。")
+                            .confirmation("完全削除", "キャンセル")
+                            .onResponse((confirm, pp) -> {
+                                if (confirm.isConfirmed()) {
+                                    module.purge(pp, System.currentTimeMillis() - duration, actor);
+                                }
+                                openAdvancedMenu(pp, module);
+                            })
+                            .show(p));
+                })
+                .show(player));
+    }
+
+    private static String advancedFilterLore(AdvancedFilter filter) {
+        return "§7Player: " + displayActor(filter.actor)
+                + "\n§7Time: " + filter.timeText
+                + "\n§7Radius: " + filter.radius
+                + "\n§7Action: " + actionSummary(filter.actions)
+                + "\n§7Limit: " + filter.limit
+                + "\n§7Origin: " + locationSummary(filter.origin);
+    }
+
+    private static String filterSummaryPlain(AdvancedFilter filter) {
+        return "Player=" + displayActor(filter.actor)
+                + " / Time=" + filter.timeText
+                + " / Radius=" + filter.radius
+                + " / Action=" + actionSummary(filter.actions)
+                + " / Limit=" + filter.limit
+                + " / Origin=" + locationSummary(filter.origin);
+    }
+
+    private static String actionsLore(Set<ProtectAction> actions) {
+        StringBuilder builder = new StringBuilder("§7選択数: ").append(actions.size());
+        int shown = 0;
+        for (ProtectAction action : actions) {
+            if (shown++ >= 7) {
+                builder.append("\n§8...");
+                break;
+            }
+            builder.append("\n§8").append(action.name());
+        }
+        return builder.toString();
+    }
+
+    private static String actionSummary(Set<ProtectAction> actions) {
+        if (actions == null || actions.isEmpty()) return "NONE";
+        if (actions.size() == ProtectAction.values().length) return "ALL";
+        if (actions.equals(worldActions())) return "WORLD";
+        if (actions.equals(containerActions())) return "CONTAINER";
+        if (actions.equals(itemActions())) return "ITEM";
+        if (actions.size() == 1) return shortAction(actions.iterator().next());
+        return actions.size() + " actions";
+    }
+
+    private static String locationSummary(Location location) {
+        if (location == null || location.getWorld() == null) return "unknown";
+        return location.getWorld().getName()
+                + " " + location.getBlockX()
+                + "," + location.getBlockY()
+                + "," + location.getBlockZ();
+    }
+
+    private static String displayActor(String actor) {
+        String normalized = normalizeActor(actor);
+        return normalized == null ? "*" : normalized;
+    }
+
+    private static String normalizeActor(String actor) {
+        if (actor == null) return null;
+        String value = actor.trim();
+        return value.isEmpty() || value.equals("*") || value.equalsIgnoreCase("all") ? null : value;
+    }
+
+    private static Integer parseSignedInt(String value) {
+        if (value == null || !value.trim().matches("-?\\d+")) return null;
+        try {
+            return Integer.valueOf(value.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private static void openRollbackDialog(Player player, ProtectModule module) {
         ChestUI.closeMenu(player);
         Bukkit.getScheduler().runTask(Loader.getPlugin(Loader.class), () -> DialogUI.builder()
