@@ -44,17 +44,19 @@ public final class ProtectItemListener implements Listener {
         Location source = resolveLocation(event.getSource());
         Location destination = resolveLocation(event.getDestination());
         ItemStack item = ProtectModule.copyItem(event.getItem());
-        byte[] bytes = ProtectModule.serializeItem(item);
-        String summary = ProtectModule.itemSummary(bytes);
+        String summary = ProtectModule.itemSummary(item);
+        String tag = item != null && item.getType() == Material.BUNDLE ? "#bundle " : "";
 
+        // Hopper系は非常に高頻度なので、巨大なItemStack BLOBを毎回保存せず
+        // type/amountをdetailへ記録してDBサイズとserialize負荷を抑える。
         if (source != null) {
             module.recordSystem(
                     "#hopper",
                     source,
                     ProtectAction.CONTAINER_TRANSFER,
                     null, null, null,
-                    bytes, null,
-                    "OUT " + summary + destinationText(destination));
+                    null, null,
+                    tag + "OUT " + summary + destinationText(destination));
         }
         if (destination != null) {
             module.recordSystem(
@@ -62,8 +64,8 @@ public final class ProtectItemListener implements Listener {
                     destination,
                     ProtectAction.CONTAINER_TRANSFER,
                     null, null, null,
-                    null, bytes,
-                    "IN " + summary + sourceText(source));
+                    null, null,
+                    tag + "IN " + summary + sourceText(source));
         }
     }
 
