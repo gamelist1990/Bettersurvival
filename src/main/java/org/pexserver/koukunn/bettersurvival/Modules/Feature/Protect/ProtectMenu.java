@@ -38,7 +38,7 @@ public final class ProtectMenu {
                         "§7ON中にブロックを左右クリックすると\n§7その座標の履歴を直接表示")
                 .addButtonAt(16, "§cロールバック", Material.CLOCK,
                         "§7半径・時間・プレイヤーを指定して\n§7変更を逆順に復元")
-                .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.CALENDAR,
+                .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
                         "§7既定30日。1～3650日で変更可能")
                 .addButtonAt(32, "§dストレージ情報", Material.BOOK,
                         "§7DBサイズ: " + sizeText + "\n§7Queue drop: " + module.getDroppedRecords())
