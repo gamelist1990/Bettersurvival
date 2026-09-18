@@ -11,6 +11,9 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -24,6 +27,7 @@ import java.io.IOException;
  * Sign の両面テキスト・色・発光・wax を対象にする。
  */
 final class ProtectBlockSnapshot {
+    private static final LegacyComponentSerializer LEGACY_TEXT = LegacyComponentSerializer.legacySection();
     private static final int MAGIC = 0x42535031; // BSP1
     private static final int VERSION = 1;
     private static final int FLAG_INVENTORY = 1;
@@ -126,9 +130,11 @@ final class ProtectBlockSnapshot {
     }
 
     private static void writeSignSide(DataOutputStream out, SignSide side) throws IOException {
-        String[] lines = side.getLines();
-        out.writeInt(lines.length);
-        for (String line : lines) out.writeUTF(line == null ? "" : line);
+        java.util.List<Component> lines = side.lines();
+        out.writeInt(lines.size());
+        for (Component line : lines) {
+            out.writeUTF(line == null ? "" : LEGACY_TEXT.serialize(line));
+        }
         DyeColor color = side.getColor();
         out.writeUTF(color == null ? "" : color.name());
         out.writeBoolean(side.isGlowingText());
@@ -138,7 +144,7 @@ final class ProtectBlockSnapshot {
         int count = Math.max(0, Math.min(16, in.readInt()));
         for (int i = 0; i < count; i++) {
             String line = in.readUTF();
-            if (i < 4) side.setLine(i, line);
+            if (i < 4) side.line(i, LEGACY_TEXT.deserialize(line));
         }
         String colorName = in.readUTF();
         if (!colorName.isBlank()) {
