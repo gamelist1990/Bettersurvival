@@ -1,6 +1,7 @@
 import { SectionShell } from '../components/SectionShell';
 import { CommandBox } from '../components/CommandBox';
 import { WikiLink } from '../components/WikiNavContext';
+import { PartyGuiMock } from '../components/FeatureChestGuiMocks';
 
 export function PartySection() {
   return (
@@ -10,6 +11,9 @@ export function PartySection() {
       intro="複数プレイヤーで色付きの名前・共通土地保護を持つグループを作る仕組み。招待制で参加し、3 階級の権限が用意されています。"
       scope="player"
     >
+      <h3>実際に触れるパーティー管理ChestGUI</h3>
+      <PartyGuiMock />
+
       <h3>どんな機能か</h3>
       <ul className="wiki-bullets">
         <li>プレイヤー同士でパーティー (ギルド) を作り、共通の <strong>名前 / カラー / 説明</strong>を持ちます。</li>

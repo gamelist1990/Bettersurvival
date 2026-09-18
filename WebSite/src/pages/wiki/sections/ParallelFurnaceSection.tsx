@@ -1,5 +1,6 @@
 import { SectionShell } from '../components/SectionShell';
 import { WikiLink } from '../components/WikiNavContext';
+import { ParallelFurnaceGuiMock } from '../components/FeatureChestGuiMocks';
 
 const tableRows: { label: string; role: string; slots: string }[] = [
   { label: '0 (上端)', role: '操作パネル', slots: '[情報] [状態✦] [－コア] [コア数] [＋コア] [搬出チェスト]' },
@@ -35,6 +36,9 @@ export function ParallelFurnaceSection() {
         <li>好きな場所に設置。</li>
         <li>右クリックで<strong>作業コア UI (54 スロット)</strong> を開きます。</li>
       </ol>
+
+      <h3>実際に触れる54スロットUI</h3>
+      <ParallelFurnaceGuiMock />
 
       <h3>UI レイアウト (54 スロット)</h3>
       <p>UI は 6 行のグリッドで、行ごとに役割が固定されています。</p>

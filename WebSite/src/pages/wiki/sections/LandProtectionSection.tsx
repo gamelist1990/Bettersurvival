@@ -1,6 +1,7 @@
 import { SectionShell } from '../components/SectionShell';
 import { CommandBox } from '../components/CommandBox';
 import { WikiLink } from '../components/WikiNavContext';
+import { LandProtectionGuiMock } from '../components/FeatureChestGuiMocks';
 
 // ClaimLevel.java の実装をそのまま反映
 function radius(level: number): number {
@@ -83,6 +84,10 @@ export function LandProtectionSection() {
         <li>維持コスト以上のユニットが入っている限り保護は継続。</li>
         <li>燃料が切れると <strong>保護が停止し</strong>、外部から破壊 / チェストアクセスできる状態になります。長期不在時は多めに補充を。</li>
       </ul>
+
+      <h3>実際に触れる土地保護ChestGUI</h3>
+      <p><code>LandMenu</code> のMain / Fuel / Upgrade / Settingsをブラウザ上で遷移できます。Toggleや燃料・レベル値もモック内で変化します。</p>
+      <LandProtectionGuiMock />
 
       <h3>管理 UI と権限</h3>
       <ul className="wiki-bullets">

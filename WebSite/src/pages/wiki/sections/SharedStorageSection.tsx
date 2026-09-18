@@ -1,6 +1,7 @@
 import { SectionShell } from '../components/SectionShell';
 import { CommandBox } from '../components/CommandBox';
 import { WikiLink } from '../components/WikiNavContext';
+import { SharedStorageGuiMock } from '../components/FeatureChestGuiMocks';
 
 const manualSettings = [
   { name: 'subへ入れる', desc: '手で sub チェストにアイテムを入れられるか。' },
@@ -146,6 +147,10 @@ export function SharedStorageSection() {
 
       <h3>4. 設定 UI を開く</h3>
       <p>主チェストの近くで、<strong>木の棒などの sort 棒</strong>を持ってスニーク右クリック、または主チェストを直接右クリックで設定メニューが開きます (実装の <code>SharedStorageSettingsUi</code>)。</p>
+
+      <h3>実際に触れる設定ChestGUI</h3>
+      <p><code>SharedStorageSettingsUi</code> と同じ45スロット配置です。各Toggle、額縁フィルタ一致モード、接続範囲、ChestPageまでクリックして試せます。</p>
+      <SharedStorageGuiMock />
 
       <h3>設定 UI の項目一覧</h3>
 

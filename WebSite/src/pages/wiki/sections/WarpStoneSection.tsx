@@ -1,5 +1,6 @@
 import { SectionShell } from '../components/SectionShell';
 import { WikiLink } from '../components/WikiNavContext';
+import { WarpStoneGuiMock } from '../components/FeatureChestGuiMocks';
 
 export function WarpStoneSection() {
   return (
@@ -9,6 +10,9 @@ export function WarpStoneSection() {
       intro="Waystones 風のワープ地点。設置して名前を付けると、それを見つけたプレイヤーがいつでもそこへ飛べるようになります。座標本や GTA 風カメラ演出まで用意された作り込みの深い機能です。"
       scope="player"
     >
+      <h3>実際に触れるワープ先選択UI</h3>
+      <WarpStoneGuiMock />
+
       <h3>ざっくり何ができるか</h3>
       <ul className="wiki-bullets">
         <li>ワープストーンを設置すると <strong>ワープ地点</strong>になります。</li>

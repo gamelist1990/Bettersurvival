@@ -1,6 +1,7 @@
 import { SectionShell } from '../components/SectionShell';
 import { CommandBox } from '../components/CommandBox';
 import { WikiLink } from '../components/WikiNavContext';
+import { CopperGolemGuiMock } from '../components/FeatureChestGuiMocks';
 
 export function CopperGolemSection() {
   return (
@@ -24,6 +25,10 @@ export function CopperGolemSection() {
         <li><strong>ゴーレム召喚</strong>: 金床で名札を <code>golem-&lt;任意ID&gt;</code> にしてから、Core と一緒にドロップ。ドロップ順は逆でも OK。</li>
       </ol>
       <CommandBox command="golem-farm1" description="名札の名前例。ID は英数字なら何でも OK。個体ごとに変えると複数管理できます。" />
+
+      <h3>実際に触れる管理ChestGUI</h3>
+      <p>Java側の <code>CopperGolemMainMenuUI</code> / <code>CopperGolemTargetMenuUI</code> の実スロット配置を再現しています。モード切替、範囲、保管先、作物系トグルを操作できます。</p>
+      <CopperGolemGuiMock />
 
       <h3>管理メニューを開く</h3>
       <p>召喚したカッパーゴーレムに向かって <strong>スニーク + 右クリック</strong>すると、そのゴーレム専用の管理 GUI が開きます。ここから以下を設定します:</p>

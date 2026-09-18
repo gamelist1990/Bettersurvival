@@ -25,6 +25,9 @@ dependencies {
     compileOnly('com.mojang:authlib:7.0.61')
     compileOnly('io.netty:netty-transport:4.2.7.Final')
     implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'org.xerial:sqlite-jdbc:3.53.4.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
     implementation('net.dv8tion:JDA:6.4.1') {
         exclude group: 'club.minnced', module: 'opus-java'
         exclude group: 'com.google.crypto.tink', module: 'tink'
@@ -40,10 +43,15 @@ paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArt
 
 tasks.shadowJar {
     archiveClassifier.set('')
+    mergeServiceFiles()
 }
 
 tasks.build {
     dependsOn tasks.shadowJar
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks {
