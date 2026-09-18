@@ -38,6 +38,10 @@ public final class ProtectMenu {
                         "§7ON中にブロックを左右クリックすると\n§7その座標の履歴を直接表示")
                 .addButtonAt(16, "§cロールバック", Material.CLOCK,
                         "§7半径・時間・プレイヤーを指定して\n§7変更を逆順に復元")
+                .addButtonAt(20, "§a世界変化", Material.GRASS_BLOCK,
+                        "§7ブロック・液体・火・爆発・成長・\n§7Entity・ピストン・自然変化のみ表示")
+                .addButtonAt(22, "§bアイテム履歴", Material.BUNDLE,
+                        "§7ドロップ・拾得・破損・クラフト・\n§7発射・取引・特殊ブロック操作")
                 .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
                         "§7既定30日。1～3650日で変更可能")
                 .addButtonAt(32, "§dストレージ情報", Material.BOOK,
@@ -68,6 +72,8 @@ public final class ProtectMenu {
                             openMain(p, module);
                         }
                         case 16 -> openRollbackDialog(p, module);
+                        case 20 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, worldActions());
+                        case 22 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, itemActions());
                         case 30 -> openRetentionDialog(p, module);
                         case 32 -> showStorageStats(p, module);
                         case 49 -> ChestUI.closeMenu(p);
@@ -322,6 +328,9 @@ public final class ProtectMenu {
                     .append(" -> ")
                     .append(shortBlock(record.blockAfter()));
         }
+        if (record.detail() != null && !record.detail().isBlank()) {
+            lore.append("\n§8").append(record.detail());
+        }
         if (record.rolledBack()) {
             lore.append("\n§8Rollback済み");
         }
@@ -417,6 +426,26 @@ public final class ProtectMenu {
             case LEAF_DECAY, SCULK_SPREAD, POT_CHANGE, BRUSH, CUSTOM_BLOCK -> "§2";
             default -> "§7";
         };
+    }
+
+    private static Set<ProtectAction> worldActions() {
+        EnumSet<ProtectAction> result = EnumSet.noneOf(ProtectAction.class);
+        for (ProtectAction action : ProtectAction.values()) {
+            if (!action.isContainerAction() && !action.isItemAction()) {
+                result.add(action);
+            }
+        }
+        return result;
+    }
+
+    private static Set<ProtectAction> itemActions() {
+        EnumSet<ProtectAction> result = EnumSet.noneOf(ProtectAction.class);
+        for (ProtectAction action : ProtectAction.values()) {
+            if (action.isItemAction()) {
+                result.add(action);
+            }
+        }
+        return result;
     }
 
     private static String safeName(String name) {
