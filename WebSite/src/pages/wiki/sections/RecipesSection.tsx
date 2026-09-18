@@ -2,7 +2,7 @@ import { SectionShell } from '../components/SectionShell';
 import { WikiLink } from '../components/WikiNavContext';
 import { FetchedWikiImage } from '../components/FetchedWikiImage';
 import { TextureLayout } from '../components/TextureLayout';
-import { minecraft26ItemAsset } from '../components/minecraft26Assets';
+import { minecraftItemAsset } from '../components/minecraftAssets';
 
 function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: string; slots: (string | null)[]; output: string; outputLabel: string }) {
   const craftingItems = slots.flatMap((item, index) => {
@@ -11,7 +11,7 @@ function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: s
     const row = Math.floor(index / 3);
     return [{
       id: `slot-${index}`,
-      src: minecraft26ItemAsset(item),
+      src: minecraftItemAsset(item),
       left: 12.6 + column * 13.1,
       top: 32.3 + row * 23.5,
       size: 12.9,
@@ -28,7 +28,7 @@ function CraftingRecipePreview({ title, slots, output, outputLabel }: { title: s
         className="wiki-crafting-screen"
         items={[...craftingItems, {
           id: 'output',
-          src: minecraft26ItemAsset(output),
+          src: minecraftItemAsset(output),
           alt: `${outputLabel}のアイテム画像`,
           left: 80,
           top: 55.2,
@@ -234,7 +234,7 @@ export function RecipesSection() {
       </ul>
 
       <h3>クラフト系レシピ</h3>
-      <p>作業台の画像に材料アイテムを重ねて、配置と完成品を確認できます。アイテム画像は PrismarineJS の minecraft-assets（26.1）を参照しています。</p>
+      <p>作業台の画像に材料アイテムを重ねて、配置と完成品を確認できます。アイテム画像は Mojang公式 bedrock-samples の最新mainを参照しています。</p>
       <div className="wiki-crafting-recipe-grid">
         <CraftingRecipePreview title="レベリングの書" slots={['', 'emerald', '', 'lapis_lazuli', 'book', 'lapis_lazuli', '', 'emerald', '']} output="book" outputLabel="エメラルド ×2 / ラピスラズリ ×2 / 本 ×1 → レベリングの書" />
         <CraftingRecipePreview title="不吉な焚き火（不定形）" slots={['campfire', 'stone_sword', null, null, null, null, null, null, null]} output="campfire" outputLabel="焚き火 ×1 / 石の剣 ×1 → 不吉な焚き火" />
