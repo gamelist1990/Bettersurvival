@@ -18,24 +18,36 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - uses: actions/setup-node@v7
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: WebSite/package-lock.json
+          bun-version: latest
 
-      - name: Install and build WebSite
+      - name: Install and build WebSite with Bun
         working-directory: WebSite
         run: |
-          npm ci
-          npm install --no-save playwright@1.55.0
-          npx playwright install --with-deps chromium
-          npm run build
+          bun install
+          bun add --dev playwright@1.55.0
+          bunx playwright install --with-deps chromium
+          bun run build
+
+      - name: Pack local debug bundle
+        run: |
+          mkdir -p local-debug-bundle/bin
+          cp "$(command -v bun)" local-debug-bundle/bin/bun
+          cp -a WebSite local-debug-bundle/WebSite
+          tar -czf local-debug-bundle.tar.gz local-debug-bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: protect-local-debug-bundle
+          path: local-debug-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Capture Protect UI
         working-directory: WebSite
         run: |
-          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/protect-vite.log 2>&1 &
+          bun run preview -- --host 127.0.0.1 --port 4173 > /tmp/protect-vite.log 2>&1 &
           echo $! > /tmp/protect-vite.pid
           ready=0
           for i in {1..40}; do
