@@ -1189,7 +1189,8 @@
 .web-chest-slot.is-danger {
   background: #a77e78;
 }
-.web-chest-slot img {
+.web-chest-slot img,
+.web-chest-slot canvas.web-chest-tga-icon {
   width: 60%;
   height: 60%;
   object-fit: contain;
