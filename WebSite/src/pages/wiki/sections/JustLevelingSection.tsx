@@ -3,7 +3,7 @@ import { SectionShell } from '../components/SectionShell';
 import { FetchedWikiImage } from '../components/FetchedWikiImage';
 import { WikiLink } from '../components/WikiNavContext';
 import { ChestGuiMock } from '../components/ChestGuiMock';
-import { minecraft26ItemAsset } from '../components/minecraft26Assets';
+import { minecraftItemAsset } from '../components/minecraftAssets';
 
 const aptitudes = [
   ['STR', '筋力', 'iron_sword', '攻撃力とノックバックを高めます。', 'Lv.10 片手の達人 / Lv.16 闘志 / Lv.30 狂戦士'],
@@ -100,7 +100,7 @@ export function JustLevelingSection() {
       <div className="just-leveling-aptitudes">
         {aptitudes.map(([code, name, item, description, milestones]) => (
           <article className="just-leveling-aptitude" key={code}>
-            <img src={minecraft26ItemAsset(item)} alt="" />
+            <img src={minecraftItemAsset(item)} alt="" />
             <div><h4><span>{code}</span> {name}</h4><p>{description}</p><small>主な解放: {milestones}</small></div>
           </article>
         ))}
@@ -130,7 +130,7 @@ export function JustLevelingSection() {
         </table>
       </div>
 
-      <small className="just-leveling-source">アイテム画像: <a href="https://github.com/PrismarineJS/minecraft-assets/tree/master/data/26.1/items" target="_blank" rel="noreferrer">PrismarineJS/minecraft-assets（26.1）</a>。Minecraft アセット側に26.1より新しいデータが追加された場合は、利用バージョンに合わせて参照先を更新します。</small>
+      <small className="just-leveling-source">アイテム画像: <a href="https://github.com/Mojang/bedrock-samples/tree/main/resource_pack/textures" target="_blank" rel="noreferrer">Mojang/bedrock-samples（main）</a>。Minecraft アセット側に26.1より新しいデータが追加された場合は、利用バージョンに合わせて参照先を更新します。</small>
     </SectionShell>
   );
 }
