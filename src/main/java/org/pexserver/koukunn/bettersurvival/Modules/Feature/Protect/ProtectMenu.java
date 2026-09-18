@@ -3,14 +3,20 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.pexserver.koukunn.bettersurvival.Commands.protect.ProtectQuery;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -18,8 +24,39 @@ import java.util.concurrent.TimeUnit;
  */
 public final class ProtectMenu {
     private static final int PAGE_SIZE = 45;
+    private static final Map<UUID, AdvancedFilter> ADVANCED_FILTERS = new ConcurrentHashMap<>();
 
     private ProtectMenu() {
+    }
+
+    private static AdvancedFilter filterFor(Player player) {
+        return ADVANCED_FILTERS.computeIfAbsent(
+                player.getUniqueId(),
+                ignored -> new AdvancedFilter(player.getLocation().clone()));
+    }
+
+    private static final class AdvancedFilter {
+        private String actor = "*";
+        private String timeText = "24h";
+        private long durationMs = TimeUnit.HOURS.toMillis(24);
+        private int radius = 100;
+        private EnumSet<ProtectAction> actions = EnumSet.allOf(ProtectAction.class);
+        private Location origin;
+        private int limit = 10_000;
+
+        private AdvancedFilter(Location origin) {
+            this.origin = origin;
+        }
+
+        private void reset(Player player) {
+            actor = "*";
+            timeText = "24h";
+            durationMs = TimeUnit.HOURS.toMillis(24);
+            radius = 100;
+            actions = EnumSet.allOf(ProtectAction.class);
+            origin = player.getLocation().clone();
+            limit = 10_000;
+        }
     }
 
     public static void openMain(Player player, ProtectModule module) {
