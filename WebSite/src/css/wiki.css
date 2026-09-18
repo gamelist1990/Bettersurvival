@@ -1102,6 +1102,7 @@
 
 /* --- Shared interactive Minecraft ChestGUI mock --- */
 .web-chest-gui {
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -1321,6 +1322,9 @@
 .protect-command-table code { white-space: nowrap; }
 
 @media (max-width: 720px) {
+  .web-chest-gui {
+    padding-right: 56px;
+  }
   .web-chest-window {
     padding: 8px;
     border-width: 3px;
