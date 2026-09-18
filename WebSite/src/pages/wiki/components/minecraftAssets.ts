@@ -31,7 +31,6 @@ const TEXTURE_PATHS: Record<string, string> = {
   netherite_chestplate: 'items/netherite_chestplate.png',
   netherite_ingot: 'items/netherite_ingot.png',
   netherite_upgrade_smithing_template: 'items/netherite_upgrade_smithing_template.png',
-  oak_sign: 'items/sign.png',
   stick: 'items/stick.png',
   sugar: 'items/sugar.png',
   wheat: 'items/wheat.png',
@@ -104,7 +103,6 @@ const TEXTURE_PATHS: Record<string, string> = {
   bricks: 'blocks/brick.png',
   iron_pickaxe: 'items/iron_pickaxe.png',
   diamond_sword: 'items/diamond_sword.png',
-  bell: 'items/bell.png',
   nether_star: 'items/nether_star.png',
   lime_concrete: 'blocks/concrete_lime.png',
 
