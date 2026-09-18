@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.Protect;
 
 import org.bukkit.DyeColor;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.Chest;
 import org.bukkit.block.Sign;
 import org.bukkit.block.TileState;
 import org.bukkit.block.sign.Side;
@@ -51,7 +52,7 @@ final class ProtectBlockSnapshot {
                 out.writeInt(flags);
 
                 if (hasInventory) {
-                    Inventory inventory = ((InventoryHolder) state).getInventory();
+                    Inventory inventory = inventoryFor(state);
                     byte[] inventoryBytes = ItemStack.serializeItemsAsBytes(inventory.getContents());
                     writeBytes(out, inventoryBytes);
                 }
@@ -87,7 +88,7 @@ final class ProtectBlockSnapshot {
                 byte[] inventoryBytes = readBytes(in);
                 if (state instanceof InventoryHolder holder && inventoryBytes != null) {
                     ItemStack[] items = ItemStack.deserializeItemsFromBytes(inventoryBytes);
-                    Inventory inventory = holder.getInventory();
+                    Inventory inventory = inventoryFor(state);
                     for (int slot = 0; slot < inventory.getSize(); slot++) {
                         inventory.setItem(slot, slot < items.length ? normalize(items[slot]) : null);
                     }
@@ -115,6 +116,13 @@ final class ProtectBlockSnapshot {
         } catch (Throwable ignored) {
             // Snapshot破損でrollback全体を止めない。BlockDataの復元は呼び出し側で継続する。
         }
+    }
+
+    private static Inventory inventoryFor(BlockState state) {
+        if (state instanceof Chest chest) {
+            return chest.getBlockInventory();
+        }
+        return ((InventoryHolder) state).getInventory();
     }
 
     private static void writeSignSide(DataOutputStream out, SignSide side) throws IOException {
