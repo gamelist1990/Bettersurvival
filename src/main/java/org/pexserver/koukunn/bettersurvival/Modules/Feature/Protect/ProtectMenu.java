@@ -73,12 +73,14 @@ public final class ProtectMenu {
                         module.isInspector(player) ? "§aInspector: ON" : "§cInspector: OFF",
                         Material.RECOVERY_COMPASS,
                         "§7ON中にブロックを左右クリックすると\n§7その座標の履歴を直接表示")
-                .addButtonAt(16, "§cロールバック", Material.CLOCK,
-                        "§7半径・時間・プレイヤーを指定して\n§7変更を逆順に復元")
+                .addButtonAt(16, "§c詳細調査 / 復旧", Material.RECOVERY_COMPASS,
+                        "§7プレイヤー・時間・半径・Action・座標を指定\n§7Lookup / Preview / Rollback / Restore")
                 .addButtonAt(20, "§a世界変化", Material.GRASS_BLOCK,
                         "§7ブロック・液体・火・爆発・成長・\n§7Entity・ピストン・自然変化のみ表示")
                 .addButtonAt(22, "§bアイテム履歴", Material.BUNDLE,
                         "§7ドロップ・拾得・破損・クラフト・\n§7発射・取引・特殊ブロック操作")
+                .addButtonAt(24, "§d高度な検索条件", Material.COMPARATOR,
+                        "§7CoreProtect風の詳細フィルタ画面を開きます")
                 .addButtonAt(30, "§e保持期間: " + module.getRetentionDays() + "日", Material.WRITABLE_BOOK,
                         "§7既定30日。1～3650日で変更可能")
                 .addButtonAt(32, "§dストレージ情報", Material.BOOK,
@@ -108,7 +110,7 @@ public final class ProtectMenu {
                                     : "§e[Protect] Inspectorを無効にしました");
                             openMain(p, module);
                         }
-                        case 16 -> openRollbackDialog(p, module);
+                        case 16, 24 -> openAdvancedMenu(p, module);
                         case 20 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, worldActions());
                         case 22 -> openHistoryAt(p, module, p.getLocation(), 10, 0, null, itemActions());
                         case 30 -> openRetentionDialog(p, module);
