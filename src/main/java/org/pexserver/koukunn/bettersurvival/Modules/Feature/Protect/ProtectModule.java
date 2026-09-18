@@ -433,13 +433,14 @@ public final class ProtectModule implements Listener {
     }
 
     public void resetDatabase(Player admin, Runnable onComplete) {
-        if (replayActive.get()) {
-            admin.sendMessage("§c[Protect] Rollback/Restore実行中はDBを初期化できません");
+        if (!replayActive.compareAndSet(false, true)) {
+            admin.sendMessage("§c[Protect] Rollback/RestoreまたはDBメンテナンス実行中です");
             if (onComplete != null) onComplete.run();
             return;
         }
         database.resetDatabase().whenComplete((result, throwable) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
+                    replayActive.set(false);
                     if (throwable != null || result == null) {
                         plugin.getLogger().warning("Protect database reset failed: "
                                 + (throwable == null ? "unknown" : throwable.getMessage()));
@@ -577,8 +578,8 @@ public final class ProtectModule implements Listener {
 
         Deque<ProtectRecord> remaining = new ArrayDeque<>(source);
         List<Long> appliedIds = new ArrayList<>();
-        Set<String> loadingChunks = new java.util.HashSet<>();
-        Set<String> unavailableChunks = new java.util.HashSet<>();
+        Set<String> loadingChunks = ConcurrentHashMap.newKeySet();
+        Set<String> unavailableChunks = ConcurrentHashMap.newKeySet();
         int total = source.size();
 
         Bukkit.getScheduler().runTaskTimer(plugin, task -> {
