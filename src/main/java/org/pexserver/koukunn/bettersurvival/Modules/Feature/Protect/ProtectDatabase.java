@@ -157,10 +157,12 @@ public final class ProtectDatabase {
         CompletableFuture<List<ProtectRecord>> future = new CompletableFuture<>();
         int safeRadius = Math.max(0, Math.min(256, radius));
         int safeLimit = Math.max(1, Math.min(QUERY_LIMIT_MAX, limit));
-        Set<ProtectAction> reversible = EnumSet.of(
-                ProtectAction.BLOCK_BREAK,
-                ProtectAction.BLOCK_PLACE,
-                ProtectAction.CONTAINER_CHANGE);
+        Set<ProtectAction> reversible = EnumSet.noneOf(ProtectAction.class);
+        for (ProtectAction action : ProtectAction.values()) {
+            if (action.reversible()) {
+                reversible.add(action);
+            }
+        }
 
         io.execute(() -> {
             try {
