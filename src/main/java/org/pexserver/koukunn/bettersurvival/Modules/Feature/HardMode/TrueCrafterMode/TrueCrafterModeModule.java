@@ -69,6 +69,7 @@ import java.util.concurrent.ThreadLocalRandom;
 /** TrueCrafterModeの戦闘システムをPaper APIだけで再現する。 */
 public final class TrueCrafterModeModule implements Listener {
     private static final float SKELETON_SHEATH_SCALE = 0.12F;
+    private static final float WITHER_SKELETON_SHEATH_SCALE = 0.5F;
 
     private final Loader plugin;
     private final TrueCrafterSettings settings;
@@ -115,7 +116,7 @@ public final class TrueCrafterModeModule implements Listener {
         witherMinionKey = new NamespacedKey(plugin, "truecrafter_wither_minion");
         zealotKey = new NamespacedKey(plugin, "truecrafter_zealot");
         sheathOwnerKey = new NamespacedKey(plugin, "truecrafter_sheath_owner");
-        sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v3");
+        sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v5");
         creeperAttackCountKey = new NamespacedKey(plugin, "truecrafter_creeper_attack_count");
         temporaryBlocks = new TemporaryEnemyBlockSystem(plugin);
         standardEnemyAi = new StandardEnemyAiSystem(plugin);
@@ -918,24 +919,25 @@ public final class TrueCrafterModeModule implements Listener {
                     .forEach(Entity::remove);
         }
         boolean witherSheath = entity.getType() == EntityType.WITHER_SKELETON;
+        float sheathScale = witherSheath ? WITHER_SKELETON_SHEATH_SCALE : SKELETON_SHEATH_SCALE;
         entity.getPassengers().stream().filter(ItemDisplay.class::isInstance).map(ItemDisplay.class::cast).forEach(sheath -> {
-            sheath.setRotation(entity.getBodyYaw(), 0.0F);
+            sheath.setRotation(witherSheath ? entity.getYaw() : entity.getBodyYaw(), 0.0F);
             sheath.getPersistentDataContainer().set(sheathOwnerKey, PersistentDataType.STRING, ownerId);
             sheath.setTransformation(new org.bukkit.util.Transformation(
                     new Vector3f(0.0F, -1.1F, -0.3F), new Quaternionf(),
-                    new Vector3f(SKELETON_SHEATH_SCALE, SKELETON_SHEATH_SCALE, SKELETON_SHEATH_SCALE), new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
+                    new Vector3f(sheathScale, sheathScale, sheathScale), new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
         });
         if (equipment.getItemInMainHand().getType().isAir()) equipment.setItemInMainHand(new ItemStack(Material.BOW));
         if (equipment.getItemInOffHand().getType().isAir()) equipment.setItemInOffHand(lootFactory.eliteHatchet(false, heat));
         if (entity.getPassengers().stream().noneMatch(passenger -> passenger instanceof ItemDisplay)) {
             ItemDisplay sheath = entity.getWorld().spawn(entity.getLocation(), ItemDisplay.class);
-            sheath.setRotation(entity.getBodyYaw(), 0.0F);
+            sheath.setRotation(witherSheath ? entity.getYaw() : entity.getBodyYaw(), 0.0F);
             sheath.setItemStack(witherSheath ? new ItemStack(Material.STONE_SWORD) : lootFactory.eliteHatchet(false, heat));
             sheath.getPersistentDataContainer().set(sheathOwnerKey, PersistentDataType.STRING, ownerId);
             sheath.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
             sheath.setTransformation(new org.bukkit.util.Transformation(
                     new Vector3f(0.0F, -1.1F, -0.3F), new Quaternionf(),
-                    new Vector3f(SKELETON_SHEATH_SCALE, SKELETON_SHEATH_SCALE, SKELETON_SHEATH_SCALE),
+                    new Vector3f(sheathScale, sheathScale, sheathScale),
                     new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
             entity.addPassenger(sheath);
         }
@@ -953,19 +955,20 @@ public final class TrueCrafterModeModule implements Listener {
         if (!isRangedSkeleton(entity)
                 || entity.getPersistentDataContainer().has(sheathRenderVersionKey, PersistentDataType.BYTE)) return;
         boolean witherSheath = entity.getType() == EntityType.WITHER_SKELETON;
+        float sheathScale = witherSheath ? WITHER_SKELETON_SHEATH_SCALE : SKELETON_SHEATH_SCALE;
         entity.getPassengers().stream().filter(ItemDisplay.class::isInstance).map(ItemDisplay.class::cast).forEach(sheath -> {
-            sheath.setRotation(entity.getBodyYaw(), 0.0F);
+            sheath.setRotation(witherSheath ? entity.getYaw() : entity.getBodyYaw(), 0.0F);
             sheath.getPersistentDataContainer().set(sheathOwnerKey, PersistentDataType.STRING, entity.getUniqueId().toString());
             sheath.setTransformation(new org.bukkit.util.Transformation(
                     new Vector3f(0.0F, -1.1F, -0.3F), new Quaternionf(),
-                    new Vector3f(SKELETON_SHEATH_SCALE, SKELETON_SHEATH_SCALE, SKELETON_SHEATH_SCALE),
+                    new Vector3f(sheathScale, sheathScale, sheathScale),
                     new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
         });
         entity.getPersistentDataContainer().set(sheathRenderVersionKey, PersistentDataType.BYTE, (byte) 1);
     }
 
     private void syncRangedSkeletonSheath(LivingEntity entity) {
-        if (!isRangedSkeleton(entity)) return;
+        if (!isRangedSkeleton(entity) || entity.getType() == EntityType.WITHER_SKELETON) return;
         float bodyYaw = entity.getBodyYaw();
         entity.getPassengers().stream().filter(ItemDisplay.class::isInstance).map(ItemDisplay.class::cast)
                 .filter(display -> entity.getUniqueId().toString().equals(display.getPersistentDataContainer()
