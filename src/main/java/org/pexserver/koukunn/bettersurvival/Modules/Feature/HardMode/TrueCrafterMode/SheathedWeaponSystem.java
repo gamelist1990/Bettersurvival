@@ -19,7 +19,6 @@ import java.util.UUID;
 public final class SheathedWeaponSystem {
     private static final double MELEE_DISTANCE_SQUARED = 16.0D;
     private static final double RANGED_DISTANCE_SQUARED = 49.0D;
-    private static final double MAX_SWITCH_DISTANCE_SQUARED = 256.0D;
     private static final int SWITCH_COOLDOWN_TICKS = 15;
 
     private final NamespacedKey ownerKey;
@@ -35,7 +34,7 @@ public final class SheathedWeaponSystem {
         EntityEquipment equipment = entity.getEquipment();
         if (equipment == null || stowedWeapon == null || stowedWeapon.getType().isAir()) return;
         store(entity, stowedWeapon);
-        equipment.setItemInOffHand(ItemStack.empty());
+        if (!equipment.getItemInOffHand().getType().isAir()) equipment.setItemInOffHand(ItemStack.empty());
         updateDisplay(entity, stowedWeapon);
     }
 
@@ -44,7 +43,7 @@ public final class SheathedWeaponSystem {
         if (equipment == null || target == null || entity.getWorld() != target.getWorld()) return;
         ItemStack stowed = loadOrMigrate(entity);
         if (stowed == null || stowed.getType().isAir()) return;
-        equipment.setItemInOffHand(ItemStack.empty());
+        if (!equipment.getItemInOffHand().getType().isAir()) equipment.setItemInOffHand(ItemStack.empty());
         int cooldown = cooldowns.getOrDefault(entity.getUniqueId(), 0);
         if (cooldown > 0) {
             cooldowns.put(entity.getUniqueId(), cooldown - 1);
@@ -56,7 +55,7 @@ public final class SheathedWeaponSystem {
         boolean drawMelee = active.getType() == Material.BOW && stowed.getType() != Material.BOW
                 && distanceSquared <= MELEE_DISTANCE_SQUARED;
         boolean drawBow = active.getType() != Material.BOW && stowed.getType() == Material.BOW
-                && distanceSquared >= RANGED_DISTANCE_SQUARED && distanceSquared <= MAX_SWITCH_DISTANCE_SQUARED;
+                && distanceSquared >= RANGED_DISTANCE_SQUARED;
         if (!drawMelee && !drawBow) return;
         equipment.setItemInMainHand(stowed);
         store(entity, active);
@@ -74,8 +73,7 @@ public final class SheathedWeaponSystem {
     public void restore(LivingEntity entity) {
         EntityEquipment equipment = entity.getEquipment();
         ItemStack stowed = loadOrMigrate(entity);
-        if (equipment != null && stowed != null && !stowed.getType().isAir()
-                && equipment.getItemInOffHand().getType().isAir()) {
+        if (equipment != null && stowed != null && !stowed.getType().isAir()) {
             equipment.setItemInOffHand(stowed);
         }
         entity.getPersistentDataContainer().remove(stowedWeaponKey);

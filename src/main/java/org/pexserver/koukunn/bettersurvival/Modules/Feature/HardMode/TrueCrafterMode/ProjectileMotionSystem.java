@@ -24,6 +24,10 @@ public final class ProjectileMotionSystem {
     private final NamespacedKey ageKey;
     private final NamespacedKey ownerKey;
     private final NamespacedKey damageKey;
+    private final NamespacedKey skeletonHomingKey;
+    private final NamespacedKey skeletonHomingAgeKey;
+    private final NamespacedKey skeletonHomingTargetKey;
+    private final NamespacedKey skeletonHomingGravityKey;
     private final BukkitTask task;
 
     public ProjectileMotionSystem(Loader plugin) {
@@ -31,14 +35,35 @@ public final class ProjectileMotionSystem {
         ageKey = new NamespacedKey(plugin, "truecrafter_projectile_age");
         ownerKey = new NamespacedKey(plugin, "truecrafter_projectile_owner");
         damageKey = new NamespacedKey(plugin, "truecrafter_projectile_damage");
+        skeletonHomingKey = new NamespacedKey(plugin, "truecrafter_skeleton_homing");
+        skeletonHomingAgeKey = new NamespacedKey(plugin, "truecrafter_skeleton_homing_age");
+        skeletonHomingTargetKey = new NamespacedKey(plugin, "truecrafter_skeleton_homing_target");
+        skeletonHomingGravityKey = new NamespacedKey(plugin, "truecrafter_skeleton_homing_gravity");
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
     }
 
     public void shutdown() { task.cancel(); }
 
+    public void startSkeletonHoming(Projectile projectile, LivingEntity target) {
+        projectile.getPersistentDataContainer().set(skeletonHomingKey, PersistentDataType.BYTE, (byte) 1);
+        projectile.getPersistentDataContainer().set(skeletonHomingAgeKey, PersistentDataType.INTEGER, 0);
+        projectile.getPersistentDataContainer().set(skeletonHomingTargetKey, PersistentDataType.STRING,
+                target.getUniqueId().toString());
+        projectile.getPersistentDataContainer().set(skeletonHomingGravityKey, PersistentDataType.BYTE,
+                projectile.hasGravity() ? (byte) 1 : (byte) 0);
+        projectile.setGravity(false);
+        projectile.setGlowing(true);
+        projectile.getWorld().playSound(projectile.getLocation(), org.bukkit.Sound.BLOCK_BEACON_POWER_SELECT,
+                0.7F, 1.8F);
+    }
+
     private void tick() {
         for (org.bukkit.World world : Bukkit.getWorlds()) for (Entity entity : world.getEntities()) {
             String kind = entity.getPersistentDataContainer().get(kindKey, PersistentDataType.STRING);
+            if (entity instanceof Projectile projectile
+                    && entity.getPersistentDataContainer().has(skeletonHomingKey, PersistentDataType.BYTE)) {
+                tickSkeletonHoming(projectile);
+            }
             if (kind == null) continue;
             if (kind.equals("brute") && entity instanceof Marker marker) {
                 tickBruteShockwave(world, marker);
@@ -100,6 +125,49 @@ public final class ProjectileMotionSystem {
                 default -> { }
             }
         }
+    }
+
+    private void tickSkeletonHoming(Projectile projectile) {
+        int age = projectile.getPersistentDataContainer()
+                .getOrDefault(skeletonHomingAgeKey, PersistentDataType.INTEGER, 0) + 1;
+        projectile.getPersistentDataContainer().set(skeletonHomingAgeKey, PersistentDataType.INTEGER, age);
+        String targetId = projectile.getPersistentDataContainer()
+                .get(skeletonHomingTargetKey, PersistentDataType.STRING);
+        LivingEntity target = null;
+        if (targetId != null) {
+            try {
+                Entity entity = projectile.getWorld().getEntity(java.util.UUID.fromString(targetId));
+                if (entity instanceof LivingEntity living) target = living;
+            } catch (IllegalArgumentException ignored) {
+                target = null;
+            }
+        }
+        if (age > 30 || target == null || target.isDead()
+                || target.getLocation().distanceSquared(projectile.getLocation()) > 2304.0D) {
+            finishSkeletonHoming(projectile);
+            return;
+        }
+        Vector velocity = projectile.getVelocity();
+        double speed = Math.max(1.3D, Math.min(1.8D, velocity.length()));
+        Vector destination = target.getEyeLocation().toVector().add(target.getVelocity().clone().multiply(2.0D));
+        Vector desired = destination.subtract(projectile.getLocation().toVector());
+        if (desired.lengthSquared() > 0.0D && velocity.lengthSquared() > 0.0D) {
+            Vector steered = velocity.normalize().multiply(0.84D).add(desired.normalize().multiply(0.16D));
+            if (steered.lengthSquared() > 0.0D) projectile.setVelocity(steered.normalize().multiply(speed));
+        }
+        projectile.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, projectile.getLocation(),
+                2, 0.03D, 0.03D, 0.03D, 0.0D);
+    }
+
+    private void finishSkeletonHoming(Projectile projectile) {
+        byte gravity = projectile.getPersistentDataContainer()
+                .getOrDefault(skeletonHomingGravityKey, PersistentDataType.BYTE, (byte) 1);
+        projectile.setGravity(gravity != 0);
+        projectile.setGlowing(false);
+        projectile.getPersistentDataContainer().remove(skeletonHomingKey);
+        projectile.getPersistentDataContainer().remove(skeletonHomingAgeKey);
+        projectile.getPersistentDataContainer().remove(skeletonHomingTargetKey);
+        projectile.getPersistentDataContainer().remove(skeletonHomingGravityKey);
     }
 
     private void tickBruteShockwave(org.bukkit.World world, Marker marker) {

@@ -172,6 +172,11 @@ public final class EnderDragonBossSystem {
     }
 
     private void skill(EnderDragon dragon, Player target, State state) {
+        if (state.skill == Skill.LANDING && state.landingApproach) {
+            if (dragon.getPhase() != EnderDragon.Phase.SEARCH_FOR_BREATH_ATTACK_TARGET) return;
+            state.landingApproach = false;
+            state.tick = 1;
+        }
         state.tick++;
         switch (state.skill) {
             case AIMING_EYES -> {
@@ -184,7 +189,10 @@ public final class EnderDragonBossSystem {
             }
             case CHARGE -> {
                 if (state.tick == 0) startCharge(dragon, state);
-                if (state.tick <= 70) charge(dragon, state);
+                if (state.tick <= 70 && !charge(dragon, target, state)) {
+                    reset(state);
+                    return;
+                }
                 if (state.tick >= 100) reset(state);
             }
             case LANDING -> {
@@ -197,7 +205,6 @@ public final class EnderDragonBossSystem {
                     dragon.setPhase(EnderDragon.Phase.BREATH_ATTACK);
                     dragon.getWorld().playSound(dragon.getLocation(), Sound.ITEM_TRIDENT_THUNDER, 2.0F, 2.0F);
                     dragon.getWorld().playSound(dragon.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 2.0F, 1.0F);
-                    state.landingApproach = false;
                     if (state.phase >= 2) dragon.setInvulnerable(false);
                 }
                 if (state.tick >= 2 && state.tick <= 100 && state.tick % 5 == 0) lightningPillar(dragon, target);
@@ -254,15 +261,40 @@ public final class EnderDragonBossSystem {
         dragon.getWorld().playSound(location, Sound.ENTITY_ENDER_DRAGON_GROWL, 10.0F, 0.8F);
     }
 
-    private void charge(EnderDragon dragon, State state) {
-        state.chargePitch += state.tick < 40 ? 1.0F : -1.0F;
+    private boolean charge(EnderDragon dragon, Player target, State state) {
+        if (target != null && target.getWorld() == dragon.getWorld()) {
+            Location steering = dragon.getLocation().clone();
+            steering.setYaw(state.chargeYaw);
+            steering.setPitch(state.chargePitch);
+            Vector targetDirection = target.getLocation().toVector().subtract(dragon.getLocation().toVector());
+            if (targetDirection.lengthSquared() > 0.0D) {
+                double steeringDistance = state.tick < 40 ? 70.0D : 150.0D;
+                Vector guidedDirection = steering.getDirection().normalize().multiply(steeringDistance)
+                        .add(targetDirection.normalize().multiply(10.0D));
+                steering.setDirection(guidedDirection);
+                state.chargeYaw = steering.getYaw();
+                state.chargePitch = Math.max(-89.0F, Math.min(89.0F,
+                        steering.getPitch() + (state.tick < 40 ? 1.0F : -1.0F)));
+            }
+        }
         Location rotation = dragon.getLocation().clone();
         rotation.setYaw(state.chargeYaw);
         rotation.setPitch(state.chargePitch);
         Location destination = dragon.getLocation().clone().add(rotation.getDirection().normalize().multiply(0.5D));
-        destination.setYaw(state.chargeYaw);
+        destination.setYaw(state.chargeYaw - 180.0F);
         destination.setPitch(state.chargePitch);
-        dragon.teleport(destination);
+        if (destination.getY() <= dragon.getWorld().getMinHeight()
+                || destination.getY() >= dragon.getWorld().getMaxHeight()
+                || dragon.collidesAt(destination)) {
+            dragon.setVelocity(new Vector());
+            dragon.setPhase(EnderDragon.Phase.CIRCLING);
+            return false;
+        }
+        if (!dragon.teleport(destination)) {
+            dragon.setPhase(EnderDragon.Phase.CIRCLING);
+            return false;
+        }
+        return true;
     }
 
     private void lightningPillar(EnderDragon dragon, Player target) {

@@ -11,6 +11,7 @@ import org.bukkit.block.Block;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.attribute.AttributeModifier;
+import org.bukkit.entity.AbstractSkeleton;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.EnderDragon;
 import org.bukkit.entity.Enderman;
@@ -92,6 +93,7 @@ public final class TrueCrafterModeModule implements Listener {
     private final Map<UUID, Integer> endermanBreakTicks = new HashMap<>();
     private final Map<UUID, Integer> witherKnightCooldowns = new HashMap<>();
     private final Map<UUID, Integer> witherKnightShots = new HashMap<>();
+    private final Map<UUID, Integer> skeletonHomingReadyTicks = new HashMap<>();
     private final TemporaryEnemyBlockSystem temporaryBlocks;
     private final StandardEnemyAiSystem standardEnemyAi;
     private final SheathedWeaponSystem sheathedWeaponSystem;
@@ -281,15 +283,46 @@ public final class TrueCrafterModeModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (!(event.getEntity() instanceof AbstractArrow arrow) || !(arrow.getShooter() instanceof LivingEntity shooter)) return;
+        if (!isEnabled() || !(event.getEntity() instanceof AbstractArrow arrow)
+                || !(arrow.getShooter() instanceof AbstractSkeleton shooter)) return;
         String kind = shooter instanceof WitherSkeleton
                 ? "elite_wither_arrow" : variant(shooter).equals("elite") ? "elite_arrow" : null;
-        if (kind == null) return;
-        arrow.setGravity(false);
-        arrow.setCritical(true);
-        arrow.setVelocity(arrow.getVelocity().normalize().multiply(1.5D));
-        arrow.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, kind);
-        if (kind.equals("elite_wither_arrow")) arrow.setFireTicks(0);
+        if (kind != null) {
+            arrow.setGravity(false);
+            arrow.setCritical(true);
+            arrow.setVelocity(arrow.getVelocity().normalize().multiply(1.5D));
+            arrow.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, kind);
+            if (kind.equals("elite_wither_arrow")) arrow.setFireTicks(0);
+        }
+        int heat = heatLevel();
+        LivingEntity target = shooter.getTarget();
+        if (heat < 3 || target == null || target.getWorld() != shooter.getWorld()) return;
+        double correction = heat == 3 ? 0.18D : heat == 4 ? 0.32D : 0.42D;
+        double prediction = heat == 3 ? 0.35D : heat == 4 ? 0.55D : 0.7D;
+        improveSkeletonAim(arrow, target, correction, prediction);
+        if (heat < 5) return;
+        int currentTick = Bukkit.getCurrentTick();
+        Integer readyTick = skeletonHomingReadyTicks.putIfAbsent(shooter.getUniqueId(), currentTick + 160);
+        if (readyTick == null || currentTick < readyTick) return;
+        skeletonHomingReadyTicks.put(shooter.getUniqueId(), currentTick + 200);
+        projectileMotion.startSkeletonHoming(arrow, target);
+    }
+
+    private void improveSkeletonAim(AbstractArrow arrow, LivingEntity target, double correction, double prediction) {
+        Vector velocity = arrow.getVelocity();
+        double speed = velocity.length();
+        if (speed <= 0.0D) return;
+        Vector origin = arrow.getLocation().toVector();
+        double flightTicks = Math.min(20.0D, origin.distance(target.getEyeLocation().toVector()) / speed);
+        Vector destination = target.getEyeLocation().toVector()
+                .add(target.getVelocity().clone().multiply(flightTicks * prediction));
+        if (arrow.hasGravity()) destination.add(new Vector(0.0D,
+                0.025D * flightTicks * flightTicks * prediction, 0.0D));
+        Vector desired = destination.subtract(origin);
+        if (desired.lengthSquared() <= 0.0D) return;
+        Vector adjusted = velocity.clone().normalize().multiply(1.0D - correction)
+                .add(desired.normalize().multiply(correction));
+        if (adjusted.lengthSquared() > 0.0D) arrow.setVelocity(adjusted.normalize().multiply(speed));
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -340,6 +373,7 @@ public final class TrueCrafterModeModule implements Listener {
         endermanBreakTicks.remove(event.getEntity().getUniqueId());
         witherKnightCooldowns.remove(event.getEntity().getUniqueId());
         witherKnightShots.remove(event.getEntity().getUniqueId());
+        skeletonHomingReadyTicks.remove(event.getEntity().getUniqueId());
         standardEnemyAi.remove(event.getEntity().getUniqueId());
         evokerAi.remove(event.getEntity().getUniqueId());
         witherBoss.remove(event.getEntity().getUniqueId());
@@ -412,6 +446,7 @@ public final class TrueCrafterModeModule implements Listener {
         endermanBreakTicks.clear();
         witherKnightCooldowns.clear();
         witherKnightShots.clear();
+        skeletonHomingReadyTicks.clear();
         standardEnemyAi.clear();
         evokerAi.clear();
         witherBoss.clear();
@@ -1045,7 +1080,7 @@ public final class TrueCrafterModeModule implements Listener {
     private void switchRangedWeapon(LivingEntity entity, Player target) {
         boolean elite = variant(entity).equals("elite");
         boolean skeleton = isRangedSkeleton(entity);
-        if ((!elite && !skeleton) || entity.getEquipment() == null) return;
+        if ((!elite && !skeleton) || entity.getEquipment() == null || !entity.hasAI()) return;
         double distance = entity.getLocation().distance(target.getLocation());
         sheathedWeaponSystem.tick(entity, target);
         if (!skeleton || entity.getEquipment().getItemInMainHand().getType() == Material.BOW || distance > 4.0D) return;

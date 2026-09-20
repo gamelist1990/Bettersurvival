@@ -551,6 +551,10 @@ public class OtherworldModule implements Listener {
             event.setCancelled(true);
             return;
         }
+        if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+            event.setTo(copyLocation(requested, target));
+            return;
+        }
         double scale = from.getWorld().getEnvironment() == Environment.NORMAL && targetEnvironment == Environment.NETHER
                 ? 0.125D
                 : from.getWorld().getEnvironment() == Environment.NETHER && targetEnvironment == Environment.NORMAL ? 8.0D : 1.0D;

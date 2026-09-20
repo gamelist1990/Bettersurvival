@@ -466,7 +466,6 @@ public final class WitherBossSystem {
                 knight.setInvulnerable(false);
                 knight.setAI(true);
             }
-            sheathedWeaponSystem.tick(knight, target);
             knight.getPassengers().stream().filter(ItemDisplay.class::isInstance).map(ItemDisplay.class::cast)
                     .forEach(display -> display.setRotation(knight.getYaw(), 0.0F));
         }

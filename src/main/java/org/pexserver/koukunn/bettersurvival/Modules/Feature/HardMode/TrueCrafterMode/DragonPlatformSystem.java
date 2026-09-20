@@ -6,9 +6,6 @@ import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
-import org.bukkit.entity.Player;
-import org.bukkit.potion.PotionEffect;
-import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
@@ -54,9 +51,6 @@ public final class DragonPlatformSystem {
             if (e.age <= 40) {
                 e.world.spawnParticle(Particle.DUST, c, 2, 1, 1, 1, 0,
                         new Particle.DustOptions(org.bukkit.Color.fromRGB(204, 51, 255), 1), true);
-                for (Player p : e.world.getPlayers())
-                    if (p.getLocation().distanceSquared(c) <= 16384.0D)
-                        p.addPotionEffect(new PotionEffect(PotionEffectType.LEVITATION, 20, 0, false, false));
             }
             if (e.age == 40)
                 place(e);
