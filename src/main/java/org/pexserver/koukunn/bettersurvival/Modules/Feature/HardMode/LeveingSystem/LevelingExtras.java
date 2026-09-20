@@ -33,7 +33,7 @@ public final class LevelingExtras {
     }
 
     public void sendProfile(Player player) {
-        String scope = leveling.dataScope(player);
+        String scope = leveling.dataScopeDisplay(player);
         player.sendMessage("§6========== §dレベリングプロフィール §6==========");
         player.sendMessage("§7ワールドグループ: §b" + scope);
         player.sendMessage("§7総合レベル: §a" + totalLevel(player) + "§7/§a" + (LevelingAptitude.MAX_LEVEL * LevelingAptitude.values().length));
@@ -77,7 +77,8 @@ public final class LevelingExtras {
                 .limit(10)
                 .toList();
 
-        viewer.sendMessage("§6========== §dレベリングランキング §7[§b" + scope + "§7] §6==========");
+        viewer.sendMessage("§6========== §dレベリングランキング §7[§b"
+            + leveling.dataScopeDisplay(viewer) + "§7] §6==========");
         if (ranking.isEmpty()) {
             viewer.sendMessage("§7ランキング対象のプレイヤーがいません。");
             return;

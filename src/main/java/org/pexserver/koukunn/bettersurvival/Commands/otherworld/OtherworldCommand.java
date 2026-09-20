@@ -18,7 +18,7 @@ public class OtherworldCommand extends BaseCommand {
     @Override public String getName() { return "otherworld"; }
     @Override public String getDescription() { return "Otherworldグループを管理します"; }
     @Override public PermissionLevel getPermissionLevel() { return PermissionLevel.MEMBER; }
-    @Override public String getUsage() { return "/otherworld <add|delete|move|setjoin|whitelist|list|dimensions> ..."; }
+    @Override public String getUsage() { return "/otherworld <add|delete|regen|lock|unlock|move|setjoin|whitelist|list|dimensions> ..."; }
     @Override public boolean execute(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) { sendError(sender, "プレイヤーのみ使用できます"); return true; }
         if (args.length == 0 || args[0].equalsIgnoreCase("list")) { sendInfo(player, "グループ: " + module().getGroupNames().stream().map(module()::displayGroupName).collect(java.util.stream.Collectors.joining(", "))); return true; }
@@ -34,6 +34,47 @@ public class OtherworldCommand extends BaseCommand {
         }
         if (args[0].equalsIgnoreCase("add")) { if (!player.isOp() || args.length < 2) { sendError(player, "使用法: /otherworld add <name>（管理者のみ）"); return true; } sendInfo(player, module().createGroup(args[1]) ? "グループと各Dimensionを作成しました" : "作成できません"); return true; }
         if (args[0].equalsIgnoreCase("delete")) { if (!player.isOp() || args.length < 2) { sendError(player, "使用法: /otherworld delete <name>（管理者のみ）"); return true; } sendInfo(player, module().deleteGroup(args[1]) ? "グループとワールドを削除しました" : "削除できません（default、未ロード、または削除に失敗）"); return true; }
+        if (args[0].equalsIgnoreCase("regen")) {
+            if (!player.isOp() || args.length < 3) {
+                sendError(player, "使用法: /otherworld regen <group> <overworld|nether|end|custom-dimension>（管理者のみ）");
+                return true;
+            }
+            boolean regenerated = module().regenerateDimension(args[1], args[2]);
+            if (regenerated) {
+                sendSuccess(player, module().displayGroupName(args[1]) + " の " + args[2] + " を新しいSeedで再生成しました");
+            } else {
+                sendError(player, "Dimensionを再生成できませんでした。グループ名、Dimension名、アンロード状態を確認してください");
+            }
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("lock")) {
+            if (!player.isOp() || args.length < 4) {
+                sendError(player, "使用法: /otherworld lock <group> <yyyy-MM-dd> <HH:mm> [メッセージ]（管理者のみ）");
+                return true;
+            }
+            String message = args.length > 4
+                    ? String.join(" ", Arrays.copyOfRange(args, 4, args.length))
+                    : "オープンまでお待ちください";
+            if (module().setGroupLock(args[1], args[2], args[3], message)) {
+                sendSuccess(player, module().displayGroupName(args[1]) + " をロックしました");
+                sendInfo(player, module().getLockDisplay(args[1]));
+            } else {
+                sendError(player, "設定できません。グループ名と日時形式 yyyy-MM-dd HH:mm を確認してください");
+            }
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("unlock")) {
+            if (!player.isOp() || args.length < 2) {
+                sendError(player, "使用法: /otherworld unlock <group>（管理者のみ）");
+                return true;
+            }
+            if (module().clearGroupLock(args[1])) {
+                sendSuccess(player, module().displayGroupName(args[1]) + " のロックを解除しました");
+            } else {
+                sendError(player, "存在しないグループです");
+            }
+            return true;
+        }
         if (args[0].equalsIgnoreCase("move")) { if (args.length < 2 || !module().move(player, args[1])) sendError(player, "移動先が存在しないか、許可されていません"); else sendSuccess(player, module().displayGroupName(args[1]) + " へ移動しました"); return true; }
         if (args[0].equalsIgnoreCase("setjoin")) {
             if (!player.isOp() || args.length < 2) {
@@ -46,8 +87,23 @@ public class OtherworldCommand extends BaseCommand {
             return true;
         }
         if (args[0].equalsIgnoreCase("whitelist")) {
-            if (!player.isOp() || args.length < 3) { sendError(player, "使用法: /otherworld whitelist <name> on|off または add|remove <username>"); return true; }
+            if (!player.isOp() || args.length < 3) { sendError(player, "使用法: /otherworld whitelist <name> on|off|list または add|remove <username>"); return true; }
             String action = args[2].toLowerCase(Locale.ROOT); boolean ok;
+            if (action.equals("list")) {
+                if (!module().getGroupNames().contains(args[1]) && module().getGroupNames().stream()
+                        .noneMatch(group -> module().displayGroupName(group).equalsIgnoreCase(args[1]))) {
+                    sendError(player, "存在しないグループです");
+                    return true;
+                }
+                if (!module().hasWhitelist(args[1])) {
+                    sendInfo(player, module().displayGroupName(args[1]) + " のホワイトリストは無効です");
+                    return true;
+                }
+                List<String> whitelist = module().getWhitelistMembers(args[1]);
+                sendInfo(player, "=== " + module().displayGroupName(args[1]) + " Whitelist ===");
+                sendInfo(player, whitelist.isEmpty() ? "登録メンバーなし" : String.join(", ", whitelist));
+                return true;
+            }
             if (action.equals("on") || action.equals("off")) ok = module().setWhitelist(args[1], action.equals("on"));
             else if ((action.equals("add") || action.equals("remove")) && args.length >= 4) ok = action.equals("add") ? module().addMember(args[1], args[3]) : module().removeMember(args[1], args[3]);
             else ok = false;
@@ -57,9 +113,12 @@ public class OtherworldCommand extends BaseCommand {
     }
     @Override public List<String> getTabCompletions(CommandSender sender, String[] args) {
         List<String> values = new ArrayList<>();
-        if (args.length == 1) values.addAll(List.of("add", "delete", "move", "setjoin", "whitelist", "list", "dimensions"));
-            else if (args.length == 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("move") || args[0].equalsIgnoreCase("setjoin") || args[0].equalsIgnoreCase("whitelist"))) values.addAll(module().getGroupNames().stream().map(module()::displayGroupName).toList());
-        else if (args.length == 3 && args[0].equalsIgnoreCase("whitelist")) values.addAll(List.of("on", "off", "add", "remove"));
+        if (args.length == 1) values.addAll(List.of("add", "delete", "regen", "lock", "unlock", "move", "setjoin", "whitelist", "list", "dimensions"));
+            else if (args.length == 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("regen") || args[0].equalsIgnoreCase("lock") || args[0].equalsIgnoreCase("unlock") || args[0].equalsIgnoreCase("move") || args[0].equalsIgnoreCase("setjoin") || args[0].equalsIgnoreCase("whitelist"))) values.addAll(module().getGroupNames().stream().map(module()::displayGroupName).toList());
+        else if (args.length == 3 && args[0].equalsIgnoreCase("lock")) values.add("2026-09-21");
+        else if (args.length == 4 && args[0].equalsIgnoreCase("lock")) values.addAll(List.of("00:00", "12:00", "18:00", "20:00", "21:00"));
+        else if (args.length == 3 && args[0].equalsIgnoreCase("regen")) values.addAll(module().getDimensionSelectors(args[1]));
+        else if (args.length == 3 && args[0].equalsIgnoreCase("whitelist")) values.addAll(List.of("on", "off", "list", "add", "remove"));
         else if (args.length == 4 && args[0].equalsIgnoreCase("whitelist") && (args[2].equalsIgnoreCase("add") || args[2].equalsIgnoreCase("remove"))) for (Player player : Bukkit.getOnlinePlayers()) values.add(player.getName());
         return CompletionUtils.filterBySimilarity(args.length == 0 ? "" : args[args.length - 1], values);
     }

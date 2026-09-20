@@ -208,7 +208,7 @@ public final class LevelingTitleSystem implements Listener {
         String key = path(player, "unlocked." + title.key());
         if (data.getBoolean(key, false)) return;
         data.set(key, true);
-        player.sendMessage("§6✦ 新しい称号を獲得しました: §e" + title.displayName() + " §7[" + leveling.dataScope(player) + "]");
+        player.sendMessage("§6✦ 新しい称号を獲得しました: §e" + title.displayName() + " §7[" + leveling.dataScopeDisplay(player) + "]");
         save();
     }
 

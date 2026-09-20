@@ -30,7 +30,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.List;
-import java.util.function.IntConsumer;
+import java.util.function.Function;
 
 /** 不吉な焚き火のレシピ、永続識別、熱量UIを管理する。 */
 public final class OminousCampfireSystem implements Listener {
@@ -46,13 +46,14 @@ public final class OminousCampfireSystem implements Listener {
     private final NamespacedKey displayKey;
     private final NamespacedKey recipeKey;
     private final TrueCrafterSettings settings;
-    private final IntConsumer heatChange;
+    private final Function<org.bukkit.World, String> groupResolver;
     private final BukkitTask particleTask;
 
-    public OminousCampfireSystem(Loader plugin, TrueCrafterSettings settings, IntConsumer heatChange) {
+    public OminousCampfireSystem(Loader plugin, TrueCrafterSettings settings,
+                                Function<org.bukkit.World, String> groupResolver) {
         this.plugin = plugin;
         this.settings = settings;
-        this.heatChange = heatChange;
+        this.groupResolver = groupResolver;
         itemKey = new NamespacedKey(plugin, "ominous_campfire");
         displayKey = new NamespacedKey(plugin, "ominous_campfire_sword");
         recipeKey = new NamespacedKey(plugin, "ominous_campfire_recipe");
@@ -125,21 +126,23 @@ public final class OminousCampfireSystem implements Listener {
     }
 
     private void openMenu(org.bukkit.entity.Player player) {
-        ChestUI.Builder builder = ChestUI.builder().title("TrueCrafter 熱量: " + settings.heatLevel()).size(27);
+        String group = groupResolver.apply(player.getWorld());
+        int currentHeat = settings.heatLevel(group);
+        ChestUI.Builder builder = ChestUI.builder().title("TrueCrafter 熱量: " + currentHeat).size(27);
         Material[] icons = {Material.COAL, Material.COPPER_INGOT, Material.IRON_INGOT, Material.GOLD_INGOT, Material.NETHERITE_INGOT};
         int[] slots = {11, 12, 13, 14, 15};
         for (int index = 0; index < 5; index++) {
             int level = index + 1;
             builder.addButtonAt(slots[index], "§6熱量 " + level, icons[index],
-                    level == settings.heatLevel() ? "§a現在の熱量" : "§7クリックして変更");
+                    level == currentHeat ? "§a現在の熱量" : "§7クリックして変更");
         }
         builder.then((result, viewer) -> {
             for (int index = 0; index < slots.length; index++) {
                 if (result.slot != slots[index]) continue;
                 int level = index + 1;
-                heatChange.accept(level);
+                settings.heatLevel(group, level);
                 viewer.closeInventory();
-                broadcastHeat(level);
+                broadcastHeat(viewer, group, level);
                 break;
             }
         }).show(player);
@@ -159,7 +162,7 @@ public final class OminousCampfireSystem implements Listener {
                     continue;
                 }
                 spawnSword(block);
-                particle(block, settings.heatLevel());
+                particle(block, settings.heatLevel(groupResolver.apply(world)));
             }
         }
     }
@@ -227,13 +230,17 @@ public final class OminousCampfireSystem implements Listener {
         }
     }
 
-    private void broadcastHeat(int level) {
+    private void broadcastHeat(Player source, String group, int level) {
         String[] text = {"炎は静かに揺らめいている…", "薪がぱちりと弾けた…", "炎が勢いを増していく…",
                 "火花が荒々しく宙を舞う…", "火勢は留まることを知らない…！"};
         NamedTextColor[] colors = {NamedTextColor.GREEN, NamedTextColor.YELLOW, NamedTextColor.RED,
                 NamedTextColor.DARK_RED, NamedTextColor.DARK_PURPLE};
-        Bukkit.broadcast(Component.text(text[level - 1], colors[level - 1]));
-        Bukkit.broadcast(Component.text("現在の難易度は[火の熱: ", NamedTextColor.WHITE)
-                .append(Component.text(level, colors[level - 1])).append(Component.text("]です", NamedTextColor.WHITE)));
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (!group.equals(groupResolver.apply(player.getWorld()))) continue;
+            player.sendMessage(Component.text(text[level - 1], colors[level - 1]));
+            player.sendMessage(Component.text("現在の難易度は[火の熱: ", NamedTextColor.WHITE)
+                .append(Component.text(level, colors[level - 1]))
+                .append(Component.text("]です", NamedTextColor.WHITE)));
+        }
     }
 }

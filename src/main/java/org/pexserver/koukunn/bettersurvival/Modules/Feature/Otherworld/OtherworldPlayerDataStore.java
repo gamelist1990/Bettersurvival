@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * ディスク I/O だけを専用の単一スレッドへ逃がす。
  */
 public final class OtherworldPlayerDataStore {
+    private static final String SELECTION_LOBBY_WORLD = "otherworld_lobby";
     private static final String KEY_INVENTORY = "inventory";
     private static final String KEY_ARMOR = "armor";
     private static final String KEY_OFFHAND = "offhand";
@@ -118,7 +119,7 @@ public final class OtherworldPlayerDataStore {
                     save(player, normalizedScope);
                     return;
                 }
-                apply(player, properties);
+                apply(player, properties, normalizedScope);
             });
         });
     }
@@ -134,7 +135,7 @@ public final class OtherworldPlayerDataStore {
         properties.setProperty(KEY_EXP, Float.toString(player.getExp()));
         properties.setProperty(KEY_TOTAL_EXP, Integer.toString(player.getTotalExperience()));
         Location location = player.getLocation();
-        if (location.getWorld() != null) {
+        if (location.getWorld() != null && !isSelectionLobby(location.getWorld())) {
             properties.setProperty(KEY_WORLD, location.getWorld().getName());
             properties.setProperty(KEY_X, Double.toString(location.getX()));
             properties.setProperty(KEY_Y, Double.toString(location.getY()));
@@ -145,7 +146,7 @@ public final class OtherworldPlayerDataStore {
         return properties;
     }
 
-    private void apply(Player player, Properties properties) {
+    private void apply(Player player, Properties properties, String scope) {
         PlayerInventory inventory = player.getInventory();
         inventory.setStorageContents(decode(properties.getProperty(KEY_INVENTORY), 36));
         inventory.setArmorContents(decode(properties.getProperty(KEY_ARMOR), 4));
@@ -159,20 +160,37 @@ public final class OtherworldPlayerDataStore {
         player.setLevel(Math.max(0, level));
         player.setExp(Math.max(0.0F, Math.min(0.999999F, exp)));
         player.setTotalExperience(Math.max(0, totalExp));
-        restoreLocation(player, properties);
+        restoreLocation(player, properties, scope);
         player.updateInventory();
     }
 
-    private void restoreLocation(Player player, Properties properties) {
+    private void restoreLocation(Player player, Properties properties, String scope) {
         String worldName = properties.getProperty(KEY_WORLD);
         org.bukkit.World world = worldName == null ? null : Bukkit.getWorld(worldName);
-        if (world == null) return;
+        if (world == null || isSelectionLobby(world) || !belongsToScope(world, scope)) {
+            return;
+        }
         double x = parseDouble(properties.getProperty(KEY_X), world.getSpawnLocation().getX());
         double y = parseDouble(properties.getProperty(KEY_Y), world.getSpawnLocation().getY());
         double z = parseDouble(properties.getProperty(KEY_Z), world.getSpawnLocation().getZ());
         float yaw = parseFloat(properties.getProperty(KEY_YAW), 0.0F);
         float pitch = parseFloat(properties.getProperty(KEY_PITCH), 0.0F);
         player.teleport(new Location(world, x, y, z, yaw, pitch));
+    }
+
+    private boolean belongsToScope(org.bukkit.World world, String scope) {
+        if (world == null || scope == null || scope.isBlank()) {
+            return false;
+        }
+        var otherworld = plugin.getOtherworldModule();
+        if (otherworld == null) {
+            return "default".equals(scope) && "world".equals(world.getName());
+        }
+        return scope.equalsIgnoreCase(otherworld.getGroup(world));
+    }
+
+    private static boolean isSelectionLobby(org.bukkit.World world) {
+        return world != null && SELECTION_LOBBY_WORLD.equals(world.getName());
     }
 
     private void clear(Player player) {

@@ -32,7 +32,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Forge Mod "Just Leveling" のサーバー側コアを Paper API で再構成する。 */
@@ -82,8 +81,16 @@ public final class LevelingSystemModule implements Listener {
 
     public String dataScope(Player player) {
         if (plugin.getOtherworldModule() == null) return "default";
-        String group = plugin.getOtherworldModule().getGroup(player);
-        return group == null || group.isBlank() ? "default" : group.toLowerCase(Locale.ROOT);
+        var otherworld = plugin.getOtherworldModule();
+        String group = otherworld.getPersistentGroup(player);
+        if (group == null || group.isBlank()) return "default";
+        return group;
+    }
+
+    public String dataScopeDisplay(Player player) {
+        String scope = dataScope(player);
+        if (plugin.getOtherworldModule() == null) return scope;
+        return plugin.getOtherworldModule().displayGroupName(scope);
     }
 
     public void setTitleSystem(LevelingTitleSystem titleSystem) {
@@ -146,7 +153,7 @@ public final class LevelingSystemModule implements Listener {
                 player,
                 String.join("\n", List.of(
                         "§7能力値合計: §f" + total + "§7/§f" + maxTotal,
-                        "§7プロフィール: §b" + dataScope(player),
+                        "§7プロフィール: §b" + dataScopeDisplay(player),
                         "§7選択称号: §e" + selectedTitle.displayName())));
 
         ItemStack experience = new ItemStack(Material.EXPERIENCE_BOTTLE);
@@ -180,7 +187,7 @@ public final class LevelingSystemModule implements Listener {
                 Material.BARRIER,
                 "§7メニューを閉じる");
         builder.addButtonAt(51,
-                "§3Profile Scope §7• §b" + dataScope(player),
+                "§3Profile Scope §7• §b" + dataScopeDisplay(player),
                 Material.ENDER_EYE,
                 "§7Otherworld の world group ごとに\n§7能力値・称号・統計が分離されます");
 
@@ -257,7 +264,7 @@ public final class LevelingSystemModule implements Listener {
                 Material.ARROW,
                 "§7クリックで Progression へ戻る");
         builder.addButtonAt(53,
-                "§3Profile Scope §7• §b" + dataScope(player),
+                "§3Profile Scope §7• §b" + dataScopeDisplay(player),
                 Material.ENDER_EYE,
                 "§7称号の解放状況も scope ごとに保存されます");
 
@@ -296,7 +303,7 @@ public final class LevelingSystemModule implements Listener {
         }
         player.setLevel(player.getLevel() - cost);
         setLevel(player, aptitude, current + 1);
-        player.sendMessage("§a" + aptitude.displayName() + " が Lv." + (current + 1) + " になりました。 §7[" + dataScope(player) + "]");
+        player.sendMessage("§a" + aptitude.displayName() + " が Lv." + (current + 1) + " になりました。 §7[" + dataScopeDisplay(player) + "]");
         return true;
     }
 

@@ -13,15 +13,20 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.world.WorldLoadEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
+import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
@@ -29,6 +34,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -53,6 +63,9 @@ public class OtherworldModule implements Listener {
     private static final String CONFIG_PATH = "Otherworld/config.json";
     private static final String SELECTION_LOBBY_WORLD = "otherworld_lobby";
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final ZoneId LOCK_ZONE = ZoneId.of("Asia/Tokyo");
+    private static final DateTimeFormatter LOCK_INPUT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter LOCK_DISPLAY_FORMAT = DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm");
 
     private final Loader plugin;
     private final ConfigManager configManager;
@@ -62,6 +75,7 @@ public class OtherworldModule implements Listener {
     private final Set<String> creatingMirrorKeys = new HashSet<>();
     private final Set<UUID> selectionTransitions = new HashSet<>();
     private final Map<UUID, GameMode> selectionLobbyGameModes = new HashMap<>();
+    private final Map<UUID, String> deathGroups = new HashMap<>();
     private String defaultJoinGroup = "default";
 
     public OtherworldModule(Loader plugin) {
@@ -105,8 +119,22 @@ public class OtherworldModule implements Listener {
                         }
                     }
                 }
+                Map<String, Long> dimensionSeeds = new LinkedHashMap<>();
+                Object rawDimensionSeeds = values.get("dimensionSeeds");
+                if (rawDimensionSeeds instanceof Map<?, ?> seedMap) {
+                    for (var seed : seedMap.entrySet()) {
+                        if (seed.getValue() instanceof Number number) {
+                            dimensionSeeds.put(seed.getKey().toString(), number.longValue());
+                        }
+                    }
+                }
                 long seed = readSeed(values.get("seed"), name, worlds);
-                groups.put(name, new Group(name, seed, worlds, customWorlds));
+                long lockedUntil = values.get("lockedUntil") instanceof Number number
+                    ? number.longValue() : 0L;
+                String lockMessage = values.get("lockMessage") == null
+                    ? "" : values.get("lockMessage").toString();
+                groups.put(name, new Group(name, seed, worlds, customWorlds, dimensionSeeds,
+                    lockedUntil, lockMessage));
             }
         }
         if (!groups.containsKey("default")) {
@@ -115,7 +143,8 @@ public class OtherworldModule implements Listener {
             worlds.put(Environment.NETHER, "world_nether");
             worlds.put(Environment.THE_END, "world_the_end");
             World primary = Bukkit.getWorld("world");
-            groups.put("default", new Group("default", primary == null ? 0L : primary.getSeed(), worlds, new LinkedHashMap<>()));
+                groups.put("default", new Group("default", primary == null ? 0L : primary.getSeed(), worlds,
+                    new LinkedHashMap<>(), new LinkedHashMap<>(), 0L, ""));
         }
         if (!groups.containsKey(defaultJoinGroup)) defaultJoinGroup = "default";
         Object rawMembers = config.get("members");
@@ -153,6 +182,9 @@ public class OtherworldModule implements Listener {
             values.put("seed", group.seed);
             values.put("worlds", worlds);
             values.put("customWorlds", new LinkedHashMap<>(group.customWorlds));
+            values.put("dimensionSeeds", new LinkedHashMap<>(group.dimensionSeeds));
+            values.put("lockedUntil", group.lockedUntil);
+            values.put("lockMessage", group.lockMessage);
             groupData.put(group.name, values);
         }
         Map<String, Object> memberData = new LinkedHashMap<>();
@@ -213,6 +245,15 @@ public class OtherworldModule implements Listener {
         return player == null ? "default" : getGroup(player.getWorld());
     }
 
+    /**
+     * Returns the persistent gameplay scope. The selection lobby is temporary and
+     * must not create a separate save scope for features such as leveling titles.
+     */
+    public synchronized String getPersistentGroup(Player player) {
+        String group = getGroup(player);
+        return "selection-lobby".equals(group) ? "default" : group;
+    }
+
     public synchronized String getGroup(World world) {
         if (world == null) return "default";
         if (isSelectionLobby(world)) return "selection-lobby";
@@ -249,6 +290,57 @@ public class OtherworldModule implements Listener {
                 || player.isOp() || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
     }
 
+    public synchronized boolean isGroupLocked(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        return group != null && group.lockedUntil > Instant.now().toEpochMilli();
+    }
+
+    public synchronized boolean canEnter(Player player, String groupName) {
+        if (!canAccess(player, groupName)) return false;
+        return player != null && (player.isOp() || !isGroupLocked(groupName));
+    }
+
+    public synchronized String getLockDisplay(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null || group.lockedUntil <= Instant.now().toEpochMilli()) return "§a公開中";
+        String date = Instant.ofEpochMilli(group.lockedUntil).atZone(LOCK_ZONE).format(LOCK_DISPLAY_FORMAT);
+        String message = group.lockMessage == null || group.lockMessage.isBlank()
+                ? "オープンまでお待ちください" : group.lockMessage;
+        return "§c§lLOCKED §7| §e" + date + " JST §7| §f" + message;
+    }
+
+    public synchronized String getLockMessage(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null || group.lockedUntil <= Instant.now().toEpochMilli()) return "";
+        return "§c§lこのOtherworldはまだオープンしていません\n§7公開日時: §e"
+                + Instant.ofEpochMilli(group.lockedUntil).atZone(LOCK_ZONE).format(LOCK_DISPLAY_FORMAT)
+                + " JST\n§f" + (group.lockMessage == null || group.lockMessage.isBlank()
+                ? "オープンまでお待ちください" : group.lockMessage);
+    }
+
+    public synchronized boolean setGroupLock(String groupName, String date, String time, String message) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null || "default".equals(group.name)) return false;
+        try {
+            LocalDateTime opening = LocalDateTime.parse(date + " " + time, LOCK_INPUT_FORMAT);
+            group.lockedUntil = opening.atZone(LOCK_ZONE).toInstant().toEpochMilli();
+            group.lockMessage = message == null ? "" : message.trim();
+            save();
+            return true;
+        } catch (DateTimeParseException exception) {
+            return false;
+        }
+    }
+
+    public synchronized boolean clearGroupLock(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null) return false;
+        group.lockedUntil = 0L;
+        group.lockMessage = "";
+        save();
+        return true;
+    }
+
     private boolean isWhitelistEnabled(String group) {
         return members.containsKey(group);
     }
@@ -260,7 +352,8 @@ public class OtherworldModule implements Listener {
         worlds.put(Environment.NORMAL, name);
         worlds.put(Environment.NETHER, name + "_nether");
         worlds.put(Environment.THE_END, name + "_the_end");
-        Group group = new Group(name, RANDOM.nextLong(), worlds, new LinkedHashMap<>());
+        Group group = new Group(name, RANDOM.nextLong(), worlds, new LinkedHashMap<>(), new LinkedHashMap<>(),
+            0L, "");
         groups.put(name, group);
 
         Group defaults = groups.get("default");
@@ -270,7 +363,7 @@ public class OtherworldModule implements Listener {
             WorldCreator creator = WorldCreator.name(entry.getValue());
             if (source != null) creator.copy(source);
             else creator.environment(entry.getKey());
-            creator.seed(group.seed);
+            creator.seed(seedFor(group, entry.getKey()));
             Bukkit.createWorld(creator);
         }
         mirrorAllKnownCustomDimensions(group);
@@ -281,9 +374,179 @@ public class OtherworldModule implements Listener {
     public synchronized boolean move(Player player, String groupName) {
         groupName = normalize(groupName);
         Group group = groups.get(groupName);
-        if (group == null || !canAccess(player, groupName)) return false;
-        World world = world(group, Environment.NORMAL);
-        return world != null && player.teleport(world.getSpawnLocation());
+        if (group == null || !canEnter(player, groupName)) {
+            if (group != null && canAccess(player, groupName) && isGroupLocked(groupName)) {
+                player.sendMessage(getLockMessage(groupName));
+            }
+            return false;
+        }
+        World world = ensureGroupWorld(group, Environment.NORMAL);
+        if ("default".equals(groupName)) {
+            World defaultWorld = resolveWorldId("world");
+            if (defaultWorld != null) {
+                world = defaultWorld;
+            }
+        }
+        if (world == null || isSelectionLobby(world)) {
+            plugin.getLogger().warning("Otherworld move target is unavailable or is the selection lobby: " + groupName);
+            return false;
+        }
+        World destination = world;
+        Location target = destination.getSpawnLocation();
+        String targetGroup = groupName;
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+            boolean teleported = player.teleport(target, PlayerTeleportEvent.TeleportCause.PLUGIN);
+            if (!teleported || player.getWorld() != destination) {
+                plugin.getLogger().warning("Otherworld move failed: group=" + targetGroup
+                        + ", target=" + destination.getName() + ", teleport=" + teleported
+                        + ", actual=" + player.getWorld().getName());
+            }
+        });
+        return true;
+    }
+
+    private World ensureGroupWorld(Group group, Environment environment) {
+        if (group == null) {
+            return null;
+        }
+        String worldId = group.worlds.get(environment);
+        World existing = resolveWorldId(worldId);
+        if (existing != null) {
+            return existing;
+        }
+        if (worldId == null || worldId.isBlank()) {
+            return null;
+        }
+        try {
+            WorldCreator creator = WorldCreator.name(worldId)
+                    .environment(environment)
+                    .seed(seedFor(group, environment));
+            Group defaults = groups.get("default");
+            World source = defaults == null ? null : resolveWorldId(defaults.worlds.get(environment));
+            if (source != null) {
+                creator.copy(source);
+                creator.environment(environment);
+                creator.seed(seedFor(group, environment));
+            }
+            World created = Bukkit.createWorld(creator);
+            if (created == null) {
+                plugin.getLogger().warning("Otherworld world creation returned null: " + worldId);
+            }
+            return created;
+        } catch (RuntimeException exception) {
+            plugin.getLogger().warning("Otherworld world creation failed: " + worldId + " ("
+                    + exception.getMessage() + ")");
+            return null;
+        }
+    }
+
+    public synchronized Set<String> getDimensionSelectors(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null) return Set.of();
+        LinkedHashSet<String> selectors = new LinkedHashSet<>();
+        selectors.add("overworld");
+        selectors.add("nether");
+        selectors.add("end");
+        selectors.addAll(group.customWorlds.keySet());
+        return Collections.unmodifiableSet(selectors);
+    }
+
+    public synchronized boolean regenerateDimension(String groupName, String selector) {
+        String normalizedGroup = normalize(groupName);
+        Group group = groups.get(normalizedGroup);
+        if (group == null || selector == null || selector.isBlank()) return false;
+
+        String normalizedSelector = selector.trim().toLowerCase(Locale.ROOT);
+        Environment environment = switch (normalizedSelector) {
+            case "normal", "overworld" -> Environment.NORMAL;
+            case "nether" -> Environment.NETHER;
+            case "end", "the_end" -> Environment.THE_END;
+            default -> null;
+        };
+
+        String sourceKey = null;
+        String worldId;
+        World source = null;
+        if (environment != null) {
+            worldId = group.worlds.get(environment);
+        } else {
+            sourceKey = resolveCustomSelector(group, selector);
+            if (sourceKey == null || isSelectionLobbyId(sourceKey)) return false;
+            worldId = group.customWorlds.get(sourceKey);
+            Group defaults = groups.get("default");
+            if (defaults != null) source = resolveWorldId(defaults.customWorlds.get(sourceKey));
+        }
+        if (worldId == null || worldId.isBlank() || isSelectionLobbyId(worldId)) return false;
+
+        World target = resolveWorldId(worldId);
+        if (target == null) {
+            target = environment == null
+                    ? customWorld(group, sourceKey)
+                    : ensureGroupWorld(group, environment);
+        }
+        if (target == null || isSelectionLobby(target)) return false;
+
+        World safeWorld = world(groups.get("default"), Environment.NORMAL);
+        if (safeWorld == target) safeWorld = ensureSelectionLobby();
+        if (safeWorld == null || safeWorld == target) return false;
+        Location safeLocation = safeWorld.getSpawnLocation();
+        for (Player player : List.copyOf(target.getPlayers())) {
+            if (!player.teleport(safeLocation, PlayerTeleportEvent.TeleportCause.PLUGIN)) return false;
+        }
+
+        Path worldPath = target.getWorldFolder().toPath().toAbsolutePath().normalize();
+        if (!Bukkit.unloadWorld(target, false)) return false;
+        if (!deleteWorldPath(worldPath)) return false;
+
+        long newSeed = RANDOM.nextLong();
+        String seedKey = environment == null ? "custom:" + sourceKey : environment.name();
+        group.dimensionSeeds.put(seedKey, newSeed);
+
+        World regenerated;
+        try {
+            if (environment != null) {
+                WorldCreator creator = WorldCreator.name(worldId).environment(environment).seed(newSeed);
+                Group defaults = groups.get("default");
+                World template = defaults == null ? null : resolveWorldId(defaults.worlds.get(environment));
+                if (template != null && template != safeWorld) {
+                    creator.copy(template).environment(environment).seed(newSeed);
+                }
+                regenerated = Bukkit.createWorld(creator);
+            } else {
+                NamespacedKey mirrorKey = NamespacedKey.fromString(worldId);
+                if (mirrorKey == null || source == null) return false;
+                creatingMirrorKeys.add(worldId);
+                regenerated = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(newSeed));
+            }
+        } catch (RuntimeException exception) {
+            plugin.getLogger().warning("Otherworld dimension regeneration failed: " + worldId
+                    + " (" + exception.getMessage() + ")");
+            return false;
+        }
+        if (regenerated == null) return false;
+        save();
+        return true;
+    }
+
+    private String resolveCustomSelector(Group group, String selector) {
+        for (var entry : group.customWorlds.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(selector)
+                    || entry.getValue().equalsIgnoreCase(selector)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    private long seedFor(Group group, Environment environment) {
+        return group.dimensionSeeds.getOrDefault(environment.name(), group.seed);
+    }
+
+    private long seedFor(Group group, String sourceKey) {
+        return group.dimensionSeeds.getOrDefault("custom:" + sourceKey, group.seed);
     }
 
     public synchronized String getDefaultJoinGroup() {
@@ -324,8 +587,10 @@ public class OtherworldModule implements Listener {
 
     private void deleteWorldDirectory(String worldId) {
         if (worldId == null || worldId.contains(":")) return;
-        Path worldPath = plugin.getServer().getWorldContainer().toPath().resolve(worldId).normalize();
-        if (!worldPath.getParent().equals(plugin.getServer().getWorldContainer().toPath().toAbsolutePath().normalize())) return;
+        Path worldContainer = plugin.getServer().getWorldContainer().toPath().toAbsolutePath().normalize();
+        Path worldPath = worldContainer.resolve(worldId).toAbsolutePath().normalize();
+        Path parent = worldPath.getParent();
+        if (parent == null || !parent.equals(worldContainer) || !Files.exists(worldPath)) return;
         try (var paths = Files.walk(worldPath)) {
             paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
                 try { Files.deleteIfExists(path); } catch (IOException exception) {
@@ -334,6 +599,28 @@ public class OtherworldModule implements Listener {
             });
         } catch (IOException exception) {
             plugin.getLogger().warning("Otherworld deletion failed: " + worldPath + " (" + exception.getMessage() + ")");
+        }
+    }
+
+    private boolean deleteWorldPath(Path worldPath) {
+        if (worldPath == null) return false;
+        Path worldContainer = plugin.getServer().getWorldContainer().toPath().toAbsolutePath().normalize();
+        Path normalized = worldPath.toAbsolutePath().normalize();
+        if (!normalized.startsWith(worldContainer) || normalized.equals(worldContainer)) return false;
+        if (!Files.exists(normalized)) return true;
+        try (var paths = Files.walk(normalized)) {
+            paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException exception) {
+                    throw new java.io.UncheckedIOException(exception);
+                }
+            });
+            return true;
+        } catch (IOException | java.io.UncheckedIOException exception) {
+            plugin.getLogger().warning("Otherworld regeneration deletion failed: " + normalized
+                    + " (" + exception.getMessage() + ")");
+            return false;
         }
     }
 
@@ -370,6 +657,22 @@ public class OtherworldModule implements Listener {
         return changed;
     }
 
+    public synchronized List<String> getWhitelistMembers(String groupName) {
+        Set<UUID> ids = members.get(normalize(groupName));
+        if (ids == null) return List.of();
+        return ids.stream()
+                .map(id -> {
+                    String name = Bukkit.getOfflinePlayer(id).getName();
+                    return name == null || name.isBlank() ? id.toString() : name;
+                })
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+    }
+
+    public synchronized boolean hasWhitelist(String groupName) {
+        return members.containsKey(normalize(groupName));
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         plugin.getServer().getScheduler().runTask(plugin, () -> {
@@ -379,21 +682,36 @@ public class OtherworldModule implements Listener {
             if (isSelectionLobby(player.getWorld())) {
                 enterSelectionLobby(player);
                 List<String> accessible = accessibleGroups(player);
-                if (accessible.size() > 1) showSelection(player, accessible);
+                if (!accessible.isEmpty()) showSelection(player, accessible);
                 return;
             }
-            if (!current.equals("default") && !canAccess(player, current)) {
-                World defaultWorld = world(groups.get("default"), Environment.NORMAL);
-                if (defaultWorld != null) player.teleport(defaultWorld.getSpawnLocation());
-                current = "default";
-            }
             if (!current.equals("default")) {
-                playerDataStore.load(player, current);
+                if (isGroupLocked(current)) {
+                    World lobby = ensureSelectionLobby();
+                    if (lobby != null && player.teleport(lobby.getSpawnLocation())) {
+                        enterSelectionLobby(player);
+                        showSelection(player, accessibleGroups(player));
+                    }
+                    return;
+                }
+                if (!canEnter(player, current)) {
+                    World defaultWorld = world(groups.get("default"), Environment.NORMAL);
+                    if (defaultWorld != null) player.teleport(defaultWorld.getSpawnLocation());
+                    current = "default";
+                } else {
+                    playerDataStore.load(player, current);
+                    return;
+                }
+            }
+
+            if (!current.equals("default")) {
                 return;
             }
 
             List<String> accessible = accessibleGroups(player);
-            if (!defaultJoinGroup.equals("default") && accessible.contains(defaultJoinGroup)) {
+            if (!defaultJoinGroup.equals("default") && accessible.contains(defaultJoinGroup)
+                    && !isGroupLocked(defaultJoinGroup)
+                    && canEnter(player, defaultJoinGroup)) {
                 move(player, defaultJoinGroup);
             } else if (accessible.size() > 1) {
                 World lobby = ensureSelectionLobby();
@@ -403,7 +721,13 @@ public class OtherworldModule implements Listener {
                 }
             } else if (accessible.size() == 1) {
                 String onlyGroup = accessible.get(0);
-                if (onlyGroup.equals("default")) {
+                if (isGroupLocked(onlyGroup)) {
+                    World lobby = ensureSelectionLobby();
+                    if (lobby != null && player.teleport(lobby.getSpawnLocation())) {
+                        enterSelectionLobby(player);
+                        showSelection(player, accessible);
+                    }
+                } else if (onlyGroup.equals("default")) {
                     playerDataStore.load(player, "default");
                 } else {
                     move(player, onlyGroup);
@@ -433,9 +757,47 @@ public class OtherworldModule implements Listener {
         playerDataStore.load(player, target);
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        String groupName = getGroup(player.getWorld());
+        if ("selection-lobby".equals(groupName)) {
+            groupName = "default";
+        }
+        deathGroups.put(player.getUniqueId(), groupName);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onRespawn(PlayerRespawnEvent event) {
+        Player player = event.getPlayer();
+        String deathGroupName = deathGroups.remove(player.getUniqueId());
+        if (deathGroupName == null || "default".equals(deathGroupName)) {
+            return;
+        }
+
+        Group deathGroup = groups.get(deathGroupName);
+        if (deathGroup == null || !canEnter(player, deathGroupName)) {
+            return;
+        }
+
+        Location requested = event.getRespawnLocation();
+        if (requested.getWorld() != null && deathGroupName.equals(getGroup(requested.getWorld()))) {
+            return;
+        }
+
+        World respawnWorld = ensureGroupWorld(deathGroup, Environment.NORMAL);
+        if (respawnWorld == null || isSelectionLobby(respawnWorld)) {
+            plugin.getLogger().warning("Otherworld respawn target is unavailable: " + deathGroupName);
+            return;
+        }
+
+        event.setRespawnLocation(respawnWorld.getSpawnLocation());
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        deathGroups.remove(player.getUniqueId());
         if (isSelectionLobby(player.getWorld())) {
             playerDataStore.save(player, "default");
             selectionLobbyGameModes.remove(player.getUniqueId());
@@ -450,7 +812,6 @@ public class OtherworldModule implements Listener {
     }
 
     private void showSelection(Player player, List<String> accessible) {
-        if (accessible.size() <= 1) return;
         ChestUI.Builder builder = ChestUI.builder().title("§8✦ Otherworld Select ✦").size(54);
         for (int slot = 0; slot < 54; slot++) {
             builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Otherworld selection");
@@ -458,21 +819,154 @@ public class OtherworldModule implements Listener {
         int[] buttonSlots = {20, 22, 24, 29, 31, 33, 38, 40, 42};
         for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
             String name = accessible.get(i);
-            Material icon = name.equals("default") ? Material.GRASS_BLOCK : Material.NETHER_STAR;
-            builder.addButtonAt(buttonSlots[i], "§a" + displayGroupName(name), icon,
-                    "§7クリックして移動\n§8Seed: §f" + groups.get(name).seed);
+            boolean locked = isGroupLocked(name);
+            builder.addButtonAt(
+                    buttonSlots[i],
+                    locked ? "§c§l🔒 " + displayGroupName(name) : "§a" + displayGroupName(name),
+                    locked ? Material.IRON_BARS
+                            : name.equals("default") ? Material.GRASS_BLOCK : Material.NETHER_STAR,
+                    selectionLore(player, name));
         }
+        builder.addButtonAt(53,
+                "§c§lサーバーから退出",
+                Material.RED_BED,
+                "§7クリックしてサーバーから退出します\n§8また遊びに来てください！");
         builder.then((result, p) -> {
             if (!result.success || result.slot == null) return;
+            if (result.slot == 53) {
+                selectionTransitions.add(p.getUniqueId());
+                ChestUI.closeMenu(p);
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (p.isOnline()) {
+                        p.kick(ComponentUtils.legacy(
+                                "§cサーバーから退出しました\n§7また遊びに来てください！"));
+                    }
+                });
+                return;
+            }
             for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
                 if (buttonSlots[i] == result.slot) {
                     selectionTransitions.add(p.getUniqueId());
                     ChestUI.closeMenu(p);
-                    if (move(p, accessible.get(i))) restoreSelectionGameMode(p);
+                    String selectedGroup = accessible.get(i);
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (!p.isOnline()) {
+                            return;
+                        }
+                        if (move(p, selectedGroup)) {
+                            restoreSelectionGameMode(p);
+                        } else {
+                            selectionTransitions.remove(p.getUniqueId());
+                            p.sendMessage("§c" + displayGroupName(selectedGroup) + " へ移動できませんでした");
+                            showSelection(p, accessibleGroups(p));
+                        }
+                    });
                     return;
                 }
             }
         }).show(player);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (player.isOnline() && isSelectionLobby(player.getWorld())
+                    && player.getOpenInventory().getTopInventory().getSize() == 54) {
+                player.getOpenInventory().getTopInventory().setItem(53, selectionExitItem());
+                player.updateInventory();
+            }
+        });
+        startSelectionCountdown(player, accessible, buttonSlots);
+    }
+
+    private ItemStack selectionExitItem() {
+        ItemStack item = new ItemStack(Material.RED_BED);
+        ItemMeta meta = item.getItemMeta();
+        ComponentUtils.setDisplayName(meta, "§c§lサーバーから退出");
+        ComponentUtils.setLore(meta,
+                "§7クリックしてサーバーから退出します",
+                "§8また遊びに来てください！");
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private String selectionLore(Player player, String groupName) {
+        Group group = groups.get(groupName);
+        if (!isGroupLocked(groupName)) {
+            return "§7クリックして移動\n§8Seed: §f" + (group == null ? 0L : group.seed);
+        }
+        return "§c§lLOCKED"
+                + "\n§7公開まで: §e" + getLockCountdown(groupName)
+                + "\n§7公開日時: §e" + getLockDate(groupName)
+                + "\n§f" + getLockReason(groupName)
+                + "\n§8Seed: §f" + (group == null ? 0L : group.seed)
+                + (player.isOp()
+                ? "\n§dOperator: 移動可能"
+                : "\n§cロック解除までお待ちください");
+    }
+
+    private ItemStack selectionItem(Player player, String groupName) {
+        boolean locked = isGroupLocked(groupName);
+        ItemStack item = new ItemStack(locked ? Material.IRON_BARS
+                : groupName.equals("default") ? Material.GRASS_BLOCK : Material.NETHER_STAR);
+        ItemMeta meta = item.getItemMeta();
+        ComponentUtils.setDisplayName(meta, locked
+                ? "§c§l🔒 " + displayGroupName(groupName)
+                : "§a" + displayGroupName(groupName));
+        ComponentUtils.setLore(meta, selectionLore(player, groupName).split("\n"));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private synchronized String getLockCountdown(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null) return "0d 0h 0m 0s";
+        long total = Math.max(0L,
+                (group.lockedUntil - Instant.now().toEpochMilli() + 999L) / 1000L);
+        long days = total / 86_400L;
+        long hours = total % 86_400L / 3_600L;
+        long minutes = total % 3_600L / 60L;
+        long seconds = total % 60L;
+        return days + "d " + hours + "h " + minutes + "m " + seconds + "s";
+    }
+
+    private synchronized String getLockDate(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        if (group == null || group.lockedUntil <= 0L) return "公開中";
+        return Instant.ofEpochMilli(group.lockedUntil).atZone(LOCK_ZONE)
+                .format(LOCK_DISPLAY_FORMAT) + " JST";
+    }
+
+    private synchronized String getLockReason(String groupName) {
+        Group group = groups.get(normalize(groupName));
+        return group == null || group.lockMessage == null || group.lockMessage.isBlank()
+                ? "オープンまでお待ちください" : group.lockMessage;
+    }
+
+    private void startSelectionCountdown(Player player, List<String> accessible, int[] buttonSlots) {
+        new org.bukkit.scheduler.BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!player.isOnline() || !isSelectionLobby(player.getWorld())
+                        || player.getOpenInventory().getTopInventory().getSize() != 54) {
+                    cancel();
+                    return;
+                }
+                boolean opened = false;
+                for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
+                    String groupName = accessible.get(i);
+                    ItemStack previous = player.getOpenInventory().getTopInventory()
+                            .getItem(buttonSlots[i]);
+                    boolean wasLocked = previous != null
+                            && previous.getType() == Material.IRON_BARS;
+                    boolean locked = isGroupLocked(groupName);
+                    player.getOpenInventory().getTopInventory().setItem(
+                            buttonSlots[i], selectionItem(player, groupName));
+                    if (wasLocked && !locked) opened = true;
+                }
+                player.getOpenInventory().getTopInventory().setItem(53, selectionExitItem());
+                player.updateInventory();
+                if (opened) {
+                    player.sendMessage("§aOtherworldのロックが解除されました。移動先を選択できます。");
+                }
+            }
+        }.runTaskTimer(plugin, 20L, 20L);
     }
 
     private World ensureSelectionLobby() {
@@ -630,8 +1124,11 @@ public class OtherworldModule implements Listener {
         String targetGroupName = getGroup(event.getTo().getWorld());
         if (isSelectionLobby(event.getTo().getWorld()) || isSelectionLobby(event.getFrom().getWorld())) return;
         if (!sourceGroupName.equals(targetGroupName)) {
-            if (!canAccess(player, targetGroupName)) {
+            if (!canEnter(player, targetGroupName)) {
                 event.setCancelled(true);
+                if (canAccess(player, targetGroupName) && isGroupLocked(targetGroupName)) {
+                    player.sendMessage(getLockMessage(targetGroupName));
+                }
                 return;
             }
             playerDataStore.save(player, sourceGroupName);
@@ -688,12 +1185,13 @@ public class OtherworldModule implements Listener {
         if (existing != null) return !mirrorId.equals(previous);
 
         creatingMirrorKeys.add(mirrorId);
+        long dimensionSeed = seedFor(group, sourceKey);
         try {
             // Preferred path: the bootstrap-generated datapack defines this exact dimension key.
-            World created = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).seed(group.seed));
+            World created = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).seed(dimensionSeed));
             if (created == null) {
                 // Fallback for Paper/data packs that do not expose the generated dimension stem to WorldCreator.
-                created = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(group.seed));
+                created = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(dimensionSeed));
             }
             if (created == null) {
                 group.customWorlds.remove(sourceKey);
@@ -702,11 +1200,11 @@ public class OtherworldModule implements Listener {
                 return false;
             }
             plugin.getLogger().info("Otherworld Dimension mirror: " + sourceKey + " -> " + mirrorId
-                    + " (group=" + group.name + ", seed=" + group.seed + ")");
+                    + " (group=" + group.name + ", seed=" + dimensionSeed + ")");
             return true;
         } catch (RuntimeException first) {
             try {
-                World fallback = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(group.seed));
+                World fallback = Bukkit.createWorld(WorldCreator.ofKey(mirrorKey).copy(source).seed(dimensionSeed));
                 if (fallback != null) {
                     plugin.getLogger().warning("Dimension registry binding unavailable for " + mirrorId
                             + "; using runtime generator copy fallback: " + first.getMessage());
@@ -816,12 +1314,19 @@ public class OtherworldModule implements Listener {
         private final long seed;
         private final Map<Environment, String> worlds;
         private final Map<String, String> customWorlds;
+        private final Map<String, Long> dimensionSeeds;
+        private long lockedUntil;
+        private String lockMessage;
 
-        private Group(String name, long seed, Map<Environment, String> worlds, Map<String, String> customWorlds) {
+        private Group(String name, long seed, Map<Environment, String> worlds, Map<String, String> customWorlds,
+                      Map<String, Long> dimensionSeeds, long lockedUntil, String lockMessage) {
             this.name = name;
             this.seed = seed;
             this.worlds = worlds;
             this.customWorlds = customWorlds;
+            this.dimensionSeeds = dimensionSeeds;
+            this.lockedUntil = lockedUntil;
+            this.lockMessage = lockMessage;
         }
     }
 }

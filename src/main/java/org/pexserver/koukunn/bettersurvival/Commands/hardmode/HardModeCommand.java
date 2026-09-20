@@ -41,8 +41,13 @@ public final class HardModeCommand extends BaseCommand {
     @Override
     public boolean execute(CommandSender sender, String[] args) {
         if (args.length == 1 && args[0].equalsIgnoreCase("list")) {
+            if (!(sender instanceof Player player)) {
+                sendError(sender, "グループ別設定の確認はプレイヤーから実行してください");
+                return true;
+            }
             sender.sendMessage("§6HardMode機能一覧");
-            sender.sendMessage("§e真クラ §7(truecrafter): " + state() + " §7/ 熱量: §6" + trueCrafter.heatLevel());
+            sender.sendMessage("§e真クラ §7(truecrafter): " + state(player)
+                    + " §7/ 熱量: §6" + trueCrafter.heatLevel(player));
             sender.sendMessage("§dJust Leveling §7(leveling): " + (levelingSystem.isEnabled() ? "§aenabled" : "§cdisabled"));
             return true;
         }
@@ -108,10 +113,14 @@ public final class HardModeCommand extends BaseCommand {
 
         if (args.length == 3 && (args[0].equalsIgnoreCase("truecrafter") || args[0].equals("真クラ"))
                 && args[1].equalsIgnoreCase("heat")) {
+            if (!(sender instanceof Player player)) {
+                sendError(sender, "グループ別設定の変更はプレイヤーから実行してください");
+                return true;
+            }
             try {
                 int level = Integer.parseInt(args[2]);
                 if (level < 1 || level > 5) throw new NumberFormatException();
-                trueCrafter.setHeatLevel(level);
+                trueCrafter.setHeatLevel(player, level);
                 sender.sendMessage("§6真クラの熱量を §e" + level + " §6に変更しました");
             } catch (NumberFormatException exception) {
                 sendError(sender, "熱量は1から5で指定してください");
@@ -123,8 +132,12 @@ public final class HardModeCommand extends BaseCommand {
             String state = args[1].toLowerCase();
             if ((mode.equals("truecrafter") || mode.equals("真クラ"))
                     && (state.equals("enabled") || state.equals("disabled"))) {
+                if (!(sender instanceof Player player)) {
+                    sendError(sender, "グループ別設定の変更はプレイヤーから実行してください");
+                    return true;
+                }
                 boolean enabled = state.equals("enabled");
-                String error = trueCrafter.setEnabled(enabled);
+                String error = trueCrafter.setEnabled(player, enabled);
                 if (error != null) {
                     sendError(sender, error);
                     return true;
@@ -161,7 +174,7 @@ public final class HardModeCommand extends BaseCommand {
         return List.of();
     }
 
-    private String state() {
-        return trueCrafter.isEnabled() ? "§aenabled" : "§cdisabled";
+    private String state(Player player) {
+        return trueCrafter.isEnabled(player) ? "§aenabled" : "§cdisabled";
     }
 }

@@ -137,32 +137,59 @@ public final class TrueCrafterModeModule implements Listener {
         modifierKeys.put(Attribute.FOLLOW_RANGE, new NamespacedKey(plugin, "truecrafter_range"));
         modifierKeys.put(Attribute.STEP_HEIGHT, new NamespacedKey(plugin, "truecrafter_step"));
         modifierKeys.put(Attribute.KNOCKBACK_RESISTANCE, new NamespacedKey(plugin, "truecrafter_knockback"));
-        ominousCampfire = new OminousCampfireSystem(plugin, settings, this::setHeatLevel);
+        ominousCampfire = new OminousCampfireSystem(plugin, settings, this::groupOf);
         Bukkit.getPluginManager().registerEvents(ominousCampfire, plugin);
-        if (isEnabled()) enableRuntime();
+        enableRuntime();
     }
 
-    public boolean isEnabled() {
-        return settings.enabled();
+    public boolean isEnabled(Player player) {
+        return player != null && isEnabled(player.getWorld());
     }
 
-    public String setEnabled(boolean enabled) {
-        settings.enabled(enabled);
-        if (enabled) enableRuntime();
-        else disableRuntime();
+    public boolean isEnabled(World world) {
+        return settings.enabled(groupOf(world));
+    }
+
+    public String setEnabled(Player player, boolean enabled) {
+        if (player == null) return "プレイヤーから実行してください";
+        settings.enabled(groupOf(player.getWorld()), enabled);
+        refreshWorld(player.getWorld());
         return null;
     }
 
-    public int heatLevel() {
-        return settings.heatLevel();
+    public int heatLevel(Player player) {
+        return player == null ? 1 : heatLevel(player.getWorld());
     }
 
-    public void setHeatLevel(int level) {
-        settings.heatLevel(level);
-        if (isEnabled()) Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(entity -> {
+    public int heatLevel(World world) {
+        return settings.heatLevel(groupOf(world));
+    }
+
+    public void setHeatLevel(Player player, int level) {
+        if (player == null) return;
+        String group = groupOf(player.getWorld());
+        settings.heatLevel(group, level);
+        Bukkit.getWorlds().stream().filter(world -> group.equals(groupOf(world))).forEach(world ->
+                world.getLivingEntities().forEach(entity -> {
             removeEnhancement(entity);
-            enhance(entity);
+            if (isEnabled(world)) enhance(entity);
         }));
+    }
+
+    private String groupOf(World world) {
+        if (plugin.getOtherworldModule() == null || world == null) return "default";
+        String group = plugin.getOtherworldModule().getGroup(world);
+        return group == null || group.isBlank() || "selection-lobby".equals(group) ? "default" : group;
+    }
+
+    private void refreshWorld(World world) {
+        if (world == null) return;
+        String group = groupOf(world);
+        Bukkit.getWorlds().stream().filter(candidate -> group.equals(groupOf(candidate)))
+                .forEach(candidate -> candidate.getLivingEntities().forEach(entity -> {
+                    removeEnhancement(entity);
+                    if (isEnabled(candidate)) enhance(entity);
+                }));
     }
 
     public void shutdown() {
@@ -176,12 +203,12 @@ public final class TrueCrafterModeModule implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onSpawn(CreatureSpawnEvent event) {
-        if (!isEnabled()) return;
+        if (!isEnabled(event.getLocation().getWorld())) return;
     }
 
     @EventHandler
     public void onLoad(EntitiesLoadEvent event) {
-        if (!isEnabled()) return;
+        if (!isEnabled(event.getWorld())) return;
         event.getEntities().stream()
                 .filter(ItemDisplay.class::isInstance)
                 .map(ItemDisplay.class::cast)
@@ -190,7 +217,7 @@ public final class TrueCrafterModeModule implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
     public void onAttack(EntityDamageByEntityEvent event) {
-        if (!isEnabled()) return;
+        if (!isEnabled(event.getEntity().getWorld())) return;
         if (event.getEntity() instanceof Player player
                 && event.getDamager() instanceof AbstractArrow arrow
                 && ("elite_arrow".equals(arrow.getPersistentDataContainer().get(projectileKey, PersistentDataType.STRING))
@@ -283,7 +310,7 @@ public final class TrueCrafterModeModule implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (!isEnabled() || !(event.getEntity() instanceof AbstractArrow arrow)
+        if (!isEnabled(event.getEntity().getWorld()) || !(event.getEntity() instanceof AbstractArrow arrow)
                 || !(arrow.getShooter() instanceof AbstractSkeleton shooter)) return;
         String kind = shooter instanceof WitherSkeleton
                 ? "elite_wither_arrow" : variant(shooter).equals("elite") ? "elite_arrow" : null;
@@ -294,7 +321,7 @@ public final class TrueCrafterModeModule implements Listener {
             arrow.getPersistentDataContainer().set(projectileKey, PersistentDataType.STRING, kind);
             if (kind.equals("elite_wither_arrow")) arrow.setFireTicks(0);
         }
-        int heat = heatLevel();
+        int heat = heatLevel(shooter.getWorld());
         LivingEntity target = shooter.getTarget();
         if (heat < 3 || target == null || target.getWorld() != shooter.getWorld()) return;
         double correction = heat == 3 ? 0.18D : heat == 4 ? 0.32D : 0.42D;
@@ -420,7 +447,7 @@ public final class TrueCrafterModeModule implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
     public void onSleep(PlayerBedEnterEvent event) {
-        if (!isEnabled() || heatLevel() < 5) return;
+        if (!isEnabled(event.getPlayer()) || heatLevel(event.getPlayer()) < 5) return;
         event.setUseBed(Event.Result.DENY);
         event.getPlayer().sendMessage("§c熱量5では眠って夜を飛ばせません。");
     }
@@ -431,33 +458,12 @@ public final class TrueCrafterModeModule implements Listener {
         aiTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickEnemies, 1L, 1L);
     }
 
-    private void disableRuntime() {
-        if (aiTask != null) {
-            aiTask.cancel();
-            aiTask = null;
-        }
-        rangedBackSteps.clear();
-        sheathedWeaponSystem.clear();
-        terrainDigTicks.clear();
-        terrainPlaceTicks.clear();
-        terrainBridgeTicks.clear();
-        terrainPlaceCooldowns.clear();
-        creeperDigRecovery.clear();
-        endermanBreakTicks.clear();
-        witherKnightCooldowns.clear();
-        witherKnightShots.clear();
-        skeletonHomingReadyTicks.clear();
-        standardEnemyAi.clear();
-        evokerAi.clear();
-        witherBoss.clear();
-        enderDragonBoss.clear();
-        enderZealotAi.clear();
-        Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(this::removeEnhancement));
-    }
-
     private void tickEnemies() {
-        if (!isEnabled()) return;
         for (World world : Bukkit.getWorlds()) {
+            if (!isEnabled(world)) {
+                world.getLivingEntities().forEach(this::removeEnhancement);
+                continue;
+            }
             world.getEntitiesByClass(ItemDisplay.class).forEach(this::removeOrphanedSheath);
             for (LivingEntity living : world.getLivingEntities()) {
                 initializeNearbyEnemy(living);
@@ -562,8 +568,9 @@ public final class TrueCrafterModeModule implements Listener {
 
     private boolean isChaser(LivingEntity entity) {
         EntityType type = entity.getType();
-        if (type == EntityType.ZOMBIFIED_PIGLIN) return heatLevel() >= 4;
-        if (heatLevel() < 3) return false;
+        int heat = heatLevel(entity.getWorld());
+        if (type == EntityType.ZOMBIFIED_PIGLIN) return heat >= 4;
+        if (heat < 3) return false;
         return switch (type) {
             case ZOMBIE, HUSK, ZOMBIE_VILLAGER, CREEPER, WITCH, VINDICATOR, PILLAGER,
                     PIGLIN_BRUTE -> true;
@@ -585,7 +592,7 @@ public final class TrueCrafterModeModule implements Listener {
     }
 
     private void initializeNearbyEnemy(LivingEntity entity) {
-        if (heatLevel() < 2 || !isEnemy(entity)
+        if (!isEnabled(entity.getWorld()) || heatLevel(entity.getWorld()) < 2 || !isEnemy(entity)
                 || entity.getPersistentDataContainer().has(enhancedKey, PersistentDataType.BYTE)
                 || entity instanceof Piglin piglin && !piglin.isAdult()
                 || entity.getWorld().getPlayers().stream().noneMatch(player ->
@@ -598,7 +605,7 @@ public final class TrueCrafterModeModule implements Listener {
 
     /** mob_manager:init の熱量3以上の自然Mob増援抽選を再現する。 */
     private void spawnSourceReinforcement(LivingEntity entity) {
-        int heat = heatLevel();
+        int heat = heatLevel(entity.getWorld());
         if (heat < 3) return;
         EntityType reinforcement = null;
         double probability = 0.0D;
@@ -621,12 +628,13 @@ public final class TrueCrafterModeModule implements Listener {
     }
 
     private void enhance(LivingEntity entity) {
+        if (!isEnabled(entity.getWorld())) return;
         if (entity instanceof Slime slime && slime.getPersistentDataContainer().has(zealotKey, PersistentDataType.BYTE)) return;
         if (entity instanceof WitherSkeleton witherSkeleton
                 && (witherSkeleton.getPersistentDataContainer().has(witherKnightKey, PersistentDataType.BYTE)
                 || witherSkeleton.getPersistentDataContainer().has(witherMinionKey, PersistentDataType.BYTE))) return;
         if (!isEnemy(entity) || entity.getPersistentDataContainer().has(enhancedKey, PersistentDataType.BYTE)) return;
-        int heat = heatLevel();
+        int heat = heatLevel(entity.getWorld());
         assignVariant(entity);
         mobProfiles.apply(entity, variant(entity), heat);
         if (isChaser(entity)) mobProfiles.applyChaser(entity);
@@ -644,13 +652,14 @@ public final class TrueCrafterModeModule implements Listener {
     }
 
     private void assignVariant(LivingEntity entity) {
+        int heat = heatLevel(entity.getWorld());
         String variant = "normal";
-        if (heatLevel() >= 3 && entity.getType() == EntityType.ZOMBIE && chance(0.15D)) variant = "zombie_brute";
-        else if (heatLevel() >= 3 && isRangedSkeleton(entity)
+        if (heat >= 3 && entity.getType() == EntityType.ZOMBIE && chance(0.15D)) variant = "zombie_brute";
+        else if (heat >= 3 && isRangedSkeleton(entity)
                 && entity.getType() != EntityType.WITHER_SKELETON && chance(0.15D)) variant = "elite";
         entity.getPersistentDataContainer().set(variantKey, PersistentDataType.STRING, variant);
         if (variant.equals("elite")) {
-            equipElite(entity, heatLevel());
+            equipElite(entity, heat);
         } else equipHelmet(entity);
     }
 
@@ -685,7 +694,7 @@ public final class TrueCrafterModeModule implements Listener {
     }
 
     private void alterTerrain(LivingEntity enemy, Player target) {
-        if (heatLevel() < 3 || enemy.getWorld() != target.getWorld()
+        if (heatLevel(enemy.getWorld()) < 3 || enemy.getWorld() != target.getWorld()
                 || enemy.getLocation().distanceSquared(target.getLocation()) > 2304.0D) return;
         Vector direction = target.getLocation().toVector().subtract(enemy.getLocation().toVector()).setY(0).normalize();
         Block ahead = enemy.getEyeLocation().add(direction).getBlock();
