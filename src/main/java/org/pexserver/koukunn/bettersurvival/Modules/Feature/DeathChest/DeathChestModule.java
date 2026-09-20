@@ -43,6 +43,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.util.Base64;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 
@@ -118,6 +119,7 @@ public class DeathChestModule implements Listener {
         if (landProtection != null && landProtection.getActiveClaimAt(deathLocation) != null) return;
         if (event.getEntity().getKiller() != null) return;
         if (event.getKeepInventory() || event.getDrops().isEmpty()) return;
+        List<ItemStack> fallbackDrops = event.getDrops().stream().map(ItemStack::clone).toList();
 
         sendDeathLocation(event, deathLocation);
 
@@ -136,11 +138,13 @@ public class DeathChestModule implements Listener {
 
         Block placement = findPlacement(deathLocation);
         if (placement == null) {
+            restoreNormalDrops(event, fallbackDrops);
             player.sendMessage("§cDeathChestを設置できませんでした。アイテムは通常通りドロップします。");
             return;
         }
 
         if (!createDeathChest(placement, snapshot)) {
+            restoreNormalDrops(event, fallbackDrops);
             player.sendMessage("§cDeathChestを作成できませんでした。アイテムは通常通りドロップします。");
             return;
         }
@@ -403,27 +407,50 @@ public class DeathChestModule implements Listener {
     }
 
     private boolean createDeathChest(Block block, ItemStack[] snapshot) {
-        block.setType(Material.CHEST, false);
-        BlockData data = block.getBlockData();
-        if (data instanceof org.bukkit.block.data.type.Chest chestData) {
-            chestData.setType(org.bukkit.block.data.type.Chest.Type.SINGLE);
-            block.setBlockData(chestData, true);
-        }
-        BlockState state = block.getState(false);
-        if (!(state instanceof Chest chest)) {
-            block.setType(Material.AIR, false);
-            return false;
-        }
         String encoded = encodeItems(snapshot);
-        if (encoded == null) {
-            block.setType(Material.AIR, false);
+        if (encoded == null) return false;
+        try {
+            block.setType(Material.CHEST, false);
+            BlockData data = block.getBlockData();
+            if (data instanceof org.bukkit.block.data.type.Chest chestData) {
+                chestData.setType(org.bukkit.block.data.type.Chest.Type.SINGLE);
+                block.setBlockData(chestData, false);
+            }
+            BlockState state = block.getState(false);
+            if (!(state instanceof Chest chest)) {
+                rollbackChestPlacement(block);
+                return false;
+            }
+            PersistentDataContainer container = chest.getPersistentDataContainer();
+            container.set(deathChestKey, PersistentDataType.BYTE, (byte) 1);
+            container.set(contentsKey, PersistentDataType.STRING, encoded);
+            if (!chest.update(true, false)) {
+                rollbackChestPlacement(block);
+                return false;
+            }
+            BlockState confirmedState = block.getState(false);
+            if (!(confirmedState instanceof Chest confirmedChest)
+                    || !confirmedChest.getPersistentDataContainer().has(deathChestKey, PersistentDataType.BYTE)
+                    || !encoded.equals(confirmedChest.getPersistentDataContainer()
+                    .get(contentsKey, PersistentDataType.STRING))) {
+                rollbackChestPlacement(block);
+                return false;
+            }
+            return true;
+        } catch (RuntimeException e) {
+            rollbackChestPlacement(block);
+            plugin.getLogger().log(Level.WARNING, "Failed to create DeathChest at " + formatLocation(block.getLocation()), e);
             return false;
         }
-        PersistentDataContainer container = chest.getPersistentDataContainer();
-        container.set(deathChestKey, PersistentDataType.BYTE, (byte) 1);
-        container.set(contentsKey, PersistentDataType.STRING, encoded);
-        chest.update(true);
-        return true;
+    }
+
+    private void rollbackChestPlacement(Block block) {
+        if (block.getType() == Material.CHEST) block.setType(Material.AIR, false);
+    }
+
+    private void restoreNormalDrops(PlayerDeathEvent event, List<ItemStack> fallbackDrops) {
+        event.getDrops().clear();
+        for (ItemStack item : fallbackDrops) event.getDrops().add(item.clone());
     }
 
     // 1.21+ 推奨: ItemStack.serializeAsBytes / deserializeBytes

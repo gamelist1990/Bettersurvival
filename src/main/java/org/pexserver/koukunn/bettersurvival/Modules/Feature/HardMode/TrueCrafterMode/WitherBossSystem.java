@@ -40,9 +40,11 @@ public final class WitherBossSystem {
     private final Map<UUID, Integer> outOfCombatTicks = new HashMap<>();
     private final org.bukkit.NamespacedKey convertedThunderSkullKey;
     private final WitherFieldSystem fields;
+    private final SheathedWeaponSystem sheathedWeaponSystem;
 
-    public WitherBossSystem(Loader plugin) {
+    public WitherBossSystem(Loader plugin, SheathedWeaponSystem sheathedWeaponSystem) {
         this.plugin = plugin;
+        this.sheathedWeaponSystem = sheathedWeaponSystem;
         convertedThunderSkullKey = new org.bukkit.NamespacedKey(plugin, "truecrafter_wither_thunder_converted");
         fields = new WitherFieldSystem(plugin);
     }
@@ -405,6 +407,7 @@ public final class WitherBossSystem {
         sheath.setTransformation(new org.bukkit.util.Transformation(new Vector3f(0.0F, -1.1F, -0.3F), new Quaternionf(),
                 new Vector3f(0.5F, 0.5F, 0.5F), new Quaternionf(0.0F, 0.0F, 1.0F, 1.0F)));
         skeleton.addPassenger(sheath);
+        sheathedWeaponSystem.initialize(skeleton, new ItemStack(org.bukkit.Material.NETHERITE_SWORD));
     }
 
     private ItemStack knightHead() {
@@ -463,6 +466,9 @@ public final class WitherBossSystem {
                 knight.setInvulnerable(false);
                 knight.setAI(true);
             }
+            sheathedWeaponSystem.tick(knight, target);
+            knight.getPassengers().stream().filter(ItemDisplay.class::isInstance).map(ItemDisplay.class::cast)
+                    .forEach(display -> display.setRotation(knight.getYaw(), 0.0F));
         }
     }
 

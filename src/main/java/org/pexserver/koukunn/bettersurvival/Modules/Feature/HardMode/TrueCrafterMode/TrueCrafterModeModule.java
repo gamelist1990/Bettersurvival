@@ -94,6 +94,7 @@ public final class TrueCrafterModeModule implements Listener {
     private final Map<UUID, Integer> witherKnightShots = new HashMap<>();
     private final TemporaryEnemyBlockSystem temporaryBlocks;
     private final StandardEnemyAiSystem standardEnemyAi;
+    private final SheathedWeaponSystem sheathedWeaponSystem;
     private final OminousCampfireSystem ominousCampfire;
     private final EvokerAiSystem evokerAi;
     private final WitherBossSystem witherBoss;
@@ -116,12 +117,13 @@ public final class TrueCrafterModeModule implements Listener {
         witherMinionKey = new NamespacedKey(plugin, "truecrafter_wither_minion");
         zealotKey = new NamespacedKey(plugin, "truecrafter_zealot");
         sheathOwnerKey = new NamespacedKey(plugin, "truecrafter_sheath_owner");
-        sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v5");
+        sheathRenderVersionKey = new NamespacedKey(plugin, "truecrafter_sheath_render_v6");
         creeperAttackCountKey = new NamespacedKey(plugin, "truecrafter_creeper_attack_count");
         temporaryBlocks = new TemporaryEnemyBlockSystem(plugin);
         standardEnemyAi = new StandardEnemyAiSystem(plugin);
+        sheathedWeaponSystem = new SheathedWeaponSystem(plugin);
         evokerAi = new EvokerAiSystem();
-        witherBoss = new WitherBossSystem(plugin);
+        witherBoss = new WitherBossSystem(plugin, sheathedWeaponSystem);
         enderDragonBoss = new EnderDragonBossSystem(plugin);
         enderZealotAi = new EnderZealotAiSystem();
         projectileMotion = new ProjectileMotionSystem(plugin);
@@ -329,6 +331,7 @@ public final class TrueCrafterModeModule implements Listener {
                     .forEach(Entity::remove);
         }
         rangedBackSteps.remove(event.getEntity().getUniqueId());
+        sheathedWeaponSystem.remove(event.getEntity().getUniqueId());
         terrainDigTicks.remove(event.getEntity().getUniqueId());
         terrainPlaceTicks.remove(event.getEntity().getUniqueId());
         terrainBridgeTicks.remove(event.getEntity().getUniqueId());
@@ -400,6 +403,7 @@ public final class TrueCrafterModeModule implements Listener {
             aiTask = null;
         }
         rangedBackSteps.clear();
+        sheathedWeaponSystem.clear();
         terrainDigTicks.clear();
         terrainPlaceTicks.clear();
         terrainBridgeTicks.clear();
@@ -617,6 +621,7 @@ public final class TrueCrafterModeModule implements Listener {
 
     private void removeEnhancement(LivingEntity entity) {
         if (!entity.getPersistentDataContainer().has(enhancedKey, PersistentDataType.BYTE)) return;
+        sheathedWeaponSystem.restore(entity);
         entity.getPassengers().stream().filter(ItemDisplay.class::isInstance).forEach(Entity::remove);
         for (Map.Entry<Attribute, NamespacedKey> entry : modifierKeys.entrySet()) remove(entity, entry.getKey(), entry.getValue());
         mobProfiles.restore(entity);
@@ -710,11 +715,7 @@ public final class TrueCrafterModeModule implements Listener {
             int cooldown = terrainPlaceCooldowns.getOrDefault(id, 0);
             Block current = enemy.getLocation().getBlock();
             Block upperForward = enemy.getEyeLocation().add(direction).add(0.0D, 1.0D, 0.0D).getBlock();
-            if (cooldown <= 0 && canPlaceEnemyBlock(current)
-                    && (isCollisionSafe(upperForward) || isClimbFoliage(upperForward))) {
-                clearClimbFoliage(enemy.getLocation().add(0.0D, 1.0D, 0.0D).getBlock());
-                clearClimbFoliage(enemy.getEyeLocation().add(0.0D, 1.0D, 0.0D).getBlock());
-                clearClimbFoliage(upperForward);
+            if (cooldown <= 0 && canPlaceEnemyBlock(current) && isCollisionSafe(upperForward)) {
                 enemy.teleport(enemy.getLocation().add(0.0D, 1.0D, 0.0D));
                 terrainPlaceCooldowns.put(id, 5);
             }
@@ -744,7 +745,7 @@ public final class TrueCrafterModeModule implements Listener {
                 ? 0 : terrainBridgeTicks.getOrDefault(id, 0) + 1;
         int verticalDifference = enemy.getLocation().getBlockY() - target.getLocation().getBlockY();
         if (leftBridgeTicks >= 30 || verticalDifference >= 2) {
-            if (verticalDifference >= 2) below.breakNaturally();
+            if (verticalDifference >= 2 && temporaryBlocks.isTemporary(below)) below.breakNaturally();
             terrainBridgeTicks.remove(id);
             return;
         }
@@ -790,19 +791,6 @@ public final class TrueCrafterModeModule implements Listener {
                 || material == Material.LILAC
                 || material == Material.ROSE_BUSH
                 || material == Material.PEONY;
-    }
-
-    private boolean isClimbFoliage(Block block) {
-        String name = block.getType().name();
-        return name.endsWith("_LEAVES")
-                || name.endsWith("_VINES")
-                || block.getType() == Material.VINE
-                || block.getType() == Material.MANGROVE_ROOTS
-                || block.getType() == Material.MOSS_CARPET;
-    }
-
-    private void clearClimbFoliage(Block block) {
-        if (isClimbFoliage(block)) block.setType(Material.AIR, false);
     }
 
     private boolean isCollisionSafe(Block block) {
@@ -928,7 +916,9 @@ public final class TrueCrafterModeModule implements Listener {
                     new Vector3f(sheathScale, sheathScale, sheathScale), new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
         });
         if (equipment.getItemInMainHand().getType().isAir()) equipment.setItemInMainHand(new ItemStack(Material.BOW));
-        if (equipment.getItemInOffHand().getType().isAir()) equipment.setItemInOffHand(lootFactory.eliteHatchet(false, heat));
+        ItemStack stowedWeapon = equipment.getItemInOffHand().getType().isAir()
+                ? witherSheath ? new ItemStack(Material.STONE_SWORD) : lootFactory.eliteHatchet(false, heat)
+                : equipment.getItemInOffHand().clone();
         if (entity.getPassengers().stream().noneMatch(passenger -> passenger instanceof ItemDisplay)) {
             ItemDisplay sheath = entity.getWorld().spawn(entity.getLocation(), ItemDisplay.class);
             sheath.setRotation(witherSheath ? entity.getYaw() : entity.getBodyYaw(), 0.0F);
@@ -941,6 +931,7 @@ public final class TrueCrafterModeModule implements Listener {
                     new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
             entity.addPassenger(sheath);
         }
+        sheathedWeaponSystem.initialize(entity, stowedWeapon);
         entity.getPersistentDataContainer().set(sheathRenderVersionKey, PersistentDataType.BYTE, (byte) 1);
         if (entity.getType() == EntityType.PARCHED || entity.getType() == EntityType.WITHER_SKELETON || equipment.getHelmet() != null) return;
         int color = entity.getType() == EntityType.STRAY ? 6387319 : entity.getType() == EntityType.BOGGED ? 3887645 : 11250603;
@@ -965,11 +956,12 @@ public final class TrueCrafterModeModule implements Listener {
                     new Quaternionf(0.0F, 0.0F, witherSheath ? 1.0F : -2.4F, 1.0F)));
         });
         entity.getPersistentDataContainer().set(sheathRenderVersionKey, PersistentDataType.BYTE, (byte) 1);
+        sheathedWeaponSystem.refreshDisplay(entity);
     }
 
     private void syncRangedSkeletonSheath(LivingEntity entity) {
-        if (!isRangedSkeleton(entity) || entity.getType() == EntityType.WITHER_SKELETON) return;
-        float bodyYaw = entity.getBodyYaw();
+        if (!isRangedSkeleton(entity)) return;
+        float bodyYaw = entity.getType() == EntityType.WITHER_SKELETON ? entity.getYaw() : entity.getBodyYaw();
         entity.getPassengers().stream().filter(ItemDisplay.class::isInstance).map(ItemDisplay.class::cast)
                 .filter(display -> entity.getUniqueId().toString().equals(display.getPersistentDataContainer()
                         .get(sheathOwnerKey, PersistentDataType.STRING)))
@@ -1055,18 +1047,8 @@ public final class TrueCrafterModeModule implements Listener {
         boolean skeleton = isRangedSkeleton(entity);
         if ((!elite && !skeleton) || entity.getEquipment() == null) return;
         double distance = entity.getLocation().distance(target.getLocation());
-        ItemStack main = entity.getEquipment().getItemInMainHand();
-        ItemStack off = entity.getEquipment().getItemInOffHand();
-        if (distance <= 5.0D && main.getType() == Material.BOW && !off.getType().isAir()) {
-            entity.getEquipment().setItemInMainHand(off);
-            entity.getEquipment().setItemInOffHand(main);
-            entity.getWorld().playSound(entity.getLocation(), Sound.ITEM_ARMOR_EQUIP_IRON, 1.5F, 1.0F);
-        } else if (distance >= 5.0D && distance <= 16.0D && main.getType() != Material.BOW && off.getType() == Material.BOW) {
-            entity.getEquipment().setItemInMainHand(off);
-            entity.getEquipment().setItemInOffHand(main);
-            entity.getWorld().playSound(entity.getLocation(), Sound.ITEM_ARMOR_EQUIP_GENERIC, 1.5F, 1.0F);
-        }
-        if (!skeleton || entity.getEquipment().getItemInMainHand().getType() == Material.BOW || distance > 5.0D) return;
+        sheathedWeaponSystem.tick(entity, target);
+        if (!skeleton || entity.getEquipment().getItemInMainHand().getType() == Material.BOW || distance > 4.0D) return;
         if (distance <= 2.0D && target.getNoDamageTicks() > 0 && entity.isOnGround()) rangedBackSteps.put(entity.getUniqueId(), 40);
         int ticks = rangedBackSteps.merge(entity.getUniqueId(), 1, Integer::sum);
         if (ticks < 40 || !entity.isOnGround()) return;
