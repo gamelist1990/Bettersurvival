@@ -15,8 +15,6 @@ import org.bukkit.block.Container;
 import org.bukkit.block.Furnace;
 import org.bukkit.block.Hopper;
 import org.bukkit.block.data.Lightable;
-import org.bukkit.craftbukkit.CraftServer;
-import org.bukkit.craftbukkit.inventory.CraftItemStack;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
@@ -109,7 +107,6 @@ public class ParallelFurnaceModule implements Listener {
     private final Set<Material> nonSmeltableCache = new HashSet<>();
     private final Map<Material, Integer> fuelTicksCache = new HashMap<>();
 
-    private boolean nmsFuelUnavailable;
 
     private final BukkitTask processTask;
     private final BukkitTask animationTask;
@@ -828,9 +825,8 @@ public class ParallelFurnaceModule implements Listener {
     /**
      * 通常かまどと同一の燃焼時間 (tick)。燃料でなければ 0。
      *
-     * まずサーバー内部の燃料テーブル (NMS FuelValues) を直接参照し、
-     * Vanilla (+データパック改変) の正確な値を返す。参照できない環境では
-     * Vanilla の燃料表を再現した内蔵テーブルへフォールバックする。
+     * Paper 26.3 の ItemType が保持する登録済みの燃料値を動的に取得し、
+     * API から値を取得できない場合だけ内蔵の Vanilla 燃料表へフォールバックする。
      */
     public int burnTicksOf(Material material) {
         if (material == null || !material.isFuel()) {
@@ -840,28 +836,14 @@ public class ParallelFurnaceModule implements Listener {
         if (cached != null) {
             return cached;
         }
-        int ticks = lookupServerBurnTicks(material);
-        if (ticks < 0) {
+        int ticks;
+        try {
+            ticks = material.asItemType().getBurnDuration();
+        } catch (Throwable ignored) {
             ticks = vanillaFallbackBurnTicks(material);
         }
         fuelTicksCache.put(material, ticks);
         return ticks;
-    }
-
-    /** サーバー実装の FuelValues から燃焼時間を直接取得。 */
-    private int lookupServerBurnTicks(Material material) {
-        if (nmsFuelUnavailable) {
-            return -1;
-        }
-        try {
-            CraftServer craftServer = (CraftServer) Bukkit.getServer();
-            net.minecraft.world.item.ItemStack nmsStack = CraftItemStack.asNMSCopy(new ItemStack(material));
-            return Math.max(0, craftServer.getServer().fuelValues().burnDuration(nmsStack));
-        } catch (Throwable t) {
-            nmsFuelUnavailable = true;
-            plugin.getLogger().info("[並列かまど] NMS燃料テーブルを利用できないため、内蔵のVanilla燃料表を使用します: " + t);
-            return -1;
-        }
     }
 
     /** Vanilla の燃料表 (FuelValues.vanillaBurnTimes 相当) を再現したフォールバック */

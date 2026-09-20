@@ -86,7 +86,7 @@ public class OtherworldModule implements Listener {
         if (rawGroups instanceof Map<?, ?> map) {
             for (var entry : map.entrySet()) {
                 if (!(entry.getValue() instanceof Map<?, ?> values)) continue;
-                String name = entry.getKey().toString().toLowerCase(Locale.ROOT);
+                String name = normalize(entry.getKey().toString());
                 Map<Environment, String> worlds = new EnumMap<>(Environment.class);
                 Object rawWorlds = values.get("worlds");
                 if (rawWorlds instanceof Map<?, ?> worldMap) {
@@ -100,7 +100,9 @@ public class OtherworldModule implements Listener {
                 Object rawCustom = values.get("customWorlds");
                 if (rawCustom instanceof Map<?, ?> customMap) {
                     for (var custom : customMap.entrySet()) {
-                        if (custom.getValue() != null) customWorlds.put(custom.getKey().toString(), custom.getValue().toString());
+                        if (custom.getValue() != null && !isSelectionLobbyId(custom.getKey().toString())) {
+                            customWorlds.put(custom.getKey().toString(), custom.getValue().toString());
+                        }
                     }
                 }
                 long seed = readSeed(values.get("seed"), name, worlds);
@@ -125,7 +127,7 @@ public class OtherworldModule implements Listener {
                         try { ids.add(UUID.fromString(value.toString())); } catch (IllegalArgumentException ignored) { }
                     }
                 }
-                members.put(entry.getKey().toString().toLowerCase(Locale.ROOT), ids);
+                members.put(normalize(entry.getKey().toString()), ids);
             }
         }
         save();
@@ -163,6 +165,32 @@ public class OtherworldModule implements Listener {
 
     public synchronized Set<String> getGroupNames() {
         return Collections.unmodifiableSet(new LinkedHashSet<>(groups.keySet()));
+    }
+
+    public String displayGroupName(String groupName) {
+        if (groupName == null || !groupName.startsWith("u_")) {
+            return groupName;
+        }
+        String encoded = groupName.substring(2);
+        if (encoded.isEmpty()) {
+            return groupName;
+        }
+        StringBuilder decoded = new StringBuilder();
+        for (String part : encoded.split("_")) {
+            if (part.isEmpty()) {
+                return groupName;
+            }
+            try {
+                int codePoint = Integer.parseInt(part, 16);
+                if (!Character.isValidCodePoint(codePoint)) {
+                    return groupName;
+                }
+                decoded.appendCodePoint(codePoint);
+            } catch (NumberFormatException ignored) {
+                return groupName;
+            }
+        }
+        return decoded.isEmpty() ? groupName : decoded.toString();
     }
 
     public synchronized long getGroupSeed(String groupName) {
@@ -216,7 +244,7 @@ public class OtherworldModule implements Listener {
 
     public synchronized boolean canAccess(Player player, String groupName) {
         if (groupName == null) return false;
-        Group group = groups.get(groupName.toLowerCase(Locale.ROOT));
+        Group group = groups.get(normalize(groupName));
         return group != null && (!isWhitelistEnabled(group.name)
                 || player.isOp() || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
     }
@@ -431,7 +459,7 @@ public class OtherworldModule implements Listener {
         for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
             String name = accessible.get(i);
             Material icon = name.equals("default") ? Material.GRASS_BLOCK : Material.NETHER_STAR;
-            builder.addButtonAt(buttonSlots[i], "§a" + name, icon,
+            builder.addButtonAt(buttonSlots[i], "§a" + displayGroupName(name), icon,
                     "§7クリックして移動\n§8Seed: §f" + groups.get(name).seed);
         }
         builder.then((result, p) -> {
@@ -500,6 +528,12 @@ public class OtherworldModule implements Listener {
 
     private boolean isSelectionLobby(World world) {
         return world != null && SELECTION_LOBBY_WORLD.equals(world.getName());
+    }
+
+    private static boolean isSelectionLobbyId(String id) {
+        if (id == null) return false;
+        return SELECTION_LOBBY_WORLD.equalsIgnoreCase(id)
+                || ("minecraft:" + SELECTION_LOBBY_WORLD).equalsIgnoreCase(id);
     }
 
     private void enterSelectionLobby(Player player) {
@@ -622,7 +656,9 @@ public class OtherworldModule implements Listener {
     private synchronized void detectAndMirrorCustomDimension(World source) {
         if (source == null || isKnownPhysicalWorld(source)) return;
         String sourceKey = source.getKey().toString();
-        if (OtherworldDimensionKeys.isGenerated(sourceKey)) return;
+        if (OtherworldDimensionKeys.isGenerated(sourceKey)
+            || isSelectionLobby(source)
+            || isSelectionLobbyId(sourceKey)) return;
 
         Group defaults = groups.get("default");
         if (defaults == null) return;
@@ -638,6 +674,7 @@ public class OtherworldModule implements Listener {
         Group defaults = groups.get("default");
         if (defaults == null) return;
         for (var entry : defaults.customWorlds.entrySet()) {
+            if (isSelectionLobbyId(entry.getKey())) continue;
             World source = resolveWorldId(entry.getValue());
             if (source != null) ensureCustomMirror(group, entry.getKey(), source);
         }
@@ -749,7 +786,29 @@ public class OtherworldModule implements Listener {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT).trim();
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.codePoints().allMatch(OtherworldModule::isWorldNameCharacter)) {
+            return lower;
+        }
+
+        StringBuilder encoded = new StringBuilder("u");
+        lower.codePoints().forEach(codePoint -> encoded
+                .append('_')
+                .append(Integer.toHexString(codePoint)));
+        return encoded.toString();
+    }
+
+    private static boolean isWorldNameCharacter(int codePoint) {
+        return codePoint >= 'a' && codePoint <= 'z'
+                || codePoint >= '0' && codePoint <= '9'
+                || codePoint == '_' || codePoint == '-' || codePoint == '.' || codePoint == '/';
     }
 
     private static final class Group {

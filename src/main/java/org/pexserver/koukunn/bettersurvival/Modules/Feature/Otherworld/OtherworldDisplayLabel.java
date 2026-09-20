@@ -18,6 +18,8 @@ public final class OtherworldDisplayLabel {
             return name;
         }
         String group = otherworld.getGroup(player);
-        return "default".equalsIgnoreCase(group) ? name : name + " [" + group + "]";
+        return "default".equalsIgnoreCase(group)
+            ? name
+            : name + " [" + otherworld.displayGroupName(group) + "]";
     }
 }

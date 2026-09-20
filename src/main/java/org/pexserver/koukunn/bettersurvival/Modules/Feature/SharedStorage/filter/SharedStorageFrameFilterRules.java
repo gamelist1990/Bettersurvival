@@ -538,7 +538,8 @@ public class SharedStorageFrameFilterRules {
         if (matchesOreCategory(material))
             return true;
         if (isTaggedAny(material, Tag.ITEMS_DYES, Tag.ITEMS_COALS, Tag.ITEMS_TRIM_MATERIALS, Tag.ITEMS_DECORATED_POT_INGREDIENTS,
-                Tag.ITEMS_STONE_CRAFTING_MATERIALS, Tag.ITEMS_BREWING_FUEL, Tag.ITEMS_LOGS, Tag.ITEMS_PLANKS, Tag.ITEMS_VILLAGER_PLANTABLE_SEEDS))
+            Tag.ITEMS_STONE_CRAFTING_MATERIALS, Tag.ITEMS_LOGS, Tag.ITEMS_PLANKS, Tag.ITEMS_VILLAGER_PLANTABLE_SEEDS)
+            || material == Material.BLAZE_POWDER)
             return true;
         String name = material.name();
         if (name.startsWith("RAW_") || name.contains("_RAW_"))
