@@ -72,6 +72,7 @@ public class OtherworldModule implements Listener {
     private final OtherworldPlayerDataStore playerDataStore;
     private final Map<String, Group> groups = new LinkedHashMap<>();
     private final Map<String, Set<UUID>> members = new LinkedHashMap<>();
+    private final Set<String> whitelistEnabledGroups = new LinkedHashSet<>();
     private final Set<String> creatingMirrorKeys = new HashSet<>();
     private final Set<UUID> selectionTransitions = new HashSet<>();
     private final Map<UUID, GameMode> selectionLobbyGameModes = new HashMap<>();
@@ -93,6 +94,7 @@ public class OtherworldModule implements Listener {
     public synchronized void load() {
         groups.clear();
         members.clear();
+        whitelistEnabledGroups.clear();
         PEXConfig config = configManager.loadConfig(CONFIG_PATH).orElseGet(PEXConfig::new);
         Object configuredJoinGroup = config.get("defaultJoinGroup");
         defaultJoinGroup = normalize(configuredJoinGroup == null ? "default" : configuredJoinGroup.toString());
@@ -159,6 +161,18 @@ public class OtherworldModule implements Listener {
                 members.put(normalize(entry.getKey().toString()), ids);
             }
         }
+        Object rawWhitelistEnabled = config.get("whitelistEnabled");
+        if (rawWhitelistEnabled instanceof List<?> list) {
+            for (Object value : list) {
+                String groupName = normalize(value == null ? "" : value.toString());
+                if (groups.containsKey(groupName)) {
+                    whitelistEnabledGroups.add(groupName);
+                    members.putIfAbsent(groupName, new LinkedHashSet<>());
+                }
+            }
+        } else {
+            whitelistEnabledGroups.addAll(members.keySet());
+        }
         save();
     }
 
@@ -191,6 +205,7 @@ public class OtherworldModule implements Listener {
         members.forEach((name, ids) -> memberData.put(name, ids.stream().map(UUID::toString).toList()));
         config.put("groups", groupData);
         config.put("members", memberData);
+        config.put("whitelistEnabled", List.copyOf(whitelistEnabledGroups));
         config.put("defaultJoinGroup", defaultJoinGroup);
         configManager.saveConfig(CONFIG_PATH, config);
     }
@@ -284,10 +299,10 @@ public class OtherworldModule implements Listener {
     }
 
     public synchronized boolean canAccess(Player player, String groupName) {
-        if (groupName == null) return false;
+        if (player == null || groupName == null) return false;
         Group group = groups.get(normalize(groupName));
         return group != null && (!isWhitelistEnabled(group.name)
-                || player.isOp() || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
+                || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
     }
 
     public synchronized boolean isGroupLocked(String groupName) {
@@ -296,8 +311,7 @@ public class OtherworldModule implements Listener {
     }
 
     public synchronized boolean canEnter(Player player, String groupName) {
-        if (!canAccess(player, groupName)) return false;
-        return player != null && (player.isOp() || !isGroupLocked(groupName));
+        return player != null && canAccess(player, groupName) && !isGroupLocked(groupName);
     }
 
     public synchronized String getLockDisplay(String groupName) {
@@ -342,7 +356,7 @@ public class OtherworldModule implements Listener {
     }
 
     private boolean isWhitelistEnabled(String group) {
-        return members.containsKey(group);
+        return whitelistEnabledGroups.contains(normalize(group));
     }
 
     public synchronized boolean createGroup(String name) {
@@ -580,6 +594,7 @@ public class OtherworldModule implements Listener {
         }
         groups.remove(name);
         members.remove(name);
+        whitelistEnabledGroups.remove(name);
         save();
         for (String worldId : worldIds) deleteWorldDirectory(worldId);
         return true;
@@ -632,8 +647,12 @@ public class OtherworldModule implements Listener {
     public synchronized boolean setWhitelist(String group, boolean enabled) {
         group = normalize(group);
         if (!groups.containsKey(group)) return false;
-        if (enabled) members.putIfAbsent(group, new LinkedHashSet<>());
-        else members.remove(group);
+        if (enabled) {
+            whitelistEnabledGroups.add(group);
+            members.putIfAbsent(group, new LinkedHashSet<>());
+        } else {
+            whitelistEnabledGroups.remove(group);
+        }
         save();
         return true;
     }
@@ -670,7 +689,7 @@ public class OtherworldModule implements Listener {
     }
 
     public synchronized boolean hasWhitelist(String groupName) {
-        return members.containsKey(normalize(groupName));
+        return isWhitelistEnabled(groupName);
     }
 
     @EventHandler
@@ -896,9 +915,7 @@ public class OtherworldModule implements Listener {
                 + "\n§7公開日時: §e" + getLockDate(groupName)
                 + "\n§f" + getLockReason(groupName)
                 + "\n§8Seed: §f" + (group == null ? 0L : group.seed)
-                + (player.isOp()
-                ? "\n§dOperator: 移動可能"
-                : "\n§cロック解除までお待ちください");
+                + "\n§cロック解除までお待ちください";
     }
 
     private ItemStack selectionItem(Player player, String groupName) {
