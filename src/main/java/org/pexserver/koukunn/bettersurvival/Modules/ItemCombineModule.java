@@ -15,7 +15,6 @@ import org.bukkit.scheduler.BukkitTask;
 import org.pexserver.koukunn.bettersurvival.Loader;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -90,18 +89,17 @@ public class ItemCombineModule implements Listener {
             return;
         }
 
-        Iterator<Map.Entry<UUID, Long>> iterator = trackedSeeds.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<UUID, Long> entry = iterator.next();
+        List<Map.Entry<UUID, Long>> seedsToCheck = new ArrayList<>(trackedSeeds.entrySet());
+        for (Map.Entry<UUID, Long> entry : seedsToCheck) {
             UUID seedId = entry.getKey();
             if (!(Bukkit.getEntity(seedId) instanceof Item seed) || !seed.isValid()) {
-                iterator.remove();
+                trackedSeeds.remove(seedId, entry.getValue());
                 continue;
             }
 
             long elapsed = schedulerTick - entry.getValue();
             if (!runDueChecks(seedId, elapsed)) {
-                iterator.remove();
+                trackedSeeds.remove(seedId, entry.getValue());
             }
         }
     }

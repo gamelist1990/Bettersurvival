@@ -1,5 +1,6 @@
 package org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld;
 
+import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -10,13 +11,26 @@ import org.bukkit.WorldCreator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Mannequin;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -24,6 +38,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Core.Config.ConfigManager;
 import org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
@@ -35,7 +50,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.MonthDay;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -75,16 +92,34 @@ public class OtherworldModule implements Listener {
     private final Set<String> whitelistEnabledGroups = new LinkedHashSet<>();
     private final Set<String> creatingMirrorKeys = new HashSet<>();
     private final Set<UUID> selectionTransitions = new HashSet<>();
+    private final Set<UUID> selectionMenuBypass = new HashSet<>();
+    private final Set<UUID> openSelectionMenus = new HashSet<>();
+    private final Map<UUID, UUID> lockedDetailSessions = new HashMap<>();
     private final Map<UUID, GameMode> selectionLobbyGameModes = new HashMap<>();
+    private final Set<UUID> lobbyEditMode = new HashSet<>();
+    private final NamespacedKey lobbyItemKey;
+    private final NamespacedKey lobbyNpcGroupKey;
+    private final NamespacedKey lobbyFlyKey;
+    private final NamespacedKey lobbyPlayersKey;
     private final Map<UUID, String> deathGroups = new HashMap<>();
+    private final Map<String, LobbyRoute> lobbyRoutes = new LinkedHashMap<>();
     private String defaultJoinGroup = "default";
+    private boolean alwaysLobby;
+    private boolean autoMenu = true;
+    private boolean lobbyFlightAllowed = true;
+    private LobbyPoint lobbySpawn;
 
     public OtherworldModule(Loader plugin) {
         this.plugin = plugin;
         this.configManager = plugin.getConfigManager();
         this.playerDataStore = new OtherworldPlayerDataStore(plugin);
+        this.lobbyItemKey = new NamespacedKey(plugin, "otherworld_lobby_item");
+        this.lobbyNpcGroupKey = new NamespacedKey(plugin, "otherworld_lobby_npc_group");
+        this.lobbyFlyKey = new NamespacedKey(plugin, "otherworld_lobby_fly");
+        this.lobbyPlayersKey = new NamespacedKey(plugin, "otherworld_lobby_players");
         load();
         Bukkit.getScheduler().runTask(plugin, this::scanAndMirrorCustomDimensions);
+        Bukkit.getScheduler().runTaskTimer(plugin, this::refreshLobbyNpcs, 20L, 20L);
     }
 
     public OtherworldPlayerDataStore getPlayerDataStore() {
@@ -95,7 +130,27 @@ public class OtherworldModule implements Listener {
         groups.clear();
         members.clear();
         whitelistEnabledGroups.clear();
+        lobbyRoutes.clear();
         PEXConfig config = configManager.loadConfig(CONFIG_PATH).orElseGet(PEXConfig::new);
+        alwaysLobby = readBoolean(config.get("lobbyAlwaysSpawn"), false);
+        autoMenu = readBoolean(config.get("lobbyAutoMenu"), true);
+        lobbyFlightAllowed = readBoolean(config.get("lobbyFlightAllowed"), true);
+        lobbySpawn = readLobbyPoint(config.get("lobbySpawn"));
+        Object rawRoutes = config.get("lobbyRoutes");
+        if (rawRoutes instanceof Map<?, ?> routes) {
+            for (var entry : routes.entrySet()) {
+                if (!(entry.getValue() instanceof Map<?, ?> values)) continue;
+                try {
+                    String routeName = normalize(entry.getKey().toString());
+                    MonthDay start = MonthDay.parse("--" + values.get("start"));
+                    MonthDay end = MonthDay.parse("--" + values.get("end"));
+                    LobbyPoint point = readLobbyPoint(values.get("location"));
+                    if (!routeName.isBlank() && point != null) {
+                        lobbyRoutes.put(routeName, new LobbyRoute(routeName, start, end, point));
+                    }
+                } catch (RuntimeException ignored) { }
+            }
+        }
         Object configuredJoinGroup = config.get("defaultJoinGroup");
         defaultJoinGroup = normalize(configuredJoinGroup == null ? "default" : configuredJoinGroup.toString());
         Object rawGroups = config.get("groups");
@@ -207,7 +262,33 @@ public class OtherworldModule implements Listener {
         config.put("members", memberData);
         config.put("whitelistEnabled", List.copyOf(whitelistEnabledGroups));
         config.put("defaultJoinGroup", defaultJoinGroup);
+        config.put("lobbyAlwaysSpawn", alwaysLobby);
+        config.put("lobbyAutoMenu", autoMenu);
+        config.put("lobbyFlightAllowed", lobbyFlightAllowed);
+        if (lobbySpawn != null) config.put("lobbySpawn", lobbySpawn.toMap());
+        Map<String, Object> routeData = new LinkedHashMap<>();
+        lobbyRoutes.forEach((name, route) -> routeData.put(name, route.toMap()));
+        config.put("lobbyRoutes", routeData);
         configManager.saveConfig(CONFIG_PATH, config);
+    }
+
+    private boolean readBoolean(Object raw, boolean fallback) {
+        return raw instanceof Boolean value ? value
+                : raw == null ? fallback : Boolean.parseBoolean(raw.toString());
+    }
+
+    private LobbyPoint readLobbyPoint(Object raw) {
+        if (!(raw instanceof Map<?, ?> values)) return null;
+        try {
+            return new LobbyPoint(
+                    ((Number) values.get("x")).doubleValue(),
+                    ((Number) values.get("y")).doubleValue(),
+                    ((Number) values.get("z")).doubleValue(),
+                    values.get("yaw") instanceof Number number ? number.floatValue() : 0.0F,
+                    values.get("pitch") instanceof Number number ? number.floatValue() : 0.0F);
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 
     public synchronized Set<String> getGroupNames() {
@@ -301,7 +382,7 @@ public class OtherworldModule implements Listener {
     public synchronized boolean canAccess(Player player, String groupName) {
         if (player == null || groupName == null) return false;
         Group group = groups.get(normalize(groupName));
-        return group != null && (!isWhitelistEnabled(group.name)
+        return group != null && (player.isOp() || !isWhitelistEnabled(group.name)
                 || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
     }
 
@@ -386,9 +467,17 @@ public class OtherworldModule implements Listener {
     }
 
     public synchronized boolean move(Player player, String groupName) {
+        return move(player, groupName, false);
+    }
+
+    public synchronized boolean forceMove(Player player, String groupName) {
+        return player != null && player.isOp() && move(player, groupName, true);
+    }
+
+    private synchronized boolean move(Player player, String groupName, boolean ignoreLock) {
         groupName = normalize(groupName);
         Group group = groups.get(groupName);
-        if (group == null || !canEnter(player, groupName)) {
+        if (group == null || !canAccess(player, groupName) || (!ignoreLock && isGroupLocked(groupName))) {
             if (group != null && canAccess(player, groupName) && isGroupLocked(groupName)) {
                 player.sendMessage(getLockMessage(groupName));
             }
@@ -700,17 +789,16 @@ public class OtherworldModule implements Listener {
             String current = getGroup(player);
             if (isSelectionLobby(player.getWorld())) {
                 enterSelectionLobby(player);
-                List<String> accessible = accessibleGroups(player);
-                if (!accessible.isEmpty()) showSelection(player, accessible);
+                openAutomaticSelection(player);
+                return;
+            }
+            if (alwaysLobby) {
+                sendToSelectionLobby(player);
                 return;
             }
             if (!current.equals("default")) {
                 if (isGroupLocked(current)) {
-                    World lobby = ensureSelectionLobby();
-                    if (lobby != null && player.teleport(lobby.getSpawnLocation())) {
-                        enterSelectionLobby(player);
-                        showSelection(player, accessibleGroups(player));
-                    }
+                    sendToSelectionLobby(player);
                     return;
                 }
                 if (!canEnter(player, current)) {
@@ -733,19 +821,11 @@ public class OtherworldModule implements Listener {
                     && canEnter(player, defaultJoinGroup)) {
                 move(player, defaultJoinGroup);
             } else if (accessible.size() > 1) {
-                World lobby = ensureSelectionLobby();
-                if (lobby != null && player.teleport(lobby.getSpawnLocation())) {
-                    enterSelectionLobby(player);
-                    showSelection(player, accessible);
-                }
+                sendToSelectionLobby(player);
             } else if (accessible.size() == 1) {
                 String onlyGroup = accessible.get(0);
                 if (isGroupLocked(onlyGroup)) {
-                    World lobby = ensureSelectionLobby();
-                    if (lobby != null && player.teleport(lobby.getSpawnLocation())) {
-                        enterSelectionLobby(player);
-                        showSelection(player, accessible);
-                    }
+                    sendToSelectionLobby(player);
                 } else if (onlyGroup.equals("default")) {
                     playerDataStore.load(player, "default");
                 } else {
@@ -757,14 +837,46 @@ public class OtherworldModule implements Listener {
         });
     }
 
+    public boolean moveToLobby(Player player) {
+        if (player == null) return false;
+        World lobby = ensureSelectionLobby();
+        if (lobby == null) return false;
+        boolean alreadyInLobby = isSelectionLobby(player.getWorld());
+        boolean teleported = player.teleport(resolveLobbySpawn(lobby), PlayerTeleportEvent.TeleportCause.PLUGIN);
+        if (teleported && alreadyInLobby) {
+            enterSelectionLobby(player);
+            openAutomaticSelection(player);
+        }
+        return teleported;
+    }
+
+    private void sendToSelectionLobby(Player player) {
+        moveToLobby(player);
+    }
+
+    private void openAutomaticSelection(Player player) {
+        if (autoMenu && !selectionMenuBypass.contains(player.getUniqueId())) {
+            enterAutomaticSelectionMode(player);
+            showSelection(player);
+        } else {
+            enterInteractiveLobbyMode(player);
+        }
+    }
+
     @EventHandler
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
         if (isSelectionLobby(player.getWorld())) {
+            String source = getGroup(event.getFrom());
+            if (!"selection-lobby".equals(source)) {
+                playerDataStore.save(player, source);
+            }
             enterSelectionLobby(player);
+            openAutomaticSelection(player);
             return;
         }
         if (isSelectionLobby(event.getFrom())) {
+            showAllPlayersTo(player);
             playerDataStore.load(player, getGroup(player.getWorld()));
             return;
         }
@@ -818,8 +930,10 @@ public class OtherworldModule implements Listener {
         Player player = event.getPlayer();
         deathGroups.remove(player.getUniqueId());
         if (isSelectionLobby(player.getWorld())) {
-            playerDataStore.save(player, "default");
             selectionLobbyGameModes.remove(player.getUniqueId());
+            lobbyEditMode.remove(player.getUniqueId());
+            selectionMenuBypass.remove(player.getUniqueId());
+            showAllPlayersTo(player);
             return;
         }
         playerDataStore.ensureDefaultMigration(player);
@@ -830,7 +944,100 @@ public class OtherworldModule implements Listener {
         return groups.keySet().stream().filter(name -> canAccess(player, name)).toList();
     }
 
+    public List<String> getAccessibleGroupNames(Player player) {
+        return List.copyOf(accessibleGroups(player));
+    }
+
+    public boolean spawnLobbyNpc(Player player, String groupName, String skinName) {
+        if (player == null || !player.isOp() || !isSelectionLobby(player.getWorld())) return false;
+        String normalizedGroup = normalize(groupName);
+        if (!groups.containsKey(normalizedGroup) || skinName == null || !skinName.matches("[A-Za-z0-9_]{1,16}")) {
+            return false;
+        }
+        Location location = player.getLocation();
+        Mannequin mannequin = player.getWorld().spawn(location, Mannequin.class, entity -> {
+            entity.setProfile(ResolvableProfile.resolvableProfile().name(skinName).build());
+            entity.setImmovable(true);
+            entity.setPersistent(true);
+            entity.setInvulnerable(true);
+            entity.setCustomNameVisible(true);
+            entity.getPersistentDataContainer().set(lobbyNpcGroupKey, PersistentDataType.STRING, normalizedGroup);
+        });
+        updateLobbyNpc(mannequin);
+        refreshLobbyNpcVisibility(mannequin);
+        return true;
+    }
+
+    public synchronized boolean setLobbySetting(String setting, boolean enabled) {
+        switch (setting.toLowerCase(Locale.ROOT)) {
+            case "always", "always-spawn", "alwayslobby" -> alwaysLobby = enabled;
+            case "automenu", "auto-menu" -> autoMenu = enabled;
+            case "fly", "flight" -> {
+                lobbyFlightAllowed = enabled;
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (isSelectionLobby(player.getWorld()) && !lobbyEditMode.contains(player.getUniqueId())) {
+                        applyLobbyFlight(player);
+                    }
+                }
+            }
+            default -> {
+                return false;
+            }
+        }
+        save();
+        return true;
+    }
+
+    public synchronized String getLobbySettingsDisplay() {
+        return "always-spawn=" + alwaysLobby + ", auto-menu=" + autoMenu
+                + ", fly=" + lobbyFlightAllowed;
+    }
+
+    public synchronized boolean setLobbySpawn(Player player) {
+        if (player == null || !player.isOp() || !isSelectionLobby(player.getWorld())) return false;
+        lobbySpawn = LobbyPoint.from(player.getLocation());
+        save();
+        return true;
+    }
+
+    public synchronized boolean setLobbyRoute(Player player, String name, String startText, String endText) {
+        if (player == null || !player.isOp() || !isSelectionLobby(player.getWorld())) return false;
+        try {
+            String normalizedName = normalize(name);
+            MonthDay start = MonthDay.parse("--" + startText);
+            MonthDay end = MonthDay.parse("--" + endText);
+            if (normalizedName.isBlank()) return false;
+            lobbyRoutes.put(normalizedName,
+                    new LobbyRoute(normalizedName, start, end, LobbyPoint.from(player.getLocation())));
+            save();
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    public synchronized boolean removeLobbyRoute(String name) {
+        if (lobbyRoutes.remove(normalize(name)) == null) return false;
+        save();
+        return true;
+    }
+
+    public synchronized List<String> getLobbyRouteNames() {
+        return List.copyOf(lobbyRoutes.keySet());
+    }
+
+    public synchronized List<String> getLobbyRouteDescriptions() {
+        return lobbyRoutes.values().stream()
+                .map(route -> route.name + " (" + route.displayStart() + " - " + route.displayEnd() + ")")
+                .toList();
+    }
+
+    public void showSelection(Player player) {
+        showSelection(player, accessibleGroups(player));
+    }
+
     private void showSelection(Player player, List<String> accessible) {
+        openSelectionMenus.add(player.getUniqueId());
         ChestUI.Builder builder = ChestUI.builder().title("§8✦ Otherworld Select ✦").size(54);
         for (int slot = 0; slot < 54; slot++) {
             builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Otherworld selection");
@@ -850,8 +1057,22 @@ public class OtherworldModule implements Listener {
                 "§c§lサーバーから退出",
                 Material.RED_BED,
                 "§7クリックしてサーバーから退出します\n§8また遊びに来てください！");
+        if (player.isOp()) {
+            builder.addButtonAt(45,
+                    "§e§lメニューを閉じる",
+                    Material.OAK_DOOR,
+                    "§7ホットバー式のロビーメニューへ移行します");
+        }
         builder.then((result, p) -> {
             if (!result.success || result.slot == null) return;
+            if (result.slot == 45 && p.isOp()) {
+                selectionMenuBypass.add(p.getUniqueId());
+                selectionTransitions.add(p.getUniqueId());
+                ChestUI.closeMenu(p);
+                enterInteractiveLobbyMode(p);
+                applyLobbyHotbar(p);
+                return;
+            }
             if (result.slot == 53) {
                 selectionTransitions.add(p.getUniqueId());
                 ChestUI.closeMenu(p);
@@ -1027,7 +1248,10 @@ public class OtherworldModule implements Listener {
             lobby.setSpawnLocation(0, 64, 0);
             for (int x = -2; x <= 2; x++) {
                 for (int z = -2; z <= 2; z++) {
-                    lobby.getBlockAt(x, 63, z).setType(Material.BLACK_CONCRETE);
+                    var floorBlock = lobby.getBlockAt(x, 63, z);
+                    if (floorBlock.getType().isAir()) {
+                        floorBlock.setType(Material.BLACK_CONCRETE);
+                    }
                 }
             }
             lobby.setGameRule(org.bukkit.GameRules.ADVANCE_TIME, false);
@@ -1035,6 +1259,14 @@ public class OtherworldModule implements Listener {
             lobby.setTime(6000L);
         }
         return lobby;
+    }
+
+    private Location resolveLobbySpawn(World lobby) {
+        MonthDay today = MonthDay.from(LocalDate.now(LOCK_ZONE));
+        for (LobbyRoute route : lobbyRoutes.values()) {
+            if (route.includes(today)) return route.location.toLocation(lobby);
+        }
+        return lobbySpawn == null ? lobby.getSpawnLocation() : lobbySpawn.toLocation(lobby);
     }
 
     private boolean isSelectionLobby(World world) {
@@ -1049,24 +1281,464 @@ public class OtherworldModule implements Listener {
 
     private void enterSelectionLobby(Player player) {
         selectionLobbyGameModes.putIfAbsent(player.getUniqueId(), player.getGameMode());
-        if (player.getGameMode() != GameMode.SPECTATOR) player.setGameMode(GameMode.SPECTATOR);
+        lobbyEditMode.remove(player.getUniqueId());
+        player.setInvulnerable(true);
+        applyLobbyHotbar(player);
+        enterInteractiveLobbyMode(player);
+        refreshPlayerVisibility();
+    }
+
+    private void enterAutomaticSelectionMode(Player player) {
+        if (!isSelectionLobby(player.getWorld()) || lobbyEditMode.contains(player.getUniqueId())) return;
+        player.setFlying(false);
+        player.setAllowFlight(false);
+        player.setGameMode(GameMode.SPECTATOR);
+    }
+
+    private void enterInteractiveLobbyMode(Player player) {
+        if (!isSelectionLobby(player.getWorld()) || lobbyEditMode.contains(player.getUniqueId())) return;
+        player.setGameMode(GameMode.ADVENTURE);
+        applyLobbyFlight(player);
     }
 
     private void restoreSelectionGameMode(Player player) {
         GameMode previous = selectionLobbyGameModes.remove(player.getUniqueId());
         if (previous != null && player.getGameMode() != previous) player.setGameMode(previous);
+        lobbyEditMode.remove(player.getUniqueId());
+        player.setInvulnerable(false);
+        player.setFlying(false);
+        player.setAllowFlight(previous == GameMode.CREATIVE || previous == GameMode.SPECTATOR);
+    }
+
+    private void applyLobbyHotbar(Player player) {
+        player.getInventory().clear();
+        player.getInventory().setItem(0, lobbyItem(Material.NETHER_STAR, "settings", "§b§lロビー設定",
+            "§7飛行とプレイヤー表示を変更"));
+        player.getInventory().setItem(4, lobbyItem(Material.COMPASS, "menu", "§a§lOtherworld メニュー",
+                "§7右クリックして移動先を選択"));
+        player.getInventory().setItem(8, lobbyItem(Material.RED_BED, "exit", "§c§lサーバーから退出",
+                "§7右クリックして退出"));
+        player.getInventory().setHeldItemSlot(4);
+        player.updateInventory();
+    }
+
+    private ItemStack lobbyItem(Material material, String role, String name, String lore) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        ComponentUtils.setDisplayName(meta, name);
+        ComponentUtils.setLore(meta, lore);
+        meta.getPersistentDataContainer().set(lobbyItemKey, PersistentDataType.STRING, role);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private String lobbyItemRole(ItemStack item) {
+        if (item == null || item.getType().isAir() || !item.hasItemMeta()) return null;
+        return item.getItemMeta().getPersistentDataContainer().get(lobbyItemKey, PersistentDataType.STRING);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyInteract(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        if (!isSelectionLobby(player.getWorld())) return;
+        String role = lobbyItemRole(event.getItem());
+        if (role == null) return;
+        event.setCancelled(true);
+        if ("menu".equals(role)) {
+            showSelection(player);
+        } else if ("settings".equals(role)) {
+            showLobbySettings(player);
+        } else if ("exit".equals(role)) {
+            player.kick(ComponentUtils.legacy("§cサーバーから退出しました\n§7また遊びに来てください！"));
+        }
+    }
+
+    private void showLobbySettings(Player player) {
+        boolean fly = isPersonalFlightEnabled(player);
+        boolean playersVisible = arePlayersVisible(player);
+        ChestUI.Builder builder = ChestUI.builder().title("§8ロビー設定").size(27);
+        for (int slot = 0; slot < 27; slot++) {
+            builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Lobby settings");
+        }
+        builder.addButtonAt(11,
+                fly && lobbyFlightAllowed ? "§a飛行: ON" : "§c飛行: OFF",
+                fly && lobbyFlightAllowed ? Material.FEATHER : Material.HEAVY_WEIGHTED_PRESSURE_PLATE,
+                lobbyFlightAllowed ? "§7クリックして個人設定を切り替え" : "§c管理者によって無効化されています");
+        builder.addButtonAt(15,
+                playersVisible ? "§a他のプレイヤー: 表示" : "§c他のプレイヤー: 非表示",
+                playersVisible ? Material.PLAYER_HEAD : Material.CARVED_PUMPKIN,
+                "§7クリックして表示を切り替え");
+        if (player.isOp()) {
+            builder.addButtonAt(22, "§c§lAdmin パネル", Material.COMMAND_BLOCK,
+                    "§7ロビー全体設定と管理者アクセス");
+        }
+        builder.then((result, target) -> {
+            if (!result.success || result.slot == null) return;
+            if (result.slot == 11 && lobbyFlightAllowed) {
+                setPersonalFlightEnabled(target, !isPersonalFlightEnabled(target));
+                applyLobbyFlight(target);
+                showLobbySettings(target);
+            } else if (result.slot == 15) {
+                setPlayersVisible(target, !arePlayersVisible(target));
+                refreshPlayerVisibility();
+                showLobbySettings(target);
+            } else if (result.slot == 22 && target.isOp()) {
+                showAdminPanel(target);
+            }
+        }).show(player);
+    }
+
+    private boolean isPersonalFlightEnabled(Player player) {
+        Byte value = player.getPersistentDataContainer().get(lobbyFlyKey, PersistentDataType.BYTE);
+        return value == null || value == 1;
+    }
+
+    private void setPersonalFlightEnabled(Player player, boolean enabled) {
+        player.getPersistentDataContainer().set(lobbyFlyKey, PersistentDataType.BYTE, enabled ? (byte) 1 : (byte) 0);
+    }
+
+    private boolean arePlayersVisible(Player player) {
+        Byte value = player.getPersistentDataContainer().get(lobbyPlayersKey, PersistentDataType.BYTE);
+        return value == null || value == 1;
+    }
+
+    private void setPlayersVisible(Player player, boolean visible) {
+        player.getPersistentDataContainer().set(lobbyPlayersKey, PersistentDataType.BYTE, visible ? (byte) 1 : (byte) 0);
+    }
+
+    private void applyLobbyFlight(Player player) {
+        boolean enabled = lobbyFlightAllowed && isPersonalFlightEnabled(player);
+        player.setAllowFlight(enabled);
+        if (!enabled) player.setFlying(false);
+    }
+
+    private void refreshPlayerVisibility() {
+        List<Player> lobbyPlayers = new java.util.ArrayList<>();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (isSelectionLobby(player.getWorld())) lobbyPlayers.add(player);
+        }
+        for (Player viewer : lobbyPlayers) {
+            for (Player target : lobbyPlayers) {
+                if (viewer == target) continue;
+                if (arePlayersVisible(viewer)) viewer.showPlayer(plugin, target);
+                else viewer.hidePlayer(plugin, target);
+            }
+        }
+    }
+
+    private void showAllPlayersTo(Player viewer) {
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (viewer != target) viewer.showPlayer(plugin, target);
+        }
     }
 
     @EventHandler
     public void onSelectionMenuClose(InventoryCloseEvent event) {
         if (!(event.getPlayer() instanceof Player player) || !isSelectionLobby(player.getWorld())) return;
-        UUID playerId = player.getUniqueId();
-        if (selectionTransitions.remove(playerId)) return;
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        if (!openSelectionMenus.remove(player.getUniqueId())) return;
+        if (selectionTransitions.remove(player.getUniqueId())) return;
+        if (!autoMenu || selectionMenuBypass.contains(player.getUniqueId())) {
+            enterInteractiveLobbyMode(player);
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
             if (player.isOnline() && isSelectionLobby(player.getWorld())) {
-                showSelection(player, accessibleGroups(player));
+                enterAutomaticSelectionMode(player);
+                showSelection(player);
             }
         });
+    }
+
+    private void showAdminPanel(Player player) {
+        if (!player.isOp()) return;
+        boolean editing = lobbyEditMode.contains(player.getUniqueId());
+        ChestUI.Builder builder = ChestUI.builder().title("§8Otherworld Admin").size(54);
+        for (int slot = 0; slot < 54; slot++) {
+            builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Admin panel");
+        }
+        builder.addButtonAt(4, editing ? "§c編集モードを終了" : "§a編集モードを開始",
+                editing ? Material.BARRIER : Material.GOLDEN_PICKAXE,
+                editing ? "§7ロビー保護モードへ戻ります" : "§7Creativeでロビーを編集します");
+        builder.addButtonAt(0, alwaysLobby ? "§a常にロビー: ON" : "§c常にロビー: OFF",
+            Material.ENDER_PEARL, "§7ログイン時に必ずロビーへ送ります");
+        builder.addButtonAt(1, autoMenu ? "§a自動GUI: ON" : "§c自動GUI: OFF",
+            Material.CHEST, "§7ロビー参加時の選択GUIを切り替えます");
+        builder.addButtonAt(7, lobbyFlightAllowed ? "§aロビー飛行: ON" : "§cロビー飛行: OFF",
+            Material.FEATHER, "§7全ユーザーのロビー飛行許可を切り替えます");
+        builder.addButtonAt(8, "§e現在地を通常スポーンに設定", Material.RECOVERY_COMPASS,
+            "§7季節ルートがない期間に使用されます");
+        int[] slots = {19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34};
+        List<String> names = List.copyOf(groups.keySet());
+        for (int index = 0; index < names.size() && index < slots.length; index++) {
+            String groupName = names.get(index);
+            builder.addButtonAt(slots[index],
+                    (isGroupLocked(groupName) ? "§c§lLOCKED §f" : "§a") + displayGroupName(groupName),
+                    isGroupLocked(groupName) ? Material.IRON_BARS : Material.ENDER_EYE,
+                    "§7管理者権限で移動\n" + getLockDisplay(groupName));
+        }
+        builder.then((result, target) -> {
+            if (!result.success || result.slot == null) return;
+            if (result.slot == 4) {
+                ChestUI.closeMenu(target);
+                toggleLobbyEditMode(target);
+                return;
+            }
+            if (result.slot == 0) {
+                setLobbySetting("always-spawn", !alwaysLobby);
+                showAdminPanel(target);
+                return;
+            }
+            if (result.slot == 1) {
+                setLobbySetting("auto-menu", !autoMenu);
+                showAdminPanel(target);
+                return;
+            }
+            if (result.slot == 7) {
+                setLobbySetting("fly", !lobbyFlightAllowed);
+                showAdminPanel(target);
+                return;
+            }
+            if (result.slot == 8) {
+                if (setLobbySpawn(target)) target.sendMessage("§aロビーの通常スポーン地点を設定しました");
+                showAdminPanel(target);
+                return;
+            }
+            for (int index = 0; index < names.size() && index < slots.length; index++) {
+                if (slots[index] != result.slot) continue;
+                ChestUI.closeMenu(target);
+                String groupName = names.get(index);
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (forceMove(target, groupName)) restoreSelectionGameMode(target);
+                    else target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
+                });
+                return;
+            }
+        }).show(player);
+    }
+
+    private void toggleLobbyEditMode(Player player) {
+        if (!player.isOp() || !isSelectionLobby(player.getWorld())) return;
+        UUID playerId = player.getUniqueId();
+        if (lobbyEditMode.remove(playerId)) {
+            enterSelectionLobby(player);
+            player.sendMessage("§aロビー保護モードへ戻りました");
+            return;
+        }
+        lobbyEditMode.add(playerId);
+        player.getInventory().clear();
+        player.getInventory().setItem(4, lobbyItem(Material.NETHER_STAR, "settings", "§b§lロビー設定",
+            "§7右クリックして編集モードを終了"));
+        player.getInventory().setHeldItemSlot(4);
+        player.setGameMode(GameMode.CREATIVE);
+        player.setAllowFlight(true);
+        player.setFlying(true);
+        player.sendMessage("§eロビー編集モードを開始しました");
+    }
+
+    private boolean isLobbyProtected(Player player) {
+        return isSelectionLobby(player.getWorld()) && !lobbyEditMode.contains(player.getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyBlockBreak(BlockBreakEvent event) {
+        if (isLobbyProtected(event.getPlayer())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyBlockPlace(BlockPlaceEvent event) {
+        if (isLobbyProtected(event.getPlayer())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyDrop(PlayerDropItemEvent event) {
+        if (isSelectionLobby(event.getPlayer().getWorld())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyInventoryClick(InventoryClickEvent event) {
+        if (event.getWhoClicked() instanceof Player player && isLobbyProtected(player)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyInventoryDrag(InventoryDragEvent event) {
+        if (event.getWhoClicked() instanceof Player player && isLobbyProtected(player)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player && isSelectionLobby(player.getWorld())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyAttack(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Player player && isSelectionLobby(player.getWorld())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyHunger(FoodLevelChangeEvent event) {
+        if (event.getEntity() instanceof Player player && isSelectionLobby(player.getWorld())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onLobbyVoidFall(PlayerMoveEvent event) {
+        Location target = event.getTo();
+        if (!isSelectionLobby(target.getWorld()) || target.getY() > 0.0D || event.getFrom().getY() <= 0.0D) return;
+        event.setTo(resolveLobbySpawn(target.getWorld()));
+        event.getPlayer().setFallDistance(0.0F);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyCommand(PlayerCommandPreprocessEvent event) {
+        if (!event.getPlayer().isOp() && isSelectionLobby(event.getPlayer().getWorld())) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cロビーではコマンドを使用できません");
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onLobbyNpcInteract(PlayerInteractEntityEvent event) {
+        if (!(event.getRightClicked() instanceof Mannequin mannequin)) return;
+        String groupName = mannequin.getPersistentDataContainer().get(lobbyNpcGroupKey, PersistentDataType.STRING);
+        if (groupName == null) return;
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        selectionMenuBypass.add(player.getUniqueId());
+        enterInteractiveLobbyMode(player);
+        if (!canAccess(player, groupName)) {
+            player.hideEntity(plugin, mannequin);
+            player.sendMessage("§cこのOtherworldにはアクセスできません");
+            return;
+        }
+        showLockedGroupDetails(player, groupName);
+    }
+
+    private void showLockedGroupDetails(Player player, String groupName) {
+        if (!player.isOnline() || !isSelectionLobby(player.getWorld()) || !canAccess(player, groupName)) return;
+        boolean locked = isGroupLocked(groupName);
+        UUID sessionId = UUID.randomUUID();
+        lockedDetailSessions.put(player.getUniqueId(), sessionId);
+        ChestUI.Builder builder = ChestUI.builder().title("§8" + displayGroupName(groupName) + " 詳細").size(27);
+        for (int slot = 0; slot < 27; slot++) {
+            builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Otherworld details");
+        }
+        builder.addButtonAt(13,
+                locked ? "§c§l公開待ち" : "§a§l参加できます",
+                locked ? Material.CLOCK : Material.LIME_DYE,
+                locked
+                        ? "§7公開まで: §e" + getLockCountdown(groupName)
+                        + "\n§7公開日時: §e" + getLockDate(groupName)
+                        + "\n§f" + getLockReason(groupName)
+                        : "§7公開時刻になりました");
+        builder.addButtonAt(15,
+            locked && !player.isOp() ? "§c§l参加できません"
+                : locked ? "§e§l管理者として参加" : "§a§l参加",
+            locked && !player.isOp() ? Material.RED_DYE
+                : locked ? Material.COMMAND_BLOCK : Material.LIME_DYE,
+            locked && !player.isOp() ? "§7公開までお待ちください"
+                : locked ? "§7ロックを無視して参加します" : "§7クリックしてOtherworldへ参加します");
+        builder.addButtonAt(11, "§e戻る", Material.ARROW, "§7ロビーへ戻ります");
+        builder.then((result, target) -> {
+            if (!result.success || result.slot == null) return;
+            if (result.slot == 11) {
+                ChestUI.closeMenu(target);
+                enterInteractiveLobbyMode(target);
+                return;
+            }
+            if (result.slot != 15) return;
+            if (isGroupLocked(groupName) && !target.isOp()) {
+                target.sendMessage(getLockMessage(groupName));
+                showLockedGroupDetails(target, groupName);
+                return;
+            }
+            ChestUI.closeMenu(target);
+            boolean moved = target.isOp() ? forceMove(target, groupName) : move(target, groupName);
+            if (moved) restoreSelectionGameMode(target);
+            else target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
+        }).show(player);
+        startLockedGroupCountdown(player, groupName, sessionId);
+    }
+
+    private void startLockedGroupCountdown(Player player, String groupName, UUID sessionId) {
+        new org.bukkit.scheduler.BukkitRunnable() {
+            private boolean wasLocked = isGroupLocked(groupName);
+
+            @Override
+            public void run() {
+                if (!player.isOnline() || !isSelectionLobby(player.getWorld())
+                        || !sessionId.equals(lockedDetailSessions.get(player.getUniqueId()))
+                        || player.getOpenInventory().getTopInventory().getSize() != 27) {
+                    cancel();
+                    return;
+                }
+                boolean locked = isGroupLocked(groupName);
+                player.getOpenInventory().getTopInventory().setItem(13,
+                        detailStatusItem(groupName, locked));
+                player.getOpenInventory().getTopInventory().setItem(15,
+                    detailJoinItem(player, locked));
+                player.updateInventory();
+                if (wasLocked && !locked) {
+                    player.sendMessage("§a" + displayGroupName(groupName) + " が公開されました。参加できます。");
+                }
+                wasLocked = locked;
+            }
+        }.runTaskTimer(plugin, 20L, 20L);
+    }
+
+    private ItemStack detailStatusItem(String groupName, boolean locked) {
+        ItemStack item = new ItemStack(locked ? Material.CLOCK : Material.LIME_DYE);
+        ItemMeta meta = item.getItemMeta();
+        ComponentUtils.setDisplayName(meta, locked ? "§c§l公開待ち" : "§a§l参加できます");
+        ComponentUtils.setLore(meta, (locked
+                ? "§7公開まで: §e" + getLockCountdown(groupName)
+                + "\n§7公開日時: §e" + getLockDate(groupName)
+                + "\n§f" + getLockReason(groupName)
+                : "§7公開時刻になりました").split("\n"));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+        private ItemStack detailJoinItem(Player player, boolean locked) {
+        ItemStack item = new ItemStack(locked && !player.isOp() ? Material.RED_DYE
+            : locked ? Material.COMMAND_BLOCK : Material.LIME_DYE);
+        ItemMeta meta = item.getItemMeta();
+        ComponentUtils.setDisplayName(meta, locked && !player.isOp() ? "§c§l参加できません"
+            : locked ? "§e§l管理者として参加" : "§a§l参加");
+        ComponentUtils.setLore(meta, locked && !player.isOp() ? "§7公開までお待ちください"
+            : locked ? "§7ロックを無視して参加します" : "§7クリックしてOtherworldへ参加します");
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private void refreshLobbyNpcs() {
+        World lobby = Bukkit.getWorld(SELECTION_LOBBY_WORLD);
+        if (lobby == null) return;
+        for (Mannequin mannequin : lobby.getEntitiesByClass(Mannequin.class)) {
+            if (!mannequin.getPersistentDataContainer().has(lobbyNpcGroupKey, PersistentDataType.STRING)) continue;
+            updateLobbyNpc(mannequin);
+            refreshLobbyNpcVisibility(mannequin);
+        }
+    }
+
+    private void updateLobbyNpc(Mannequin mannequin) {
+        String groupName = mannequin.getPersistentDataContainer().get(lobbyNpcGroupKey, PersistentDataType.STRING);
+        if (groupName == null) return;
+        boolean locked = isGroupLocked(groupName);
+        mannequin.customName(ComponentUtils.legacy((locked ? "§c§lLOCKED §f" : "§a§l")
+                + displayGroupName(groupName)));
+        mannequin.setDescription(ComponentUtils.legacy(locked
+            ? "§c" + getLockCountdown(groupName) + " §7| クリックして参加"
+            : "§eクリックして参加"));
+    }
+
+    private void refreshLobbyNpcVisibility(Mannequin mannequin) {
+        String groupName = mannequin.getPersistentDataContainer().get(lobbyNpcGroupKey, PersistentDataType.STRING);
+        if (groupName == null) return;
+        for (Player viewer : Bukkit.getOnlinePlayers()) {
+            if (canAccess(viewer, groupName)) viewer.showEntity(plugin, mannequin);
+            else viewer.hideEntity(plugin, mannequin);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -1295,7 +1967,9 @@ public class OtherworldModule implements Listener {
 
     public void shutdown() {
         for (Player player : List.copyOf(Bukkit.getOnlinePlayers())) {
-            playerDataStore.save(player, getGroup(player));
+            if (!isSelectionLobby(player.getWorld())) {
+                playerDataStore.save(player, getGroup(player));
+            }
         }
         playerDataStore.shutdown();
     }
@@ -1344,6 +2018,52 @@ public class OtherworldModule implements Listener {
             this.dimensionSeeds = dimensionSeeds;
             this.lockedUntil = lockedUntil;
             this.lockMessage = lockMessage;
+        }
+    }
+
+    private record LobbyPoint(double x, double y, double z, float yaw, float pitch) {
+        private static LobbyPoint from(Location location) {
+            return new LobbyPoint(location.getX(), location.getY(), location.getZ(),
+                    location.getYaw(), location.getPitch());
+        }
+
+        private Location toLocation(World world) {
+            return new Location(world, x, y, z, yaw, pitch);
+        }
+
+        private Map<String, Object> toMap() {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("x", x);
+            values.put("y", y);
+            values.put("z", z);
+            values.put("yaw", yaw);
+            values.put("pitch", pitch);
+            return values;
+        }
+    }
+
+    private record LobbyRoute(String name, MonthDay start, MonthDay end, LobbyPoint location) {
+        private boolean includes(MonthDay date) {
+            if (start.compareTo(end) <= 0) {
+                return date.compareTo(start) >= 0 && date.compareTo(end) <= 0;
+            }
+            return date.compareTo(start) >= 0 || date.compareTo(end) <= 0;
+        }
+
+        private Map<String, Object> toMap() {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("start", String.format(Locale.ROOT, "%02d-%02d", start.getMonthValue(), start.getDayOfMonth()));
+            values.put("end", String.format(Locale.ROOT, "%02d-%02d", end.getMonthValue(), end.getDayOfMonth()));
+            values.put("location", location.toMap());
+            return values;
+        }
+
+        private String displayStart() {
+            return String.format(Locale.ROOT, "%02d-%02d", start.getMonthValue(), start.getDayOfMonth());
+        }
+
+        private String displayEnd() {
+            return String.format(Locale.ROOT, "%02d-%02d", end.getMonthValue(), end.getDayOfMonth());
         }
     }
 }
