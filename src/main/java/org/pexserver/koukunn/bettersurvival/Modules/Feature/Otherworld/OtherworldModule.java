@@ -37,6 +37,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.world.WorldLoadEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -1716,6 +1717,7 @@ public class OtherworldModule implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onLobbyNpcInteract(PlayerInteractEntityEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) return;
         if (!(event.getRightClicked() instanceof Mannequin mannequin)) return;
         String groupName = mannequin.getPersistentDataContainer().get(lobbyNpcGroupKey, PersistentDataType.STRING);
         if (groupName == null) return;
