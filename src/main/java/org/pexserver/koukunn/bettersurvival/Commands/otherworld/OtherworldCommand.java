@@ -112,7 +112,7 @@ public class OtherworldCommand extends BaseCommand {
                 }
                 if (args.length < 4 || !(args[3].equalsIgnoreCase("true") || args[3].equalsIgnoreCase("false"))
                         || !module().setLobbySetting(args[2], Boolean.parseBoolean(args[3]))) {
-                    sendError(player, "使用法: /otherworld lobby settings <always-spawn|auto-menu|fly> <true|false>");
+                    sendError(player, "使用法: /otherworld lobby settings <always-spawn|join-spawn|always-respawn|auto-menu|fly> <true|false>");
                     return true;
                 }
                 sendSuccess(player, "ロビー設定を更新しました: " + module().getLobbySettingsDisplay());
@@ -185,7 +185,7 @@ public class OtherworldCommand extends BaseCommand {
         List<String> values = new ArrayList<>();
         if (args.length == 1) values.addAll(List.of("add", "delete", "regen", "lock", "unlock", "move", "setjoin", "whitelist", "lobby", "list", "dimensions"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("lobby") && sender.isOp()) values.addAll(List.of("settings", "spawn", "route", "npc"));
-        else if (args.length == 3 && args[0].equalsIgnoreCase("lobby") && args[1].equalsIgnoreCase("settings") && sender.isOp()) values.addAll(List.of("always-spawn", "auto-menu", "fly"));
+        else if (args.length == 3 && args[0].equalsIgnoreCase("lobby") && args[1].equalsIgnoreCase("settings") && sender.isOp()) values.addAll(List.of("always-spawn", "join-spawn", "always-respawn", "auto-menu", "fly"));
         else if (args.length == 4 && args[0].equalsIgnoreCase("lobby") && args[1].equalsIgnoreCase("settings") && sender.isOp()) values.addAll(List.of("true", "false"));
         else if (args.length == 3 && args[0].equalsIgnoreCase("lobby") && args[1].equalsIgnoreCase("spawn") && sender.isOp()) values.add("set");
         else if (args.length == 3 && args[0].equalsIgnoreCase("lobby") && args[1].equalsIgnoreCase("route") && sender.isOp()) values.addAll(List.of("set", "remove", "list"));

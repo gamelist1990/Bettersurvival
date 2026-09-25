@@ -38,6 +38,7 @@ public final class OtherworldDatapackBootstrap {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String GENERATED_PACK_ID = "otherworld-generated";
     private static final String GENERATED_DIR = "generated-otherworld-datapack";
+    private static final String SELECTION_LOBBY_DIMENSION = "minecraft:otherworld_lobby";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private OtherworldDatapackBootstrap() { }
@@ -49,6 +50,7 @@ public final class OtherworldDatapackBootstrap {
                 if (config.groups().isEmpty()) return;
 
                 Map<String, byte[]> dimensions = discoverFilesystemDimensions(context);
+                dimensions.keySet().removeIf(OtherworldDatapackBootstrap::isInternalDimension);
                 if (dimensions.isEmpty()) {
                     context.getLogger().info("Otherworld datapack bootstrap: no external dimension JSONs found");
                     return;
@@ -133,6 +135,11 @@ public final class OtherworldDatapackBootstrap {
             }
         }
         return dimensions;
+    }
+
+    private static boolean isInternalDimension(String dimensionKey) {
+        return dimensionKey != null && (dimensionKey.equalsIgnoreCase(SELECTION_LOBBY_DIMENSION)
+                || OtherworldDimensionKeys.isGenerated(dimensionKey));
     }
 
     private static String readLevelName(Path serverProperties) {

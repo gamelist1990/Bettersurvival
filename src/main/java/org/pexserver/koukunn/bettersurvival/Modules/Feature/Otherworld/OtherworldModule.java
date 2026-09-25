@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
 import org.bukkit.WorldCreator;
@@ -94,6 +95,7 @@ public class OtherworldModule implements Listener {
     private final Set<UUID> selectionTransitions = new HashSet<>();
     private final Set<UUID> selectionMenuBypass = new HashSet<>();
     private final Set<UUID> openSelectionMenus = new HashSet<>();
+    private final Map<UUID, UUID> selectionCountdownSessions = new HashMap<>();
     private final Map<UUID, UUID> lockedDetailSessions = new HashMap<>();
     private final Map<UUID, GameMode> selectionLobbyGameModes = new HashMap<>();
     private final Set<UUID> lobbyEditMode = new HashSet<>();
@@ -105,6 +107,8 @@ public class OtherworldModule implements Listener {
     private final Map<String, LobbyRoute> lobbyRoutes = new LinkedHashMap<>();
     private String defaultJoinGroup = "default";
     private boolean alwaysLobby;
+    private boolean lobbyJoinSpawn;
+    private boolean alwaysLobbyRespawn;
     private boolean autoMenu = true;
     private boolean lobbyFlightAllowed = true;
     private LobbyPoint lobbySpawn;
@@ -118,7 +122,10 @@ public class OtherworldModule implements Listener {
         this.lobbyFlyKey = new NamespacedKey(plugin, "otherworld_lobby_fly");
         this.lobbyPlayersKey = new NamespacedKey(plugin, "otherworld_lobby_players");
         load();
-        Bukkit.getScheduler().runTask(plugin, this::scanAndMirrorCustomDimensions);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            ensureSelectionLobby();
+            scanAndMirrorCustomDimensions();
+        });
         Bukkit.getScheduler().runTaskTimer(plugin, this::refreshLobbyNpcs, 20L, 20L);
     }
 
@@ -133,6 +140,8 @@ public class OtherworldModule implements Listener {
         lobbyRoutes.clear();
         PEXConfig config = configManager.loadConfig(CONFIG_PATH).orElseGet(PEXConfig::new);
         alwaysLobby = readBoolean(config.get("lobbyAlwaysSpawn"), false);
+        lobbyJoinSpawn = readBoolean(config.get("lobbyJoinSpawn"), false);
+        alwaysLobbyRespawn = readBoolean(config.get("lobbyAlwaysRespawn"), false);
         autoMenu = readBoolean(config.get("lobbyAutoMenu"), true);
         lobbyFlightAllowed = readBoolean(config.get("lobbyFlightAllowed"), true);
         lobbySpawn = readLobbyPoint(config.get("lobbySpawn"));
@@ -171,7 +180,9 @@ public class OtherworldModule implements Listener {
                 Object rawCustom = values.get("customWorlds");
                 if (rawCustom instanceof Map<?, ?> customMap) {
                     for (var custom : customMap.entrySet()) {
-                        if (custom.getValue() != null && !isSelectionLobbyId(custom.getKey().toString())) {
+                        if (custom.getValue() != null
+                                && !isSelectionLobbyRelatedId(custom.getKey().toString())
+                                && !isSelectionLobbyRelatedId(custom.getValue().toString())) {
                             customWorlds.put(custom.getKey().toString(), custom.getValue().toString());
                         }
                     }
@@ -204,29 +215,53 @@ public class OtherworldModule implements Listener {
                     new LinkedHashMap<>(), new LinkedHashMap<>(), 0L, ""));
         }
         if (!groups.containsKey(defaultJoinGroup)) defaultJoinGroup = "default";
-        Object rawMembers = config.get("members");
-        if (rawMembers instanceof Map<?, ?> map) {
-            for (var entry : map.entrySet()) {
+        Object rawWhitelists = config.get("whitelists");
+        if (rawWhitelists instanceof Map<?, ?> whitelistMap) {
+            for (String groupName : groups.keySet()) {
                 Set<UUID> ids = new LinkedHashSet<>();
-                if (entry.getValue() instanceof List<?> list) {
-                    for (Object value : list) {
-                        try { ids.add(UUID.fromString(value.toString())); } catch (IllegalArgumentException ignored) { }
+                Object rawGroupWhitelist = whitelistMap.get(groupName);
+                if (rawGroupWhitelist instanceof Map<?, ?> values) {
+                    if (readBoolean(values.get("enabled"), true)) {
+                        whitelistEnabledGroups.add(groupName);
                     }
-                }
-                members.put(normalize(entry.getKey().toString()), ids);
-            }
-        }
-        Object rawWhitelistEnabled = config.get("whitelistEnabled");
-        if (rawWhitelistEnabled instanceof List<?> list) {
-            for (Object value : list) {
-                String groupName = normalize(value == null ? "" : value.toString());
-                if (groups.containsKey(groupName)) {
+                    Object rawMemberIds = values.get("members");
+                    if (rawMemberIds instanceof List<?> list) {
+                        for (Object value : list) {
+                            try { ids.add(UUID.fromString(value.toString())); } catch (IllegalArgumentException ignored) { }
+                        }
+                    }
+                } else {
                     whitelistEnabledGroups.add(groupName);
-                    members.putIfAbsent(groupName, new LinkedHashSet<>());
                 }
+                members.put(groupName, ids);
             }
         } else {
-            whitelistEnabledGroups.addAll(members.keySet());
+            Object rawMembers = config.get("members");
+            if (rawMembers instanceof Map<?, ?> map) {
+                for (var entry : map.entrySet()) {
+                    Set<UUID> ids = new LinkedHashSet<>();
+                    if (entry.getValue() instanceof List<?> list) {
+                        for (Object value : list) {
+                            try { ids.add(UUID.fromString(value.toString())); } catch (IllegalArgumentException ignored) { }
+                        }
+                    }
+                    members.put(normalize(entry.getKey().toString()), ids);
+                }
+            }
+            Object rawWhitelistEnabled = config.get("whitelistEnabled");
+            if (rawWhitelistEnabled instanceof List<?> list) {
+                for (Object value : list) {
+                    String groupName = normalize(value == null ? "" : value.toString());
+                    if (groups.containsKey(groupName)) {
+                        whitelistEnabledGroups.add(groupName);
+                    }
+                }
+            } else {
+                whitelistEnabledGroups.addAll(groups.keySet());
+            }
+            for (String groupName : groups.keySet()) {
+                members.putIfAbsent(groupName, new LinkedHashSet<>());
+            }
         }
         save();
     }
@@ -256,13 +291,19 @@ public class OtherworldModule implements Listener {
             values.put("lockMessage", group.lockMessage);
             groupData.put(group.name, values);
         }
-        Map<String, Object> memberData = new LinkedHashMap<>();
-        members.forEach((name, ids) -> memberData.put(name, ids.stream().map(UUID::toString).toList()));
+        Map<String, Object> whitelistData = new LinkedHashMap<>();
+        for (String groupName : groups.keySet()) {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("enabled", whitelistEnabledGroups.contains(groupName));
+            values.put("members", members.getOrDefault(groupName, Set.of()).stream().map(UUID::toString).toList());
+            whitelistData.put(groupName, values);
+        }
         config.put("groups", groupData);
-        config.put("members", memberData);
-        config.put("whitelistEnabled", List.copyOf(whitelistEnabledGroups));
+        config.put("whitelists", whitelistData);
         config.put("defaultJoinGroup", defaultJoinGroup);
         config.put("lobbyAlwaysSpawn", alwaysLobby);
+        config.put("lobbyJoinSpawn", lobbyJoinSpawn);
+        config.put("lobbyAlwaysRespawn", alwaysLobbyRespawn);
         config.put("lobbyAutoMenu", autoMenu);
         config.put("lobbyFlightAllowed", lobbyFlightAllowed);
         if (lobbySpawn != null) config.put("lobbySpawn", lobbySpawn.toMap());
@@ -450,6 +491,8 @@ public class OtherworldModule implements Listener {
         Group group = new Group(name, RANDOM.nextLong(), worlds, new LinkedHashMap<>(), new LinkedHashMap<>(),
             0L, "");
         groups.put(name, group);
+        whitelistEnabledGroups.add(name);
+        members.put(name, new LinkedHashSet<>());
 
         Group defaults = groups.get("default");
         for (var entry : worlds.entrySet()) {
@@ -788,6 +831,9 @@ public class OtherworldModule implements Listener {
             playerDataStore.ensureDefaultMigration(player);
             String current = getGroup(player);
             if (isSelectionLobby(player.getWorld())) {
+                if (alwaysLobby && lobbyJoinSpawn) {
+                    player.teleport(resolveLobbySpawn(player.getWorld()), PlayerTeleportEvent.TeleportCause.PLUGIN);
+                }
                 enterSelectionLobby(player);
                 openAutomaticSelection(player);
                 return;
@@ -902,6 +948,14 @@ public class OtherworldModule implements Listener {
     public void onRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
         String deathGroupName = deathGroups.remove(player.getUniqueId());
+        if (alwaysLobbyRespawn) {
+            World lobby = ensureSelectionLobby();
+            if (lobby != null) {
+                event.setRespawnLocation(resolveLobbySpawn(lobby));
+                return;
+            }
+            plugin.getLogger().warning("Otherworld lobby respawn target is unavailable");
+        }
         if (deathGroupName == null || "default".equals(deathGroupName)) {
             return;
         }
@@ -971,6 +1025,8 @@ public class OtherworldModule implements Listener {
     public synchronized boolean setLobbySetting(String setting, boolean enabled) {
         switch (setting.toLowerCase(Locale.ROOT)) {
             case "always", "always-spawn", "alwayslobby" -> alwaysLobby = enabled;
+            case "join-spawn", "lobby-join-spawn" -> lobbyJoinSpawn = enabled;
+            case "always-respawn", "respawn", "lobby-respawn" -> alwaysLobbyRespawn = enabled;
             case "automenu", "auto-menu" -> autoMenu = enabled;
             case "fly", "flight" -> {
                 lobbyFlightAllowed = enabled;
@@ -989,7 +1045,9 @@ public class OtherworldModule implements Listener {
     }
 
     public synchronized String getLobbySettingsDisplay() {
-        return "always-spawn=" + alwaysLobby + ", auto-menu=" + autoMenu
+        return "always-spawn=" + alwaysLobby + ", join-spawn=" + lobbyJoinSpawn
+                + ", always-respawn=" + alwaysLobbyRespawn
+            + ", auto-menu=" + autoMenu
                 + ", fly=" + lobbyFlightAllowed;
     }
 
@@ -1037,8 +1095,11 @@ public class OtherworldModule implements Listener {
     }
 
     private void showSelection(Player player, List<String> accessible) {
+        UUID countdownSessionId = UUID.randomUUID();
+        selectionCountdownSessions.put(player.getUniqueId(), countdownSessionId);
         openSelectionMenus.add(player.getUniqueId());
-        ChestUI.Builder builder = ChestUI.builder().title("§8✦ Otherworld Select ✦").size(54);
+        ChestUI.Builder builder = ChestUI.builder().title("§8✦ Otherworld Select ✦").size(54)
+            .type("otherworld-selection");
         for (int slot = 0; slot < 54; slot++) {
             builder.addButtonAt(slot, "§r", Material.GRAY_STAINED_GLASS_PANE, "§8Otherworld selection");
         }
@@ -1066,6 +1127,7 @@ public class OtherworldModule implements Listener {
         builder.then((result, p) -> {
             if (!result.success || result.slot == null) return;
             if (result.slot == 45 && p.isOp()) {
+                playLobbyClick(p);
                 selectionMenuBypass.add(p.getUniqueId());
                 selectionTransitions.add(p.getUniqueId());
                 ChestUI.closeMenu(p);
@@ -1074,6 +1136,7 @@ public class OtherworldModule implements Listener {
                 return;
             }
             if (result.slot == 53) {
+                playLobbyClick(p);
                 selectionTransitions.add(p.getUniqueId());
                 ChestUI.closeMenu(p);
                 Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1086,6 +1149,7 @@ public class OtherworldModule implements Listener {
             }
             for (int i = 0; i < accessible.size() && i < buttonSlots.length; i++) {
                 if (buttonSlots[i] == result.slot) {
+                    playLobbyClick(p);
                     selectionTransitions.add(p.getUniqueId());
                     ChestUI.closeMenu(p);
                     String selectedGroup = accessible.get(i);
@@ -1112,7 +1176,7 @@ public class OtherworldModule implements Listener {
                 player.updateInventory();
             }
         });
-        startSelectionCountdown(player, accessible, buttonSlots);
+        startSelectionCountdown(player, accessible, buttonSlots, countdownSessionId);
     }
 
     private ItemStack selectionExitItem() {
@@ -1177,11 +1241,15 @@ public class OtherworldModule implements Listener {
                 ? "オープンまでお待ちください" : group.lockMessage;
     }
 
-    private void startSelectionCountdown(Player player, List<String> accessible, int[] buttonSlots) {
+    private void startSelectionCountdown(Player player, List<String> accessible, int[] buttonSlots,
+                                         UUID sessionId) {
         new org.bukkit.scheduler.BukkitRunnable() {
             @Override
             public void run() {
                 if (!player.isOnline() || !isSelectionLobby(player.getWorld())
+                        || !sessionId.equals(selectionCountdownSessions.get(player.getUniqueId()))
+                        || !(player.getOpenInventory().getTopInventory().getHolder() instanceof ChestUI menu)
+                        || !"otherworld-selection".equals(menu.getType())
                         || player.getOpenInventory().getTopInventory().getSize() != 54) {
                     cancel();
                     return;
@@ -1209,7 +1277,10 @@ public class OtherworldModule implements Listener {
 
     private World ensureSelectionLobby() {
         World existing = Bukkit.getWorld(SELECTION_LOBBY_WORLD);
-        if (existing != null) return existing;
+        if (existing != null) {
+            keepLobbySpawnChunkLoaded(existing);
+            return existing;
+        }
         WorldCreator creator = WorldCreator.name(SELECTION_LOBBY_WORLD)
                 .generateStructures(false)
                 .generator(new ChunkGenerator() {
@@ -1257,8 +1328,17 @@ public class OtherworldModule implements Listener {
             lobby.setGameRule(org.bukkit.GameRules.ADVANCE_TIME, false);
             lobby.setGameRule(org.bukkit.GameRules.ADVANCE_WEATHER, false);
             lobby.setTime(6000L);
+            keepLobbySpawnChunkLoaded(lobby);
         }
         return lobby;
+    }
+
+    private void keepLobbySpawnChunkLoaded(World lobby) {
+        Location spawn = resolveLobbySpawn(lobby);
+        int chunkX = spawn.getBlockX() >> 4;
+        int chunkZ = spawn.getBlockZ() >> 4;
+        lobby.loadChunk(chunkX, chunkZ, false);
+        lobby.setChunkForceLoaded(chunkX, chunkZ, true);
     }
 
     private Location resolveLobbySpawn(World lobby) {
@@ -1277,6 +1357,14 @@ public class OtherworldModule implements Listener {
         if (id == null) return false;
         return SELECTION_LOBBY_WORLD.equalsIgnoreCase(id)
                 || ("minecraft:" + SELECTION_LOBBY_WORLD).equalsIgnoreCase(id);
+    }
+
+    private static boolean isSelectionLobbyRelatedId(String id) {
+        if (id == null) return false;
+        String normalized = id.replace('\\', '/').toLowerCase(Locale.ROOT);
+        return isSelectionLobbyId(normalized)
+                || normalized.endsWith("/minecraft/" + SELECTION_LOBBY_WORLD)
+                || normalized.endsWith(":" + SELECTION_LOBBY_WORLD);
     }
 
     private void enterSelectionLobby(Player player) {
@@ -1344,6 +1432,7 @@ public class OtherworldModule implements Listener {
         String role = lobbyItemRole(event.getItem());
         if (role == null) return;
         event.setCancelled(true);
+        playLobbyClick(player);
         if ("menu".equals(role)) {
             showSelection(player);
         } else if ("settings".equals(role)) {
@@ -1375,14 +1464,17 @@ public class OtherworldModule implements Listener {
         builder.then((result, target) -> {
             if (!result.success || result.slot == null) return;
             if (result.slot == 11 && lobbyFlightAllowed) {
+                playLobbyClick(target);
                 setPersonalFlightEnabled(target, !isPersonalFlightEnabled(target));
                 applyLobbyFlight(target);
                 showLobbySettings(target);
             } else if (result.slot == 15) {
+                playLobbyClick(target);
                 setPlayersVisible(target, !arePlayersVisible(target));
                 refreshPlayerVisibility();
                 showLobbySettings(target);
             } else if (result.slot == 22 && target.isOp()) {
+                playLobbyClick(target);
                 showAdminPanel(target);
             }
         }).show(player);
@@ -1436,6 +1528,7 @@ public class OtherworldModule implements Listener {
     public void onSelectionMenuClose(InventoryCloseEvent event) {
         if (!(event.getPlayer() instanceof Player player) || !isSelectionLobby(player.getWorld())) return;
         if (!openSelectionMenus.remove(player.getUniqueId())) return;
+        selectionCountdownSessions.remove(player.getUniqueId());
         if (selectionTransitions.remove(player.getUniqueId())) return;
         if (!autoMenu || selectionMenuBypass.contains(player.getUniqueId())) {
             enterInteractiveLobbyMode(player);
@@ -1461,6 +1554,12 @@ public class OtherworldModule implements Listener {
                 editing ? "§7ロビー保護モードへ戻ります" : "§7Creativeでロビーを編集します");
         builder.addButtonAt(0, alwaysLobby ? "§a常にロビー: ON" : "§c常にロビー: OFF",
             Material.ENDER_PEARL, "§7ログイン時に必ずロビーへ送ります");
+        builder.addButtonAt(3, lobbyJoinSpawn ? "§aJoin時にロビー初期地点: ON" : "§cJoin時にロビー初期地点: OFF",
+            Material.LODESTONE,
+            "§7常にロビーがONの時、参加ごとに初期地点へ戻します\n§7季節ルートがある場合はその地点を使用します");
+        builder.addButtonAt(2, alwaysLobbyRespawn ? "§a初期リスポーンをロビー: ON" : "§c初期リスポーンをロビー: OFF",
+            Material.TOTEM_OF_UNDYING,
+            "§7死亡後のリスポーン先をロビーにします\n§7季節ルートがある場合はその地点を使用します");
         builder.addButtonAt(1, autoMenu ? "§a自動GUI: ON" : "§c自動GUI: OFF",
             Material.CHEST, "§7ロビー参加時の選択GUIを切り替えます");
         builder.addButtonAt(7, lobbyFlightAllowed ? "§aロビー飛行: ON" : "§cロビー飛行: OFF",
@@ -1479,32 +1578,50 @@ public class OtherworldModule implements Listener {
         builder.then((result, target) -> {
             if (!result.success || result.slot == null) return;
             if (result.slot == 4) {
+                playLobbyClick(target);
                 ChestUI.closeMenu(target);
                 toggleLobbyEditMode(target);
                 return;
             }
             if (result.slot == 0) {
+                playLobbyClick(target);
                 setLobbySetting("always-spawn", !alwaysLobby);
                 showAdminPanel(target);
                 return;
             }
+            if (result.slot == 3) {
+                playLobbyClick(target);
+                setLobbySetting("join-spawn", !lobbyJoinSpawn);
+                showAdminPanel(target);
+                return;
+            }
+            if (result.slot == 2) {
+                playLobbyClick(target);
+                setLobbySetting("always-respawn", !alwaysLobbyRespawn);
+                showAdminPanel(target);
+                return;
+            }
             if (result.slot == 1) {
+                playLobbyClick(target);
                 setLobbySetting("auto-menu", !autoMenu);
                 showAdminPanel(target);
                 return;
             }
             if (result.slot == 7) {
+                playLobbyClick(target);
                 setLobbySetting("fly", !lobbyFlightAllowed);
                 showAdminPanel(target);
                 return;
             }
             if (result.slot == 8) {
+                playLobbyClick(target);
                 if (setLobbySpawn(target)) target.sendMessage("§aロビーの通常スポーン地点を設定しました");
                 showAdminPanel(target);
                 return;
             }
             for (int index = 0; index < names.size() && index < slots.length; index++) {
                 if (slots[index] != result.slot) continue;
+                playLobbyClick(target);
                 ChestUI.closeMenu(target);
                 String groupName = names.get(index);
                 Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1604,6 +1721,7 @@ public class OtherworldModule implements Listener {
         if (groupName == null) return;
         event.setCancelled(true);
         Player player = event.getPlayer();
+        playLobbyClick(player);
         selectionMenuBypass.add(player.getUniqueId());
         enterInteractiveLobbyMode(player);
         if (!canAccess(player, groupName)) {
@@ -1642,11 +1760,13 @@ public class OtherworldModule implements Listener {
         builder.then((result, target) -> {
             if (!result.success || result.slot == null) return;
             if (result.slot == 11) {
+                playLobbyClick(target);
                 ChestUI.closeMenu(target);
                 enterInteractiveLobbyMode(target);
                 return;
             }
             if (result.slot != 15) return;
+            playLobbyClick(target);
             if (isGroupLocked(groupName) && !target.isOp()) {
                 target.sendMessage(getLockMessage(groupName));
                 showLockedGroupDetails(target, groupName);
@@ -1658,6 +1778,10 @@ public class OtherworldModule implements Listener {
             else target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
         }).show(player);
         startLockedGroupCountdown(player, groupName, sessionId);
+    }
+
+    private void playLobbyClick(Player player) {
+        player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.8F, 1.0F);
     }
 
     private void startLockedGroupCountdown(Player player, String groupName, UUID sessionId) {
@@ -1717,7 +1841,6 @@ public class OtherworldModule implements Listener {
         for (Mannequin mannequin : lobby.getEntitiesByClass(Mannequin.class)) {
             if (!mannequin.getPersistentDataContainer().has(lobbyNpcGroupKey, PersistentDataType.STRING)) continue;
             updateLobbyNpc(mannequin);
-            refreshLobbyNpcVisibility(mannequin);
         }
     }
 
@@ -1725,11 +1848,16 @@ public class OtherworldModule implements Listener {
         String groupName = mannequin.getPersistentDataContainer().get(lobbyNpcGroupKey, PersistentDataType.STRING);
         if (groupName == null) return;
         boolean locked = isGroupLocked(groupName);
-        mannequin.customName(ComponentUtils.legacy((locked ? "§c§lLOCKED §f" : "§a§l")
-                + displayGroupName(groupName)));
-        mannequin.setDescription(ComponentUtils.legacy(locked
-            ? "§c" + getLockCountdown(groupName) + " §7| クリックして参加"
-            : "§eクリックして参加"));
+        String expectedName = (locked ? "§c§lLOCKED §f" : "§a§l") + displayGroupName(groupName);
+        String expectedDescription = locked
+                ? "§c" + getLockCountdown(groupName) + " §7| クリックして参加"
+                : "§eクリックして参加";
+        if (!ComponentUtils.legacy(expectedName).equals(mannequin.customName())) {
+            mannequin.customName(ComponentUtils.legacy(expectedName));
+        }
+        if (!ComponentUtils.legacy(expectedDescription).equals(mannequin.getDescription())) {
+            mannequin.setDescription(ComponentUtils.legacy(expectedDescription));
+        }
     }
 
     private void refreshLobbyNpcVisibility(Mannequin mannequin) {
