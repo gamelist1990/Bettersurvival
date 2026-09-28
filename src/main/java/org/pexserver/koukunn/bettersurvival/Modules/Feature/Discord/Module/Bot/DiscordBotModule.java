@@ -8,7 +8,10 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.M
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Whitelist.DiscordWhitelistMessageService;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Whitelist.DiscordWhitelistSettingsMenu;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.OfflineAccess.OfflineAccessManager;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.PacDiscordSupport.PacDiscordSupportModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Whitelist.PendingWhitelistModule;
+
+import java.util.List;
 
 /**
  * Discord Bot を管理するモジュール。
@@ -20,6 +23,7 @@ public class DiscordBotModule {
     private final DiscordBotSettingsMenu settingsMenu;
     private final DiscordWhitelistMessageService whitelistMessageService;
     private final DiscordWhitelistSettingsMenu whitelistSettingsMenu;
+    private PacDiscordSupportModule pacDiscordSupportModule;
 
     private DiscordBotSettings settings;
 
@@ -77,6 +81,18 @@ public class DiscordBotModule {
         whitelistSettingsMenu.openMenu(player);
     }
 
+    public void setPacDiscordSupportModule(PacDiscordSupportModule module) {
+        this.pacDiscordSupportModule = module;
+    }
+
+    public void openPacAppealMenu(Player player) {
+        if (pacDiscordSupportModule == null) {
+            player.sendMessage("§cPAC is not available; PAC連携機能は停止しています");
+            return;
+        }
+        pacDiscordSupportModule.openMenu(player);
+    }
+
     public boolean isBotOnline() {
         return runtime.isOnline();
     }
@@ -97,11 +113,37 @@ public class DiscordBotModule {
         runtime.unregisterListener(listener);
     }
 
+    public synchronized boolean savePacBanListMessageIds(List<String> messageIds) {
+        DiscordBotSettings updated = createUpdatedSettings(settings.getToken(), settings.getWhitelistChannelId());
+        updated.setPacBanListMessageIds(messageIds);
+        if (!store.save(updated)) {
+            return false;
+        }
+        settings = updated;
+        return true;
+    }
+
+    public synchronized boolean savePacSupportDashboardMessageId(String messageId) {
+        DiscordBotSettings updated = createUpdatedSettings(settings.getToken(), settings.getWhitelistChannelId());
+        updated.setPacSupportDashboardMessageId(messageId);
+        if (!store.save(updated)) {
+            return false;
+        }
+        settings = updated;
+        return true;
+    }
+
     public DiscordBotSettings createUpdatedSettings(String token, String whitelistChannelId) {
         DiscordBotSettings updated = new DiscordBotSettings();
         updated.setToken(token);
         updated.setGuildId(settings.getGuildId());
         updated.setWhitelistChannelId(whitelistChannelId);
+        updated.setPacAppealChannelId(settings.getPacAppealChannelId());
+        updated.setPacAppealInboxChannelId(settings.getPacAppealInboxChannelId());
+        updated.setPacBanListChannelId(settings.getPacBanListChannelId());
+        updated.setPacBanListMessageIds(settings.getPacBanListMessageIds());
+        updated.setPacSupportStaffRoleIds(settings.getPacSupportStaffRoleIds());
+        updated.setPacSupportDashboardMessageId(settings.getPacSupportDashboardMessageId());
         updated.setWhitelistApprovalMode(settings.getWhitelistApprovalMode());
         updated.setWhitelistApproverUserIds(settings.getWhitelistApproverUserIds());
         return updated;

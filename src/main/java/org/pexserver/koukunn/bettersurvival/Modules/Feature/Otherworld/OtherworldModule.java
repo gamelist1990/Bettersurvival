@@ -424,7 +424,7 @@ public class OtherworldModule implements Listener {
     public synchronized boolean canAccess(Player player, String groupName) {
         if (player == null || groupName == null) return false;
         Group group = groups.get(normalize(groupName));
-        return group != null && (player.isOp() || !isWhitelistEnabled(group.name)
+        return group != null && (!isWhitelistEnabled(group.name)
                 || members.getOrDefault(group.name, Set.of()).contains(player.getUniqueId()));
     }
 
@@ -521,7 +521,9 @@ public class OtherworldModule implements Listener {
     private synchronized boolean move(Player player, String groupName, boolean ignoreLock) {
         groupName = normalize(groupName);
         Group group = groups.get(groupName);
-        if (group == null || !canAccess(player, groupName) || (!ignoreLock && isGroupLocked(groupName))) {
+        boolean forceAccess = ignoreLock && player != null && player.isOp();
+        if (group == null || (!forceAccess && !canAccess(player, groupName))
+                || (!ignoreLock && isGroupLocked(groupName))) {
             if (group != null && canAccess(player, groupName) && isGroupLocked(groupName)) {
                 player.sendMessage(getLockMessage(groupName));
             }
@@ -1372,6 +1374,9 @@ public class OtherworldModule implements Listener {
         selectionLobbyGameModes.putIfAbsent(player.getUniqueId(), player.getGameMode());
         lobbyEditMode.remove(player.getUniqueId());
         player.setInvulnerable(true);
+        player.setFoodLevel(20);
+        player.setSaturation(20.0F);
+        player.setExhaustion(0.0F);
         applyLobbyHotbar(player);
         enterInteractiveLobbyMode(player);
         refreshPlayerVisibility();
@@ -1696,7 +1701,12 @@ public class OtherworldModule implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onLobbyHunger(FoodLevelChangeEvent event) {
-        if (event.getEntity() instanceof Player player && isSelectionLobby(player.getWorld())) event.setCancelled(true);
+        if (!(event.getEntity() instanceof Player player) || !isSelectionLobby(player.getWorld())) return;
+        event.setFoodLevel(20);
+        event.setCancelled(true);
+        player.setFoodLevel(20);
+        player.setSaturation(20.0F);
+        player.setExhaustion(0.0F);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

@@ -59,7 +59,8 @@ public class DiscordBotRuntime {
             prepareManagedResources();
 
             JDABuilder builder = JDABuilder.createLight(token)
-                    .enableIntents(GatewayIntent.MESSAGE_CONTENT, GatewayIntent.GUILD_MEMBERS)
+                    .enableIntents(GatewayIntent.GUILD_MESSAGES, GatewayIntent.MESSAGE_CONTENT,
+                            GatewayIntent.GUILD_MEMBERS)
                     .setHttpClient(httpClient)
                     .setGatewayPool(gatewayPool, false)
                     .setRateLimitScheduler(rateLimitScheduler, false)

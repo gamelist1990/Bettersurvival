@@ -22,11 +22,14 @@ class DiscordBotSettingsMenu {
                 .title("Discord 設定")
                 .size(27)
                 .addButtonAt(11, "§6Webhook 設定", Material.PAPER, "Join/Leave/Status 通知の設定")
+                .addButtonAt(13, "§cPAC サポート設定", Material.WRITABLE_BOOK, "PAC BAN 異議申し立てを設定")
                 .addButtonAt(15, "§bDiscord Bot 設定", Material.NETHER_STAR, "Bot 状態: " + botStatus)
                 .then((result, p) -> {
                     if (result.cancelled || result.slot == null) return;
                     if (result.slot == 11) {
                         plugin.getDiscordWebhookModule().openMenu(p);
+                    } else if (result.slot == 13) {
+                        module.openPacAppealMenu(p);
                     } else if (result.slot == 15) {
                         openBotSettings(p);
                     }

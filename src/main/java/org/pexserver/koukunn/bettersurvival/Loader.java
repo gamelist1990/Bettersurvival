@@ -25,6 +25,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.Feature.ChestShop.ChestShopM
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DeathChest.DeathChestModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.DiscordWebhook.DiscordWebhookModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Bot.DiscordBotModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.PacDiscordSupport.PacDiscordSupportModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Home.HomeModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BedrockSkin.BedrockSkinModule;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.BetterMenu.BetterMenuModule;
@@ -93,6 +94,7 @@ public final class Loader extends JavaPlugin {
     private OtherworldModule otherworldModule;
     private DiscordWebhookModule discordWebhookModule;
     private DiscordBotModule discordBotModule;
+    private PacDiscordSupportModule pacDiscordSupportModule;
     private HomeModule homeModule;
     private PendingWhitelistModule pendingWhitelistModule;
     private EnchantmentSplitModule enchantmentSplitModule;
@@ -202,6 +204,7 @@ public final class Loader extends JavaPlugin {
         chestSortModule = new ChestSortModule(this, toggleModule, chestLockModule, chestShopModule);
         getServer().getPluginManager().registerEvents(chestSortModule, this);
         discordBotModule = new DiscordBotModule(this, configManager, pendingWhitelistModule, offlineAccessModule.getManager());
+        initializePacDiscordSupport();
         discordWebhookModule = new DiscordWebhookModule(this, configManager);
         getServer().getPluginManager().registerEvents(discordWebhookModule, this);
         homeModule = new HomeModule(this);
@@ -514,6 +517,19 @@ public final class Loader extends JavaPlugin {
         return discordBotModule;
     }
 
+    private void initializePacDiscordSupport() {
+        var pacPlugin = getServer().getPluginManager().getPlugin("PAC");
+        if (pacPlugin == null || !pacPlugin.isEnabled()) {
+            getLogger().info("PAC is not available; PAC integration is disabled.");
+            return;
+        }
+        try {
+            pacDiscordSupportModule = PacDiscordSupportModule.create(this, discordBotModule);
+        } catch (LinkageError error) {
+            getLogger().warning("PAC is not available; PAC integration is disabled because its API could not be loaded: " + error.getMessage());
+        }
+    }
+
     public HomeModule getHomeModule() {
         return homeModule;
     }
@@ -606,6 +622,9 @@ public final class Loader extends JavaPlugin {
         }
         if (discordWebhookModule != null) {
             discordWebhookModule.shutdown();
+        }
+        if (pacDiscordSupportModule != null) {
+            pacDiscordSupportModule.shutdown();
         }
         if (discordBotModule != null) {
             discordBotModule.shutdown();

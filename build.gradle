@@ -20,8 +20,13 @@ repositories {
     }
 }
 
+def pacApiJar = project.findProperty('pacApiJar')
+        ?: System.getenv('PAC_API_JAR')
+        ?: file("${rootDir.parent}/PAC/build/libs/PAC-0.1.0-plain.jar")
+
 dependencies {
     paperweight.paperDevBundle("26.3.build.+")
+    compileOnly files(pacApiJar)
     compileOnly('com.mojang:authlib:7.0.61')
     compileOnly('io.netty:netty-transport:4.2.7.Final')
     implementation 'com.google.code.gson:gson:2.10.1'

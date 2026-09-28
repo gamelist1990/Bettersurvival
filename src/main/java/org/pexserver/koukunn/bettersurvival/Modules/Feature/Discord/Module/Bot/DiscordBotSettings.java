@@ -10,6 +10,12 @@ public class DiscordBotSettings {
     private String token = "";
     private String guildId = "";
     private String whitelistChannelId = "";
+    private String pacAppealChannelId = "";
+    private String pacAppealInboxChannelId = "";
+    private String pacBanListChannelId = "";
+    private List<String> pacBanListMessageIds = new ArrayList<>();
+    private List<String> pacSupportStaffRoleIds = new ArrayList<>();
+    private String pacSupportDashboardMessageId = "";
     private String whitelistApprovalMode = DiscordWhitelistApprovalMode.DEFAULT.name();
     private List<String> whitelistApproverUserIds = new ArrayList<>();
 
@@ -35,6 +41,83 @@ public class DiscordBotSettings {
 
     public void setWhitelistChannelId(String whitelistChannelId) {
         this.whitelistChannelId = whitelistChannelId == null ? "" : whitelistChannelId.trim();
+    }
+
+    public String getPacAppealChannelId() {
+        return pacAppealChannelId == null ? "" : pacAppealChannelId;
+    }
+
+    public void setPacAppealChannelId(String pacAppealChannelId) {
+        this.pacAppealChannelId = pacAppealChannelId == null ? "" : pacAppealChannelId.trim();
+    }
+
+    public String getPacAppealInboxChannelId() {
+        return pacAppealInboxChannelId == null ? "" : pacAppealInboxChannelId;
+    }
+
+    public void setPacAppealInboxChannelId(String pacAppealInboxChannelId) {
+        this.pacAppealInboxChannelId = pacAppealInboxChannelId == null ? "" : pacAppealInboxChannelId.trim();
+    }
+
+    public String getPacBanListChannelId() {
+        return pacBanListChannelId == null ? "" : pacBanListChannelId;
+    }
+
+    public void setPacBanListChannelId(String pacBanListChannelId) {
+        this.pacBanListChannelId = pacBanListChannelId == null ? "" : pacBanListChannelId.trim();
+    }
+
+    public List<String> getPacBanListMessageIds() {
+        return new ArrayList<>(pacBanListMessageIds);
+    }
+
+    public void setPacBanListMessageIds(List<String> pacBanListMessageIds) {
+        LinkedHashSet<String> uniqueIds = new LinkedHashSet<>();
+        if (pacBanListMessageIds != null) {
+            for (String messageId : pacBanListMessageIds) {
+                if (messageId != null && messageId.trim().matches("\\d+")) {
+                    uniqueIds.add(messageId.trim());
+                }
+            }
+        }
+        this.pacBanListMessageIds = new ArrayList<>(uniqueIds);
+    }
+
+    public List<String> getPacSupportStaffRoleIds() {
+        return new ArrayList<>(pacSupportStaffRoleIds);
+    }
+
+    public void setPacSupportStaffRoleIds(List<String> roleIds) {
+        LinkedHashSet<String> uniqueIds = new LinkedHashSet<>();
+        if (roleIds != null) {
+            for (String roleId : roleIds) {
+                if (roleId != null && roleId.trim().matches("\\d+")) {
+                    uniqueIds.add(roleId.trim());
+                }
+            }
+        }
+        this.pacSupportStaffRoleIds = new ArrayList<>(uniqueIds);
+    }
+
+    public void setPacSupportStaffRoleIdsFromText(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            setPacSupportStaffRoleIds(List.of());
+            return;
+        }
+        setPacSupportStaffRoleIds(List.of(rawValue.trim().split("[,\\s]+")));
+    }
+
+    public String getPacSupportStaffRoleIdsText() {
+        return String.join(", ", pacSupportStaffRoleIds);
+    }
+
+    public String getPacSupportDashboardMessageId() {
+        return pacSupportDashboardMessageId == null ? "" : pacSupportDashboardMessageId;
+    }
+
+    public void setPacSupportDashboardMessageId(String messageId) {
+        this.pacSupportDashboardMessageId = messageId == null || !messageId.trim().matches("\\d+")
+                ? "" : messageId.trim();
     }
 
     public DiscordWhitelistApprovalMode getWhitelistApprovalMode() {
