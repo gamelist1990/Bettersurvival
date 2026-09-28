@@ -926,6 +926,7 @@ public class OtherworldModule implements Listener {
         }
         if (isSelectionLobby(event.getFrom())) {
             showAllPlayersTo(player);
+            restoreSelectionGameMode(player);
             playerDataStore.load(player, getGroup(player.getWorld()));
             return;
         }
@@ -1397,11 +1398,12 @@ public class OtherworldModule implements Listener {
 
     private void restoreSelectionGameMode(Player player) {
         GameMode previous = selectionLobbyGameModes.remove(player.getUniqueId());
-        if (previous != null && player.getGameMode() != previous) player.setGameMode(previous);
         lobbyEditMode.remove(player.getUniqueId());
+        GameMode restored = previous == null || previous == GameMode.ADVENTURE ? GameMode.SURVIVAL : previous;
+        if (player.getGameMode() != restored) player.setGameMode(restored);
         player.setInvulnerable(false);
         player.setFlying(false);
-        player.setAllowFlight(previous == GameMode.CREATIVE || previous == GameMode.SPECTATOR);
+        player.setAllowFlight(restored == GameMode.CREATIVE || restored == GameMode.SPECTATOR);
     }
 
     private void applyLobbyHotbar(Player player) {
