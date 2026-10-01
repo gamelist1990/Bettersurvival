@@ -2,6 +2,7 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld;
 
 import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -98,6 +99,9 @@ public class OtherworldModule implements Listener {
     private final Set<UUID> openSelectionMenus = new HashSet<>();
     private final Map<UUID, UUID> selectionCountdownSessions = new HashMap<>();
     private final Map<UUID, UUID> lockedDetailSessions = new HashMap<>();
+    private final Map<UUID, UUID> pendingMoves = new HashMap<>();
+    private final Set<Chunk> preparedSpawnChunks = new HashSet<>();
+    private volatile boolean shuttingDown;
     private final Map<UUID, GameMode> selectionLobbyGameModes = new HashMap<>();
     private final Set<UUID> lobbyEditMode = new HashSet<>();
     private final NamespacedKey lobbyItemKey;
@@ -123,6 +127,10 @@ public class OtherworldModule implements Listener {
         this.lobbyFlyKey = new NamespacedKey(plugin, "otherworld_lobby_fly");
         this.lobbyPlayersKey = new NamespacedKey(plugin, "otherworld_lobby_players");
         load();
+        for (Group group : groups.values()) {
+            World world = ensureGroupWorld(group, Environment.NORMAL);
+            if (world != null) prepareSpawnChunks(world, 0);
+        }
         Bukkit.getScheduler().runTask(plugin, () -> {
             ensureSelectionLobby();
             scanAndMirrorCustomDimensions();
@@ -529,6 +537,10 @@ public class OtherworldModule implements Listener {
             }
             return false;
         }
+        if (pendingMoves.containsKey(player.getUniqueId())) {
+            player.sendMessage("§e移動先を読み込み中です。しばらくお待ちください。");
+            return false;
+        }
         World world = ensureGroupWorld(group, Environment.NORMAL);
         if ("default".equals(groupName)) {
             World defaultWorld = resolveWorldId("world");
@@ -543,18 +555,61 @@ public class OtherworldModule implements Listener {
         World destination = world;
         Location target = destination.getSpawnLocation();
         String targetGroup = groupName;
+        World source = player.getWorld();
+        UUID playerId = player.getUniqueId();
+        UUID moveId = UUID.randomUUID();
+        pendingMoves.put(playerId, moveId);
+        player.sendMessage("§e移動先を読み込んでいます…");
         plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline()) {
+            if (!player.isOnline() || !moveId.equals(pendingMoves.get(playerId))) {
+                pendingMoves.remove(playerId, moveId);
                 return;
             }
-            boolean teleported = player.teleport(target, PlayerTeleportEvent.TeleportCause.PLUGIN);
-            if (!teleported || player.getWorld() != destination) {
-                plugin.getLogger().warning("Otherworld move failed: group=" + targetGroup
-                        + ", target=" + destination.getName() + ", teleport=" + teleported
-                        + ", actual=" + player.getWorld().getName());
-            }
+            destination.getChunkAtAsync(target).thenCompose(chunk -> {
+                if (shuttingDown || !player.isOnline() || player.getWorld() != source
+                        || !moveId.equals(pendingMoves.get(playerId))
+                        || Bukkit.getWorld(destination.getUID()) != destination
+                        || groups.get(targetGroup) != group
+                        || (!(ignoreLock && player.isOp()) && !canEnter(player, targetGroup))) {
+                    return java.util.concurrent.CompletableFuture.completedFuture(false);
+                }
+                return player.teleportAsync(target, PlayerTeleportEvent.TeleportCause.PLUGIN);
+            }).whenComplete((teleported, failure) -> {
+                if (shuttingDown || !plugin.isEnabled()) return;
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!pendingMoves.remove(playerId, moveId) || !player.isOnline()) return;
+                    if (failure != null || !Boolean.TRUE.equals(teleported) || player.getWorld() != destination) {
+                        player.sendMessage("§c移動できませんでした。もう一度お試しください。");
+                        if (isSelectionLobby(player.getWorld())) openAutomaticSelection(player);
+                        plugin.getLogger().warning("Otherworld move failed: group=" + targetGroup
+                                + ", target=" + destination.getName() + ", teleport=" + teleported
+                                + ", actual=" + player.getWorld().getName()
+                                + (failure == null ? "" : ", error=" + failure));
+                    }
+                });
+            });
         });
         return true;
+    }
+
+    /** Load and retain the nine arrival chunks one at a time without blocking a server tick. */
+    private void prepareSpawnChunks(World world, int index) {
+        if (index >= 9 || shuttingDown) return;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (shuttingDown || Bukkit.getWorld(world.getUID()) != world) return;
+            Location spawn = world.getSpawnLocation();
+            int chunkX = (spawn.getBlockX() >> 4) + index % 3 - 1;
+            int chunkZ = (spawn.getBlockZ() >> 4) + index / 3 - 1;
+            world.getChunkAtAsync(chunkX, chunkZ).thenAccept(chunk -> {
+                if (shuttingDown || Bukkit.getWorld(world.getUID()) != world) return;
+                if (chunk.addPluginChunkTicket(plugin)) preparedSpawnChunks.add(chunk);
+                prepareSpawnChunks(world, index + 1);
+            }).exceptionally(failure -> {
+                plugin.getLogger().warning("Otherworld spawn preparation failed: " + world.getName()
+                        + " (" + failure + ")");
+                return null;
+            });
+        });
     }
 
     private World ensureGroupWorld(Group group, Environment environment) {
@@ -888,6 +943,7 @@ public class OtherworldModule implements Listener {
 
     public boolean moveToLobby(Player player) {
         if (player == null) return false;
+        pendingMoves.remove(player.getUniqueId());
         World lobby = ensureSelectionLobby();
         if (lobby == null) return false;
         boolean alreadyInLobby = isSelectionLobby(player.getWorld());
@@ -986,6 +1042,7 @@ public class OtherworldModule implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
+        pendingMoves.remove(player.getUniqueId());
         deathGroups.remove(player.getUniqueId());
         if (isSelectionLobby(player.getWorld())) {
             selectionLobbyGameModes.remove(player.getUniqueId());
@@ -1161,9 +1218,7 @@ public class OtherworldModule implements Listener {
                         if (!p.isOnline()) {
                             return;
                         }
-                        if (move(p, selectedGroup)) {
-                            restoreSelectionGameMode(p);
-                        } else {
+                        if (!move(p, selectedGroup)) {
                             selectionTransitions.remove(p.getUniqueId());
                             p.sendMessage("§c" + displayGroupName(selectedGroup) + " へ移動できませんでした");
                             showSelection(p, accessibleGroups(p));
@@ -1633,8 +1688,9 @@ public class OtherworldModule implements Listener {
                 ChestUI.closeMenu(target);
                 String groupName = names.get(index);
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (forceMove(target, groupName)) restoreSelectionGameMode(target);
-                    else target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
+                    if (!forceMove(target, groupName)) {
+                        target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
+                    }
                 });
                 return;
             }
@@ -1788,8 +1844,7 @@ public class OtherworldModule implements Listener {
             }
             ChestUI.closeMenu(target);
             boolean moved = target.isOp() ? forceMove(target, groupName) : move(target, groupName);
-            if (moved) restoreSelectionGameMode(target);
-            else target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
+            if (!moved) target.sendMessage("§c" + displayGroupName(groupName) + " へ移動できませんでした");
         }).show(player);
         startLockedGroupCountdown(player, groupName, sessionId);
     }
@@ -2108,6 +2163,14 @@ public class OtherworldModule implements Listener {
     }
 
     public void shutdown() {
+        shuttingDown = true;
+        pendingMoves.clear();
+        for (Chunk chunk : preparedSpawnChunks) {
+            if (Bukkit.getWorld(chunk.getWorld().getUID()) == chunk.getWorld()) {
+                chunk.removePluginChunkTicket(plugin);
+            }
+        }
+        preparedSpawnChunks.clear();
         for (Player player : List.copyOf(Bukkit.getOnlinePlayers())) {
             if (!isSelectionLobby(player.getWorld())) {
                 playerDataStore.save(player, getGroup(player));

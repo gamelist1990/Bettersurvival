@@ -35,6 +35,7 @@ import org.bukkit.persistence.PersistentDataType;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.LandProtection.LandProtectionModule;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldModule;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.io.ByteArrayInputStream;
@@ -358,8 +359,19 @@ public class DeathChestModule implements Listener {
 
     private String formatLocation(Location location) {
         World world = location.getWorld();
-        String worldName = world == null ? "unknown" : world.getName();
+        String worldName = getOtherworldDisplayName(world);
         return worldName + " X:" + location.getBlockX() + " Y:" + location.getBlockY() + " Z:" + location.getBlockZ();
+    }
+
+    private String getOtherworldDisplayName(World world) {
+        if (world == null) return "unknown";
+
+        OtherworldModule otherworld = plugin.getOtherworldModule();
+        if (otherworld == null) return world.getName();
+
+        String group = otherworld.getGroup(world);
+        if (group == null || group.isBlank()) return world.getName();
+        return otherworld.displayGroupName(group);
     }
 
     private Block findPlacement(Location location) {
