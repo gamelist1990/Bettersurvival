@@ -80,9 +80,16 @@ public final class OtherworldPlayerDataStore {
 
     /** Player の状態をメインスレッド上で snapshot し、ファイル書き込みだけを非同期化する。 */
     public void save(Player player, String scope) {
+        if (player == null) return;
+        save(player, scope, player.getLocation());
+    }
+
+    /** グループ移動前の位置を指定して、退出元のプロフィールを保存する。 */
+    public void save(Player player, String scope, Location location) {
         if (player == null || ioExecutor.isShutdown()) return;
-        Properties snapshot = capture(player);
         UUID playerId = player.getUniqueId();
+        if (activeLoads.containsKey(playerId)) return;
+        Properties snapshot = capture(player, location);
         String normalizedScope = normalizeScope(scope);
         submitIo(() -> saveProperties(playerId, normalizedScope, snapshot));
     }
@@ -105,6 +112,10 @@ public final class OtherworldPlayerDataStore {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 Long current = activeLoads.get(playerId);
                 if (!Objects.equals(current, requestId) || !player.isOnline()) return;
+                if (!belongsToScope(player.getWorld(), normalizedScope)) {
+                    activeLoads.remove(playerId, requestId);
+                    return;
+                }
                 activeLoads.remove(playerId, requestId);
                 if (exists && properties == null) {
                     // 読み込みエラー時は現在の状態を壊さない。
@@ -125,6 +136,10 @@ public final class OtherworldPlayerDataStore {
     }
 
     private Properties capture(Player player) {
+        return capture(player, player.getLocation());
+    }
+
+    private Properties capture(Player player, Location location) {
         Properties properties = new Properties();
         PlayerInventory inventory = player.getInventory();
         properties.setProperty(KEY_INVENTORY, encode(normalize(inventory.getStorageContents(), 36)));
@@ -134,7 +149,6 @@ public final class OtherworldPlayerDataStore {
         properties.setProperty(KEY_LEVEL, Integer.toString(player.getLevel()));
         properties.setProperty(KEY_EXP, Float.toString(player.getExp()));
         properties.setProperty(KEY_TOTAL_EXP, Integer.toString(player.getTotalExperience()));
-        Location location = player.getLocation();
         if (location.getWorld() != null && !isSelectionLobby(location.getWorld())) {
             properties.setProperty(KEY_WORLD, location.getWorld().getName());
             properties.setProperty(KEY_X, Double.toString(location.getX()));
@@ -175,7 +189,23 @@ public final class OtherworldPlayerDataStore {
         double z = parseDouble(properties.getProperty(KEY_Z), world.getSpawnLocation().getZ());
         float yaw = parseFloat(properties.getProperty(KEY_YAW), 0.0F);
         float pitch = parseFloat(properties.getProperty(KEY_PITCH), 0.0F);
-        player.teleport(new Location(world, x, y, z, yaw, pitch));
+        Location target = new Location(world, x, y, z, yaw, pitch);
+        UUID playerId = player.getUniqueId();
+        long requestId = loadSequence.incrementAndGet();
+        activeLoads.put(playerId, requestId);
+        world.getChunkAtAsync(target).thenCompose(chunk -> {
+            if (!plugin.isEnabled() || !player.isOnline()
+                    || !Objects.equals(activeLoads.get(playerId), requestId)
+                    || !belongsToScope(player.getWorld(), scope)) {
+                return java.util.concurrent.CompletableFuture.completedFuture(false);
+            }
+            return player.teleportAsync(target);
+        }).whenComplete((success, failure) -> {
+            activeLoads.remove(playerId, requestId);
+            if (failure != null) {
+                plugin.getLogger().warning("[Otherworld] 退出位置の復元に失敗しました: " + failure);
+            }
+        });
     }
 
     private boolean belongsToScope(org.bukkit.World world, String scope) {

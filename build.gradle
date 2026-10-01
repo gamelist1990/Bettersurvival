@@ -18,15 +18,29 @@ repositories {
     maven {
         url = 'https://repo.opencollab.dev/main/'
     }
+    ivy {
+        name = 'pac-releases'
+        url = 'https://github.com/gamelist1990/PAC/releases/latest/download'
+        patternLayout {
+            artifact 'PAC-[classifier].[ext]'
+        }
+        metadataSources { artifact() }
+        content { includeModule('org.pexserver.pac', 'PAC') }
+    }
 }
 
 def pacApiJar = project.findProperty('pacApiJar')
         ?: System.getenv('PAC_API_JAR')
-        ?: file("${rootDir.parent}/PAC/build/libs/PAC-0.1.0-plain.jar")
 
 dependencies {
     paperweight.paperDevBundle("26.3.build.+")
-    compileOnly files(pacApiJar)
+    if (pacApiJar) {
+        compileOnly files(pacApiJar)
+    } else {
+        compileOnly('org.pexserver.pac:PAC:latest:plain@jar') {
+            changing = true
+        }
+    }
     compileOnly('com.mojang:authlib:7.0.61')
     compileOnly('io.netty:netty-transport:4.2.7.Final')
     implementation 'com.google.code.gson:gson:2.10.1'

@@ -80,6 +80,8 @@
 | TrueCrafter | HardMode のクラフト拡張。enabled/disabled と heat 1–5 を管理 | `/hardmode truecrafter ...` |
 | Just Leveling | 8能力値、パッシブ、24スキル、称号、ランキング等を含むレベリングシステム | `/hardmode leveling ...` |
 
+Otherworldは退出時や別グループへ移動する前の位置をグループごとに保存し、再参加時に復元します。ロビーの「Join時にロビー初期地点」と「ロビー内の初期リスポーン」はロビー内だけに適用され、Otherworldの退出位置やベッドのリスポーン先には影響しません。「常にロビー」はログイン時のロビーへの案内を制御し、Otherworldへ戻る際には保存位置を復元します。
+
 Just Leveling の正確な仕様は [LEVELING_SYSTEM.md](LEVELING_SYSTEM.md) を参照してください。
 
 ## Toggle の初期値

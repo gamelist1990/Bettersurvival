@@ -128,8 +128,10 @@ public class OtherworldModule implements Listener {
         this.lobbyPlayersKey = new NamespacedKey(plugin, "otherworld_lobby_players");
         load();
         for (Group group : groups.values()) {
-            World world = ensureGroupWorld(group, Environment.NORMAL);
-            if (world != null) prepareSpawnChunks(world, 0);
+            for (Environment environment : group.worlds.keySet()) {
+                World world = ensureGroupWorld(group, environment);
+                if (world != null && environment == Environment.NORMAL) prepareSpawnChunks(world, 0);
+            }
         }
         Bukkit.getScheduler().runTask(plugin, () -> {
             ensureSelectionLobby();
@@ -578,7 +580,8 @@ public class OtherworldModule implements Listener {
                 if (shuttingDown || !plugin.isEnabled()) return;
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!pendingMoves.remove(playerId, moveId) || !player.isOnline()) return;
-                    if (failure != null || !Boolean.TRUE.equals(teleported) || player.getWorld() != destination) {
+                    if (failure != null || !Boolean.TRUE.equals(teleported)
+                            || !targetGroup.equals(getGroup(player.getWorld()))) {
                         player.sendMessage("§c移動できませんでした。もう一度お試しください。");
                         if (isSelectionLobby(player.getWorld())) openAutomaticSelection(player);
                         plugin.getLogger().warning("Otherworld move failed: group=" + targetGroup
@@ -889,7 +892,7 @@ public class OtherworldModule implements Listener {
             playerDataStore.ensureDefaultMigration(player);
             String current = getGroup(player);
             if (isSelectionLobby(player.getWorld())) {
-                if (alwaysLobby && lobbyJoinSpawn) {
+                if (lobbyJoinSpawn) {
                     player.teleport(resolveLobbySpawn(player.getWorld()), PlayerTeleportEvent.TeleportCause.PLUGIN);
                 }
                 enterSelectionLobby(player);
@@ -972,10 +975,6 @@ public class OtherworldModule implements Listener {
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
         if (isSelectionLobby(player.getWorld())) {
-            String source = getGroup(event.getFrom());
-            if (!"selection-lobby".equals(source)) {
-                playerDataStore.save(player, source);
-            }
             enterSelectionLobby(player);
             openAutomaticSelection(player);
             return;
@@ -989,7 +988,6 @@ public class OtherworldModule implements Listener {
         String source = getGroup(event.getFrom());
         String target = getGroup(player.getWorld());
         if (source.equals(target)) return;
-        playerDataStore.save(player, source);
         playerDataStore.ensureDefaultMigration(player);
         playerDataStore.load(player, target);
     }
@@ -1008,7 +1006,7 @@ public class OtherworldModule implements Listener {
     public void onRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
         String deathGroupName = deathGroups.remove(player.getUniqueId());
-        if (alwaysLobbyRespawn) {
+        if (alwaysLobbyRespawn && isSelectionLobby(player.getWorld())) {
             World lobby = ensureSelectionLobby();
             if (lobby != null) {
                 event.setRespawnLocation(resolveLobbySpawn(lobby));
@@ -1619,10 +1617,10 @@ public class OtherworldModule implements Listener {
             Material.ENDER_PEARL, "§7ログイン時に必ずロビーへ送ります");
         builder.addButtonAt(3, lobbyJoinSpawn ? "§aJoin時にロビー初期地点: ON" : "§cJoin時にロビー初期地点: OFF",
             Material.LODESTONE,
-            "§7常にロビーがONの時、参加ごとに初期地点へ戻します\n§7季節ルートがある場合はその地点を使用します");
-        builder.addButtonAt(2, alwaysLobbyRespawn ? "§a初期リスポーンをロビー: ON" : "§c初期リスポーンをロビー: OFF",
+            "§7ロビーで再参加した場合だけ初期地点へ戻します\n§7Otherworld内の退出位置には影響しません");
+        builder.addButtonAt(2, alwaysLobbyRespawn ? "§aロビー内の初期リスポーン: ON" : "§cロビー内の初期リスポーン: OFF",
             Material.TOTEM_OF_UNDYING,
-            "§7死亡後のリスポーン先をロビーにします\n§7季節ルートがある場合はその地点を使用します");
+            "§7ロビー内で死亡した場合だけ初期地点へ戻します\n§7Otherworld内のベッドやリスポーンには影響しません");
         builder.addButtonAt(1, autoMenu ? "§a自動GUI: ON" : "§c自動GUI: OFF",
             Material.CHEST, "§7ロビー参加時の選択GUIを切り替えます");
         builder.addButtonAt(7, lobbyFlightAllowed ? "§aロビー飛行: ON" : "§cロビー飛行: OFF",
@@ -2017,7 +2015,18 @@ public class OtherworldModule implements Listener {
                 }
                 return;
             }
-            playerDataStore.save(player, sourceGroupName);
+        }
+    }
+
+    /** Save the departure profile using the original position after teleport routing and cancellation checks. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleportSave(PlayerTeleportEvent event) {
+        Location from = event.getFrom();
+        Location to = event.getTo();
+        if (to == null || to.getWorld() == null || isSelectionLobby(from.getWorld())) return;
+        String source = getGroup(from.getWorld());
+        if (!source.equals(getGroup(to.getWorld()))) {
+            playerDataStore.save(event.getPlayer(), source, from);
         }
     }
 

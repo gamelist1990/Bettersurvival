@@ -66,6 +66,10 @@ TrueCrafter と **Just Leveling** を搭載。Just Leveling は8能力値、パ�
 ./gradlew build --stacktrace
 ```
 
+PAC APIは[GitHub Releases](https://github.com/gamelist1990/PAC/releases)の最新 `PAC-plain.jar` をGradleが取得し、コンパイル時のみ参照します。PAC側でplain JARを公開したReleaseが必要です。新しいReleaseをすぐ反映する場合は `./gradlew build --refresh-dependencies` を実行してください。
+
+ローカルJARで検証する場合は `./gradlew build -PpacApiJar=/path/to/PAC-plain.jar`、または環境変数 `PAC_API_JAR` で参照先を指定できます。
+
 ## Contributing
 
 変更時はコードだけでなく、ユーザーから見える仕様が変わる場合に `docs/` も更新してください。特に以下は実装とドキュメントを同じPRで同期させます。
