@@ -13,6 +13,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ItemNameUtil;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -325,7 +327,7 @@ public class ParallelFurnaceUI implements InventoryHolder {
         Location overflow = data.getOverflowChest();
         if (overflow != null && overflow.getWorld() != null) {
             setButton(SLOT_OVERFLOW, "§a搬出チェスト: 設定済み", Material.ENDER_CHEST,
-                    "§7焼けない素材の送り先:\n§f" + overflow.getWorld().getName() + " §7("
+                    "§7焼けない素材の送り先:\n§f" + OtherworldDisplayLabel.forWorld(Loader.getPlugin(Loader.class), overflow.getWorld()) + " §7("
                             + overflow.getBlockX() + ", " + overflow.getBlockY() + ", " + overflow.getBlockZ() + ")"
                             + "\n§cクリックで解除 §7(解除後にもう一度クリックで再設定)");
         } else {

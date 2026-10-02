@@ -72,6 +72,8 @@
 | KeepAliveGuard | OP の keepalive timeout kick を可能な範囲で抑止 | `keepaliveguard` |
 | CommandBlocker | コマンドをグローバルに無効化する管理機能 | — |
 
+WebMapの `/webmap settings` →「公開ワールド」で、Otherworldの公開範囲をdefaultのみ・複数選択・単一グループ・全グループから設定できます。グループを開くとディメンションごとの表示、探索追跡、プレイヤー位置の配信、ChunkGenを設定できます。ブラウザの一覧もOtherworldごとにまとめ、グループ名とディメンション名を表示します。非公開ディメンションの地図・マーカー・プレイヤー位置は配信せず、選択ロビーは公開対象に含めません。既存のselected設定は従来のdefault公開を引き継ぎ、以後はdefaultも個別に除外できます。
+
 ## ワールド・HardMode
 
 | 機能 | 概要 | 管理 |

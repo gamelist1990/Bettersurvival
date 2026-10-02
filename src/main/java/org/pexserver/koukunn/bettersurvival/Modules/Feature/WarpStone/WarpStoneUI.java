@@ -9,6 +9,8 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -117,7 +119,7 @@ public class WarpStoneUI implements InventoryHolder {
                 distance = "\n§7距離: §f" + (int) viewerLoc.distance(loc) + "m";
             }
             setButton(slot, "§b◈ " + stone.name(), Material.LODESTONE,
-                    "§7" + loc.getWorld().getName() + " §8(" + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ() + ")"
+                    "§7" + OtherworldDisplayLabel.forWorld(Loader.getPlugin(Loader.class), loc.getWorld()) + " §8(" + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ() + ")"
                             + distance
                             + "\n\n§e▶ クリックでワープ");
             slotKeys.add(stone.key());

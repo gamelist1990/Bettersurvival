@@ -14,6 +14,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.DialogUI;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -942,7 +943,7 @@ public final class ProtectMenu {
 
     private static String locationSummary(Location location) {
         if (location == null || location.getWorld() == null) return "unknown";
-        return location.getWorld().getName()
+        return OtherworldDisplayLabel.forWorld(Loader.getPlugin(Loader.class), location.getWorld())
                 + " " + location.getBlockX()
                 + "," + location.getBlockY()
                 + "," + location.getBlockZ();

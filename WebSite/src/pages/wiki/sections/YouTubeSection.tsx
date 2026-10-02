@@ -3,7 +3,7 @@ import { CommandBox } from '../components/CommandBox';
 
 export function YouTubeSection() {
   return (
-    <SectionShell eyebrow="YouTube" title="YouTube ライブ連携" intro="ライブ配信のコメントや支援イベントをMinecraftへ中継する管理者向け機能です。" scope="admin">
+    <SectionShell eyebrow="YouTube" title="YouTube ライブ連携" intro="ライブ配信のコメントや支援イベントをMinecraftへ中継する管理者向け機能です。" scope="op">
       <h3>使い始める</h3>
       <ol>
         <li>配布版に共通OAuth Client IDが組み込まれている場合は、認証情報の入力は不要です。</li>

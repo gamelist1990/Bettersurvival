@@ -46,9 +46,9 @@ public final class WebMapSettingsMenu {
                         Material.TARGET,
                         "§7画面上部にサーバーTPS/メモリを表示する")
                 .addButtonAt(19,
-                        "§d公開ワールド: " + settings.getPublicationMode(),
+                        "§d公開ワールド: " + publicationModeLabel(settings.getPublicationMode()),
                         Material.ENDER_EYE,
-                        "§7クリックで公開範囲を切替")
+                        "§7Otherworldごとの公開対象を設定")
                 .addButtonAt(20,
                         "§bディメンション設定",
                         Material.COMPASS,
@@ -92,11 +92,7 @@ public final class WebMapSettingsMenu {
                             module.toggleShowTpsBar();
                             openMainMenu(p, module);
                         }
-                        case 19 -> {
-                            module.cyclePublicationSelection();
-                            openMainMenu(p, module);
-                        }
-                        case 20 -> openWorldListMenu(p, module);
+                        case 19, 20 -> openPublicationMenu(p, module, 0);
                         case 21 -> openEventMenu(p, module);
                         case 22 -> {
                             module.stopAllChunkGen();
@@ -153,14 +149,85 @@ public final class WebMapSettingsMenu {
     }
 
     public static void openWorldListMenu(Player player, WebMapModule module) {
-        List<WebMapDimensionSettings> dimensions = module.getDimensionSettingsList();
-        int size = Math.min(54, Math.max(27, ((dimensions.size() + 8) / 9 + 1) * 9));
-        int backSlot = size - 1;
+        openWorldListMenu(player, module, null, 0);
+    }
+
+    private static void openPublicationMenu(Player player, WebMapModule module, int requestedPage) {
+        List<String> groups = module.getPublicationGroupNames();
+        int page = Math.max(0, Math.min(requestedPage, Math.max(0, (groups.size() - 1) / 45)));
+        int start = page * 45;
+        ChestUI.Builder builder = ChestUI.builder().title("WebMap Otherworld " + (page + 1)).size(54);
+        for (int index = start; index < Math.min(groups.size(), start + 45); index++) {
+            String group = groups.get(index);
+            boolean published = module.getSettings().isGroupPublished(group);
+            builder.addButtonAt(index - start, (published ? "§a" : "§c") + module.getGroupDisplayName(group),
+                    published ? Material.FILLED_MAP : Material.MAP,
+                    "§7公開対象: " + onOff(published) + "\n§7クリックで公開・ディメンション設定");
+        }
+        builder.addButtonAt(45, "§e公開モード: " + publicationModeLabel(module.getSettings().getPublicationMode()),
+                Material.ENDER_EYE, "§7クリックで通常 / 複数選択 / 単一 / 全グループを切替")
+                .addButtonAt(47, "§e前のページ", Material.ARROW, "")
+                .addButtonAt(49, "§e戻る", Material.BARRIER, "")
+                .addButtonAt(50, "§e次のページ", Material.ARROW, "")
+                .addButtonAt(52, "§b全ディメンション", Material.COMPASS, "§7個別の表示・追跡設定");
+        builder.then((result, p) -> {
+            if (!result.success || result.slot == null) return;
+            int slot = result.slot;
+            if (slot < 45 && slot >= 0 && start + slot < groups.size()) {
+                openGroupDetailMenu(p, module, groups.get(start + slot));
+            } else if (slot == 45) {
+                module.cyclePublicationSelection();
+                openPublicationMenu(p, module, page);
+            } else if (slot == 47 || slot == 50) {
+                openPublicationMenu(p, module, page + (slot == 47 ? -1 : 1));
+            } else if (slot == 52) openWorldListMenu(p, module);
+            else if (slot == 49) openMainMenu(p, module);
+        }).show(player);
+    }
+
+    private static String publicationModeLabel(String mode) {
+        return switch (mode.toLowerCase(java.util.Locale.ROOT)) {
+            case "selected" -> "複数選択";
+            case "group" -> "単一グループ";
+            case "all" -> "全グループ";
+            default -> "defaultのみ";
+        };
+    }
+
+    private static void openGroupDetailMenu(Player player, WebMapModule module, String group) {
+        boolean published = module.getSettings().isGroupPublished(group);
+        ChestUI.builder().title("WebMap: " + module.getGroupDisplayName(group)).size(27)
+                .addButtonAt(10, published ? "§a公開対象: ON" : "§c公開対象: OFF",
+                        published ? Material.LIME_DYE : Material.GRAY_DYE,
+                        "§7単一モードではこのグループを選択\n§7その他のモードでは複数選択へ切替してON/OFF")
+                .addButtonAt(12, "§bディメンション設定", Material.COMPASS,
+                        "§7公開するディメンション・探索追跡・プレイヤー表示を設定")
+                .addButtonAt(14, "§eモード: " + publicationModeLabel(module.getSettings().getPublicationMode()),
+                        Material.ENDER_EYE, "§7最終的な公開にはディメンションの表示もONにしてください")
+                .addButtonAt(26, "§e戻る", Material.ARROW, "")
+                .then((result, p) -> {
+                    if (!result.success || result.slot == null) return;
+                    if (result.slot == 10) {
+                        module.selectPublicationGroup(group);
+                        openGroupDetailMenu(p, module, group);
+                    } else if (result.slot == 12) openWorldListMenu(p, module, group, 0);
+                    else if (result.slot == 26) openPublicationMenu(p, module, 0);
+                }).show(player);
+    }
+
+    private static void openWorldListMenu(Player player, WebMapModule module, String group, int requestedPage) {
+        List<WebMapDimensionSettings> dimensions = module.getDimensionSettingsList().stream()
+                .filter(dimension -> !"selection-lobby".equals(module.getDimensionGroup(dimension.getWorldKey())))
+                .filter(dimension -> group == null || group.equals(module.getDimensionGroup(dimension.getWorldKey())))
+                .toList();
+        int page = Math.max(0, Math.min(requestedPage, Math.max(0, (dimensions.size() - 1) / 45)));
+        int start = page * 45;
+        int backSlot = 49;
         ChestUI.Builder builder = ChestUI.builder()
-                .title("WebMap Dimensions")
-                .size(size);
+                .title("WebMap " + (group == null ? "Dimensions" : module.getGroupDisplayName(group)) + " " + (page + 1))
+                .size(54);
         int slot = 0;
-        for (WebMapDimensionSettings dimension : dimensions) {
+        for (WebMapDimensionSettings dimension : dimensions.subList(start, Math.min(dimensions.size(), start + 45))) {
             World world = module.getPlugin().getServer().getWorlds().stream()
                     .filter(entry -> entry.getKey().toString().equals(dimension.getWorldKey()))
                     .findFirst()
@@ -170,21 +237,29 @@ public final class WebMapSettingsMenu {
                     (dimension.isVisible() ? "§a" : "§c") + dimension.getDisplayName(),
                     dimension.isVisible() ? Material.FILLED_MAP : Material.MAP,
                     "§7" + environment
+                            + "\n§7Otherworld: " + module.getGroupDisplayName(module.getDimensionGroup(dimension.getWorldKey()))
+                            + "\n§7公開対象: " + onOff(module.getSettings().isGroupPublished(module.getDimensionGroup(dimension.getWorldKey())))
+                            + "\n§7プレイヤー表示: " + onOff(dimension.isShowPlayers())
                             + "\n§7AutoTrack: " + onOff(dimension.isAutoTrack())
                             + "\n§7ChunkGen: " + onOff(dimension.isChunkGenEnabled())
                             + "\n§7Saved Chunks: " + module.getChunkCount(dimension.getWorldKey()));
         }
         builder.addButtonAt(backSlot, "§e戻る", Material.ARROW, "");
+        builder.addButtonAt(47, "§e前のページ", Material.ARROW, "");
+        builder.addButtonAt(50, "§e次のページ", Material.ARROW, "");
         builder.then((result, p) -> {
             if (!result.success || result.slot == null) {
                 return;
             }
             if (result.slot == backSlot) {
-                openMainMenu(p, module);
+                if (group == null) openPublicationMenu(p, module, 0);
+                else openGroupDetailMenu(p, module, group);
                 return;
             }
-            if (result.slot >= 0 && result.slot < dimensions.size()) {
-                openWorldDetailMenu(p, module, dimensions.get(result.slot).getWorldKey());
+            if (result.slot == 47 || result.slot == 50) {
+                openWorldListMenu(p, module, group, page + (result.slot == 47 ? -1 : 1));
+            } else if (result.slot >= 0 && result.slot < 45 && start + result.slot < dimensions.size()) {
+                openWorldDetailMenu(p, module, dimensions.get(start + result.slot).getWorldKey());
             }
         }).show(player);
     }
@@ -214,6 +289,12 @@ public final class WebMapSettingsMenu {
                         "§cChunkGen 全停止",
                         Material.BARRIER,
                         "§7全ディメンションの ChunkGen を停止")
+                .addButtonAt(14, dimension.isShowPlayers() ? "§aプレイヤー表示: ON" : "§cプレイヤー表示: OFF",
+                        Material.PLAYER_HEAD, "§7このディメンションのプレイヤー位置を配信する")
+                .addButtonAt(17, "§dOtherworld: " + module.getGroupDisplayName(module.getDimensionGroup(worldKey)),
+                        Material.ENDER_EYE,
+                        "§7公開対象: " + onOff(module.getSettings().isGroupPublished(module.getDimensionGroup(worldKey)))
+                                + "\n§7クリックでグループの公開設定")
                 .addButtonAt(15,
                         "§7保存済み: " + module.getChunkCount(worldKey) + " chunks",
                         Material.CHEST,
@@ -228,8 +309,13 @@ public final class WebMapSettingsMenu {
                         case 11 -> module.toggleWorldTracking(worldKey);
                         case 12 -> module.toggleChunkGen(worldKey);
                         case 13 -> module.stopAllChunkGen();
+                        case 14 -> module.toggleWorldPlayers(worldKey);
+                        case 17 -> {
+                            openGroupDetailMenu(p, module, module.getDimensionGroup(worldKey));
+                            return;
+                        }
                         case 26 -> {
-                            openWorldListMenu(p, module);
+                            openWorldListMenu(p, module, module.getDimensionGroup(worldKey), 0);
                             return;
                         }
                         default -> {

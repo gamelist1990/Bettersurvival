@@ -623,6 +623,13 @@ div.leaflet-control-layers.coordinates {
     padding: 10px;
 }
 
+.webmap-group-label {
+    margin: 10px 0 4px;
+    padding: 0 8px;
+    font-size: 0.8rem;
+    color: var(--map-muted, #aeb7c6);
+}
+
 .map-panel-empty {
     margin: 0;
     padding: 12px 10px;

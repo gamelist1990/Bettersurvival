@@ -6,6 +6,11 @@ public class WebMapDimensionSettings {
     private boolean visible = false;
     private boolean autoTrack = true;
     private boolean chunkGenEnabled = false;
+    private boolean showPlayers = true;
+
+    public boolean isShowPlayers() { return showPlayers; }
+
+    public void setShowPlayers(boolean showPlayers) { this.showPlayers = showPlayers; }
 
     public String getWorldKey() {
         return worldKey;

@@ -3,6 +3,8 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.Home;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -52,6 +54,12 @@ public class HomePoint {
 
     public String formatLocation() {
         return world + " X:" + Math.round(x) + " Y:" + Math.round(y) + " Z:" + Math.round(z);
+    }
+
+    public String formatLocation(Loader plugin) {
+        World targetWorld = Bukkit.getWorld(world);
+        String label = targetWorld == null ? world : OtherworldDisplayLabel.forWorld(plugin, targetWorld);
+        return label + " X:" + Math.round(x) + " Y:" + Math.round(y) + " Z:" + Math.round(z);
     }
 
     public Map<String, Object> serialize() {

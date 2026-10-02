@@ -437,6 +437,7 @@ public class WebMapStore {
         config.put("publicAccess", settings.isPublicAccess());
         config.put("autoTrackPlayers", settings.isAutoTrackPlayers());
         config.put("publicationMode", settings.getPublicationMode());
+        config.put("publicationVersion", 2);
         config.put("publicationGroup", settings.getPublicationGroup());
         config.put("publicationGroups", settings.getPublicationGroups());
         config.put("events", settings.getEvents());
@@ -444,7 +445,7 @@ public class WebMapStore {
         return config;
     }
 
-    private WebMapSettings toSettings(org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig config) {
+    WebMapSettings toSettings(org.pexserver.koukunn.bettersurvival.Core.Config.PEXConfig config) {
         WebMapSettings settings = new WebMapSettings();
         Object enabled = config.get("enabled");
         Object paused = config.get("paused");
@@ -478,6 +479,9 @@ public class WebMapStore {
             for (Object value : values) if (value != null) groups.add(value.toString());
             settings.setPublicationGroups(groups);
         }
+        if (!(config.get("publicationVersion") instanceof Number version) || version.intValue() < 2) {
+            settings.getPublicationGroups().add("default");
+        }
         if (events instanceof java.util.Map<?, ?> rawEvents) {
             WebMapSettings.EventSettings eventSettings = new WebMapSettings.EventSettings();
             Object playerMove = rawEvents.get("playerMove");
@@ -510,6 +514,9 @@ public class WebMapStore {
                 Object visible = rawDimension.get("visible");
                 Object autoTrack = rawDimension.get("autoTrack");
                 Object chunkGenEnabled = rawDimension.get("chunkGenEnabled");
+                if (rawDimension.get("showPlayers") instanceof Boolean value) {
+                    dimension.setShowPlayers(value);
+                }
                 if (displayName instanceof String value) {
                     dimension.setDisplayName(value);
                 }

@@ -9,6 +9,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Command.PermissionLevel;
 import org.pexserver.koukunn.bettersurvival.Loader;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeOfflineData;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Invsee.InvseeUI;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,7 +55,9 @@ public class InvseeCommand extends BaseCommand {
         }
         String scope = InvseeUI.resolveScope(viewer, plugin);
         if (!InvseeOfflineData.hasData(offlineTarget, scope)) {
-            sendError(sender, "このプレイヤーには現在のワールドグループ (" + scope + ") のInvSeeスナップショットがありません");
+            sendError(sender, "このプレイヤーには現在のワールドグループ ("
+                    + OtherworldDisplayLabel.forGroup(plugin, scope)
+                    + ") のInvSeeスナップショットがありません");
             return true;
         }
         Bukkit.getScheduler().runTask(plugin, () -> InvseeUI.openInventoryUI(viewer, offlineTarget, plugin));

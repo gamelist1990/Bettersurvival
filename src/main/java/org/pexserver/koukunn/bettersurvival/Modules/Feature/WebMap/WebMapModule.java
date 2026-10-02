@@ -194,27 +194,78 @@ public class WebMapModule implements Listener {
     }
 
     public WebMapDimensionSettings getDimensionSettings(World world) {
-        return store.ensureDimensionSettings(settings, world);
+        WebMapDimensionSettings dimension = store.ensureDimensionSettings(settings, world);
+        if (plugin.getOtherworldModule() != null) {
+            String label = dimension.getDisplayName();
+            if (label == null || label.isBlank() || label.equals(world.getName())
+                    || label.equals(world.getKey().toString()) || label.equals(world.getUID().toString())) {
+                dimension.setDisplayName(plugin.getOtherworldModule().getWorldDisplayName(world));
+            }
+        }
+        return dimension;
+    }
+
+    public String getWorldGroup(World world) {
+        return plugin.getOtherworldModule() == null ? "default" : plugin.getOtherworldModule().getGroup(world);
+    }
+
+    public String getGroupDisplayName(String group) {
+        return plugin.getOtherworldModule() == null ? group : plugin.getOtherworldModule().displayGroupName(group);
+    }
+
+    public List<String> getPublicationGroupNames() {
+        return plugin.getOtherworldModule() == null ? List.of("default")
+                : List.copyOf(plugin.getOtherworldModule().getGroupNames());
+    }
+
+    public String getDimensionGroup(String worldKey) {
+        World world = plugin.getServer().getWorlds().stream()
+                .filter(entry -> entry.getKey().toString().equals(worldKey)).findFirst().orElse(null);
+        return world == null ? "" : getWorldGroup(world);
+    }
+
+    public void selectPublicationGroup(String group) {
+        if (!getPublicationGroupNames().contains(group)) return;
+        if ("group".equalsIgnoreCase(settings.getPublicationMode())) {
+            settings.setPublicationGroup(group);
+        } else {
+            if (!"selected".equalsIgnoreCase(settings.getPublicationMode())) {
+                java.util.Set<String> selected = new java.util.LinkedHashSet<>();
+                for (String known : getPublicationGroupNames()) {
+                    if (settings.isGroupPublished(known)) selected.add(known);
+                }
+                settings.setPublicationGroups(selected);
+                settings.setPublicationMode("selected");
+            }
+            if (!settings.getPublicationGroups().remove(group)) settings.getPublicationGroups().add(group);
+        }
+        saveSettings(settings);
+        httpServer.clearTileCache();
     }
 
     public boolean isWorldPublished(World world) {
-        String group = plugin.getOtherworldModule() == null ? "default" : plugin.getOtherworldModule().getGroup(world);
-        String mode = settings.getPublicationMode();
-        if ("group".equalsIgnoreCase(mode)) return group.equalsIgnoreCase(settings.getPublicationGroup());
-        if ("selected".equalsIgnoreCase(mode)) return "default".equalsIgnoreCase(group) || settings.getPublicationGroups().stream().anyMatch(group::equalsIgnoreCase);
-        return "default".equalsIgnoreCase(group);
+        return settings.isGroupPublished(getWorldGroup(world));
     }
 
     public void cyclePublicationSelection() {
         String mode = settings.getPublicationMode();
-        settings.setPublicationMode("default".equalsIgnoreCase(mode) ? "selected" : "selected".equalsIgnoreCase(mode) ? "group" : "default");
-        store.saveSettings(settings);
+        if ("default".equalsIgnoreCase(mode)) {
+            settings.getPublicationGroups().add("default");
+            settings.setPublicationMode("selected");
+        } else {
+            settings.setPublicationMode("selected".equalsIgnoreCase(mode) ? "group"
+                    : "group".equalsIgnoreCase(mode) ? "all" : "default");
+        }
+        saveSettings(settings);
         httpServer.clearTileCache();
     }
 
     public List<WebMapDimensionSettings> getDimensionSettingsList() {
         syncKnownWorlds();
-        List<WebMapDimensionSettings> dimensions = new ArrayList<>(settings.getDimensions().values());
+        java.util.Set<String> loadedKeys = plugin.getServer().getWorlds().stream()
+                .map(world -> world.getKey().toString()).collect(java.util.stream.Collectors.toSet());
+        List<WebMapDimensionSettings> dimensions = new ArrayList<>(settings.getDimensions().values().stream()
+                .filter(dimension -> loadedKeys.contains(dimension.getWorldKey())).toList());
         dimensions.sort(Comparator.comparing(WebMapDimensionSettings::getDisplayName, String.CASE_INSENSITIVE_ORDER));
         return dimensions;
     }
@@ -278,7 +329,8 @@ public class WebMapModule implements Listener {
             return;
         }
         dimension.setVisible(!dimension.isVisible());
-        store.saveSettings(settings);
+        saveSettings(settings);
+        httpServer.clearTileCache();
     }
 
     public void toggleWorldTracking(String worldKey) {
@@ -288,6 +340,13 @@ public class WebMapModule implements Listener {
         }
         dimension.setAutoTrack(!dimension.isAutoTrack());
         store.saveSettings(settings);
+    }
+
+    public void toggleWorldPlayers(String worldKey) {
+        WebMapDimensionSettings dimension = settings.getDimensions().get(worldKey);
+        if (dimension == null) return;
+        dimension.setShowPlayers(!dimension.isShowPlayers());
+        saveSettings(settings);
     }
 
     public void toggleChunkGen(String worldKey) {
@@ -341,7 +400,8 @@ public class WebMapModule implements Listener {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             Location location = player.getLocation();
             World world = location.getWorld();
-            if (world == null) {
+            if (world == null || !isWorldPublished(world) || !getDimensionSettings(world).isVisible()
+                    || !getDimensionSettings(world).isShowPlayers()) {
                 continue;
             }
             Map<String, Object> row = new LinkedHashMap<>();
@@ -351,7 +411,7 @@ public class WebMapModule implements Listener {
             row.put("name", player.getName());
             row.put("displayName", player.getName());
             row.put("uuid", player.getUniqueId().toString());
-            row.put("world", world.getName());
+            row.put("world", getDimensionSettings(world).getDisplayName());
             row.put("worldKey", worldKey);
             row.put("x", location.getBlockX());
             row.put("y", location.getBlockY());
@@ -384,6 +444,9 @@ public class WebMapModule implements Listener {
                     world.getKey().toString(),
                     world.getName(),
                     dimension.getDisplayName(),
+                    getWorldGroup(world),
+                    getGroupDisplayName(getWorldGroup(world)),
+                    dimension.isShowPlayers(),
                     type,
                     world.getEnvironment().name(),
                     world.getSpawnLocation().getBlockX(),
@@ -1023,7 +1086,7 @@ public class WebMapModule implements Listener {
 
     private void syncKnownWorlds() {
         for (World world : plugin.getServer().getWorlds()) {
-            store.ensureDimensionSettings(settings, world);
+            getDimensionSettings(world);
         }
     }
 
@@ -1208,7 +1271,7 @@ public class WebMapModule implements Listener {
         int loadPercent = (int) Math.round(load * 100D);
         bar.setColor(loadPercent >= 50 ? BarColor.RED : loadPercent >= 25 ? BarColor.YELLOW : BarColor.GREEN);
         bar.setProgress(Math.max(0.05D, Math.min(1D, tps / 20D)));
-        bar.setTitle("§b" + world.getName()
+        bar.setTitle("§b" + (plugin.getOtherworldModule() == null ? world.getName() : plugin.getOtherworldModule().getWorldDisplayName(world))
                 + " §7ChunkGen §fTPS:" + String.format(java.util.Locale.ROOT, "%.2f", tps)
                 + " §fLoad:" + loadPercent + "%"
                 + " §fGenerated:" + job.generatedCount());

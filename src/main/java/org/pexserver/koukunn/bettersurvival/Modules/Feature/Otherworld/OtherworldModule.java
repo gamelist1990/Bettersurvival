@@ -347,6 +347,24 @@ public class OtherworldModule implements Listener {
         return Collections.unmodifiableSet(new LinkedHashSet<>(groups.keySet()));
     }
 
+    /** Resolve human-readable dimension names from the group registry rather than physical world identifiers. */
+    public synchronized String getWorldDimensionLabel(World world) {
+        if (isSelectionLobby(world)) return "ロビー";
+        String customKey = sourceCustomKey(world);
+        if (customKey != null) return customKey;
+        return switch (world.getEnvironment()) {
+            case NETHER -> "ネザー";
+            case THE_END -> "エンド";
+            default -> "オーバーワールド";
+        };
+    }
+
+    /** Build a display label for each group and its vanilla or mirrored custom dimension. */
+    public String getWorldDisplayName(World world) {
+        if (isSelectionLobby(world)) return "Otherworld ロビー";
+        return displayGroupName(getGroup(world)) + " / " + getWorldDimensionLabel(world);
+    }
+
     public String displayGroupName(String groupName) {
         if (groupName == null || !groupName.startsWith("u_")) {
             return groupName;

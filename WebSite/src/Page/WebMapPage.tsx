@@ -336,6 +336,8 @@ function normalizeWorldsResponse(payload: unknown): WorldSummary[] {
         name,
         displayName: typeof row.displayName === "string" && row.displayName ? row.displayName : name,
         order: Number.isFinite(row.order) ? Number(row.order) : 0,
+        group: typeof row.group === "string" ? row.group : "default",
+        groupDisplayName: typeof row.groupDisplayName === "string" ? row.groupDisplayName : "default",
         type: row.type === "nether" || row.type === "the_end" ? row.type : "normal",
         environment: typeof row.environment === "string" ? row.environment : "NORMAL",
         icon: typeof row.icon === "string" ? row.icon : null,
@@ -598,6 +600,16 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
     () => worlds.find((world) => world.key === activeWorldKey) ?? null,
     [worlds, activeWorldKey]
   );
+
+  const worldGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; worlds: WorldSummary[] }>();
+    for (const world of worlds) {
+      const group = groups.get(world.group) ?? { label: world.groupDisplayName, worlds: [] };
+      group.worlds.push(world);
+      groups.set(world.group, group);
+    }
+    return Array.from(groups, ([key, group]) => ({ key, ...group }));
+  }, [worlds]);
 
   useEffect(() => {
     if (!mapElementRef.current) {
@@ -1278,8 +1290,11 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
         </div>
         {worldPanelVisible ? (
           <fieldset id="worlds">
-            <legend>ワールド</legend>
-            {worlds.length ? worlds.map((world) => (
+            <legend>Otherworld</legend>
+            {worlds.length ? worldGroups.map((group) => (
+              <div key={group.key}>
+                <h3 className="webmap-group-label">{group.label}</h3>
+                {group.worlds.map((world) => (
               <a
                 key={world.key}
                 className={world.key === activeWorldKey ? "following" : ""}
@@ -1294,7 +1309,9 @@ export default function WebMapPage({ full = false }: WebMapPageProps) {
                 <img src={worldIcon(world.type, world.icon)} alt="" />
                 <span>{world.displayName}</span>
               </a>
-            )) : <p className="map-panel-empty">ワールド情報を取得中です。</p>}
+                ))}
+              </div>
+            )) : <p className="map-panel-empty">公開されているワールドがありません。</p>}
           </fieldset>
         ) : null}
         {playersPanelVisible ? (

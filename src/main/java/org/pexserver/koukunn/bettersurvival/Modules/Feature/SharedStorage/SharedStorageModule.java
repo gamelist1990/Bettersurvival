@@ -11,6 +11,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
@@ -888,7 +889,7 @@ public class SharedStorageModule implements Listener {
     private String formatLocation(Location location) {
         if (location == null || location.getWorld() == null)
             return "unknown";
-        return location.getWorld().getName() + " "
+        return OtherworldDisplayLabel.forWorld(plugin, location.getWorld()) + " "
                 + location.getBlockX() + ","
                 + location.getBlockY() + ","
                 + location.getBlockZ();

@@ -58,7 +58,7 @@ public class PartyCommand extends BaseCommand {
             sendInfo(player, "このワールドグループではパーティーに所属していません。/" + name + " から作成・検索できます");
             return;
         }
-        player.sendMessage("§d====== パーティー情報 [§b" + party.getScope() + "§d] ======");
+        player.sendMessage("§d====== パーティー情報 [§b" + module.scopeDisplayName(party.getScope()) + "§d] ======");
         player.sendMessage("§7名前: " + party.getColoredName());
         player.sendMessage("§7参加方式: " + (party.isPublicParty() ? "§a公開" : "§eプライベート (招待制)"));
         player.sendMessage("§7カラー: " + party.getColor().getLegacyCode() + party.getColor().getDisplayName());
@@ -78,7 +78,7 @@ public class PartyCommand extends BaseCommand {
     private void showList(Player player, PartyModule module) {
         List<Party> parties = module.getParties(player);
         if (parties.isEmpty()) { sendInfo(player, "このワールドグループにはパーティーがまだ存在しません"); return; }
-        player.sendMessage("§d====== パーティー一覧 [§b" + module.scope(player) + "§d] (" + parties.size() + ") ======");
+        player.sendMessage("§d====== パーティー一覧 [§b" + module.scopeDisplayName(module.scope(player)) + "§d] (" + parties.size() + ") ======");
         for (Party party : parties) {
             player.sendMessage("§7- " + (party.isPublicParty() ? "§a[公開] " : "§e[非公開] ")
                     + party.getColoredName() + " §7(" + party.getAllMembers().size() + "人)"

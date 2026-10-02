@@ -44,7 +44,7 @@ public class PartyMenu {
         List<Party> pending = parties.getPendingInvites(player.getUniqueId());
         List<Party> publicParties = parties.getPublicParties(player);
         ChestUI.Builder builder = ChestUI.builder()
-                .title("§dパーティー §8- §7" + parties.scope(player))
+                .title("§dパーティー §8- §7" + parties.scopeDisplayName(parties.scope(player)))
                 .size(36)
                 .addButtonAt(11, "§a§lパーティーを作成", Material.NETHER_STAR,
                         "§7新しいパーティーを作成します\n§7公開 / プライベートを選択できます")
@@ -85,7 +85,7 @@ public class PartyMenu {
         int rows = Math.max(3, Math.min(6, ((Math.max(1, list.size()) + 8) / 9) + 1));
         int size = rows * 9;
         ChestUI.Builder builder = ChestUI.builder()
-                .title("§b公開パーティー検索 §8- §7" + parties.scope(player))
+                .title("§b公開パーティー検索 §8- §7" + parties.scopeDisplayName(parties.scope(player)))
                 .size(size);
         Map<Integer, UUID> slotMap = new LinkedHashMap<>();
         int slot = 0;
@@ -296,7 +296,7 @@ public class PartyMenu {
                 .addButtonAt(4, party.getColoredName(), party.getColor().getIcon(),
                         desc
                                 + "\n§7参加方式: " + visibility
-                                + "\n§7ワールドグループ: §f" + party.getScope()
+                                + "\n§7ワールドグループ: §f" + parties.scopeDisplayName(party.getScope())
                                 + "\n§7リーダー: §e" + party.nameOf(party.getLeader())
                                 + "\n§7メンバー数: §e" + party.getAllMembers().size() + "人"
                                 + "\n§7あなたの階級: " + rank.getDisplayName())

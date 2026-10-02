@@ -269,6 +269,8 @@ public class WebMapHttpServer {
             row.put("key", worldKey);
             row.put("name", worldName);
             row.put("displayName", world.displayName());
+            row.put("group", world.group());
+            row.put("groupDisplayName", world.groupDisplayName());
             row.put("order", order++);
             row.put("type", world.type());
             row.put("environment", world.environment());
@@ -476,11 +478,13 @@ public class WebMapHttpServer {
         payload.put("key", world.key());
         payload.put("name", world.name());
         payload.put("displayName", world.displayName());
+        payload.put("group", world.group());
+        payload.put("groupDisplayName", world.groupDisplayName());
         payload.put("environment", world.environment());
         payload.put("type", type);
         payload.put("chunks", module.getChunkCount(world.key()));
         payload.put("playerTracker", Map.of(
-                "enabled", true,
+                "enabled", world.showPlayers(),
                 "nameplates", Map.of(
                         "enabled", true,
                         "showHeads", true,

@@ -10,6 +10,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.bukkit.block.Block;
 import io.papermc.paper.datacomponent.item.ResolvableProfile;
 import org.bukkit.entity.ArmorStand;
@@ -542,7 +543,7 @@ public class WarpStoneModule implements Listener {
                 z & 0xFF, (z >> 8) & 0xFF, (z >> 16) & 0xFF, (z >> 24) & 0xFF);
         int checksum = (x * 31 + y * 17 + z * 53) & 0xFFFF;
         long sectorId = Math.abs((long) cx * 1337L + (long) cz * 7331L) & 0xFFFFFFFFL;
-        String worldName = loc.getWorld() != null ? loc.getWorld().getName() : "unknown";
+        String worldName = OtherworldDisplayLabel.forWorld(plugin, loc.getWorld());
         String seqId = String.format("%04X", Math.abs(stoneName.hashCode()) & 0xFFFF);
 
         ItemStack book = new ItemStack(Material.WRITTEN_BOOK);

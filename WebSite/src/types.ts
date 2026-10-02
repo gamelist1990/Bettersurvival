@@ -12,6 +12,8 @@ export type WorldSummary = {
   key: string;
   name: string;
   displayName: string;
+  group: string;
+  groupDisplayName: string;
   order: number;
   type: "normal" | "nether" | "the_end";
   environment: string;

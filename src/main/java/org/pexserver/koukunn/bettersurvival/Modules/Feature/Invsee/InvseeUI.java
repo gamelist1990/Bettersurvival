@@ -13,6 +13,7 @@ import org.pexserver.koukunn.bettersurvival.Core.Util.ComponentUtils;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FloodgateUtil;
 import org.pexserver.koukunn.bettersurvival.Core.Util.FormsUtil;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.Discord.Module.Api.McApiClient;
 
 import java.util.ArrayList;
@@ -102,7 +103,7 @@ public class InvseeUI {
         holder.setPage(page);
         holder.setPlayerList(allPlayers);
         Inventory inv = ComponentUtils.createInventory(holder, 54,
-                TITLE_PLAYER_SELECT + " [" + scope + "] (" + (page + 1) + "/" + totalPages + ")");
+                TITLE_PLAYER_SELECT + " [" + OtherworldDisplayLabel.forGroup(plugin, scope) + "] (" + (page + 1) + "/" + totalPages + ")");
         holder.setInventory(inv);
 
         int start = page * itemsPerPage;
@@ -119,7 +120,7 @@ public class InvseeUI {
                 ComponentUtils.setDisplayName(meta, (isOnline ? "§a" : "§7") + name);
                 List<String> lore = new ArrayList<>();
                 lore.add(isOnline ? "§a● オンライン" : "§7● オフライン");
-                lore.add("§7グループ: §f" + scope);
+                lore.add("§7グループ: §f" + OtherworldDisplayLabel.forGroup(plugin, scope));
                 if (!isOnline && target.getLastPlayed() > 0) {
                     lore.add("§7最終ログイン: §f" + formatTimeAgo(System.currentTimeMillis() - target.getLastPlayed()));
                 }
@@ -150,7 +151,7 @@ public class InvseeUI {
             }
         } else if (!InvseeOfflineData.hasData(target, scope)) {
             viewer.sendMessage("§c[InvSee] §f" + (target.getName() != null ? target.getName() : "Unknown")
-                    + " §7の §f" + scope + " §7用オフライン保存データがありません");
+                    + " §7の §f" + OtherworldDisplayLabel.forGroup(plugin, scope) + " §7用オフライン保存データがありません");
             return;
         }
 
@@ -163,7 +164,7 @@ public class InvseeUI {
         InvseeHolder holder = new InvseeHolder(InvseeUIType.MAIN_INVENTORY, target, plugin, scope);
         String targetName = target.getName() != null ? target.getName() : "Unknown";
         String statusPrefix = isOnline ? "§a" : "§7";
-        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName + " §8[" + scope + "]");
+        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName + " §8[" + OtherworldDisplayLabel.forGroup(plugin, scope) + "]");
         holder.setInventory(inv);
 
         ItemStack[] contents = getPlayerInventoryContents(target, scope);
@@ -188,7 +189,7 @@ public class InvseeUI {
             ComponentUtils.setDisplayName(infoMeta, statusPrefix + "§l" + targetName);
             ComponentUtils.setLore(infoMeta, List.of(
                     isOnline ? "§a● オンライン" : "§7● オフライン",
-                    "§7グループ: §f" + scope,
+                    "§7グループ: §f" + OtherworldDisplayLabel.forGroup(plugin, scope),
                     "§7UUID: §f" + target.getUniqueId().toString().substring(0, 8) + "..."));
             infoHead.setItemMeta(infoMeta);
         }
@@ -204,7 +205,7 @@ public class InvseeUI {
         String targetName = target.getName() != null ? target.getName() : "Unknown";
         boolean isOnline = target.isOnline();
         String statusPrefix = isOnline ? "§a" : "§7";
-        Inventory inv = ComponentUtils.createInventory(holder, 27, TITLE_EQUIPMENT + statusPrefix + targetName + " §8[" + scope + "]");
+        Inventory inv = ComponentUtils.createInventory(holder, 27, TITLE_EQUIPMENT + statusPrefix + targetName + " §8[" + OtherworldDisplayLabel.forGroup(plugin, scope) + "]");
         holder.setInventory(inv);
 
         ItemStack border = createItem(Material.GRAY_STAINED_GLASS_PANE, " ");
@@ -232,7 +233,7 @@ public class InvseeUI {
 
         InvseeHolder holder = new InvseeHolder(InvseeUIType.ENDERCHEST, target, plugin, scope);
         String targetName = target.getName() != null ? target.getName() : "Unknown";
-        Inventory inv = ComponentUtils.createInventory(holder, 36, TITLE_ENDERCHEST + "§7" + targetName + " §8[" + scope + "]");
+        Inventory inv = ComponentUtils.createInventory(holder, 36, TITLE_ENDERCHEST + "§7" + targetName + " §8[" + OtherworldDisplayLabel.forGroup(plugin, scope) + "]");
         holder.setInventory(inv);
         ItemStack[] ecContents = getPlayerEnderchestContents(target, scope);
         for (int i = 0; i < 27 && i < ecContents.length; i++) if (ecContents[i] != null) inv.setItem(i, ecContents[i].clone());
@@ -340,7 +341,7 @@ public class InvseeUI {
             buttons.add(FormsUtil.ButtonSpec.ofUrl(prefix + " " + displayName, url));
         }
         buttons.add(FormsUtil.ButtonSpec.ofText("閉じる"));
-        FormsUtil.openSimpleForm(viewer, "InvSee [" + scope + "] - プレイヤー選択", buttons, idx -> {
+        FormsUtil.openSimpleForm(viewer, "InvSee [" + OtherworldDisplayLabel.forGroup(plugin, scope) + "] - プレイヤー選択", buttons, idx -> {
             if (idx < 0 || idx >= allPlayers.size()) return;
             openBedrockInventoryForm(viewer, allPlayers.get(idx), plugin);
         });
@@ -367,7 +368,7 @@ public class InvseeUI {
         String targetName = target.getName() != null ? target.getName() : "Unknown";
         boolean isOnline = target.isOnline();
         String statusPrefix = isOnline ? "§a" : "§7";
-        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName + " §8[" + scope + "]");
+        Inventory inv = ComponentUtils.createInventory(holder, 54, TITLE_INVENTORY + statusPrefix + targetName + " §8[" + OtherworldDisplayLabel.forGroup(plugin, scope) + "]");
         holder.setInventory(inv);
         ItemStack[] contents = getPlayerInventoryContents(target, scope);
         for (int i = 0; i < 36 && i < contents.length; i++) {

@@ -3,6 +3,8 @@ package org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.ui;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.pexserver.koukunn.bettersurvival.Core.Util.UI.ChestUI;
+import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.ContainerTarget;
 import org.pexserver.koukunn.bettersurvival.Modules.Feature.CopperGolem.model.GolemProfile;
 
@@ -29,7 +31,7 @@ public final class CopperGolemBoneMealSourceMenuUI {
         for (int i = 0; i < 45; i++) {
             if (i < profile.boneMealSources().size()) {
                 ContainerTarget target = profile.boneMealSources().get(i);
-                String worldName = target.anchor().getWorld() == null ? "unknown" : target.anchor().getWorld().getName();
+                String worldName = OtherworldDisplayLabel.forWorld(Loader.getPlugin(Loader.class), target.anchor().getWorld());
                 String lore = "§7" + worldName + " "
                         + target.anchor().getBlockX() + ", "
                         + target.anchor().getBlockY() + ", "

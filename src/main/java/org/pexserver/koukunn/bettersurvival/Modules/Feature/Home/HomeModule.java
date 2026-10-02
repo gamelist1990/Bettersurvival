@@ -95,7 +95,7 @@ public class HomeModule {
             return;
         }
         player.sendMessage("§e--- Home一覧 (" + homes.size() + "/" + unlocked + ") ---");
-        for (HomePoint home : homes) player.sendMessage("§a" + home.getName() + " §7- §f" + home.formatLocation());
+        for (HomePoint home : homes) player.sendMessage("§a" + home.getName() + " §7- §f" + home.formatLocation(plugin));
     }
 
     public void openUI(Player player) {
@@ -121,7 +121,7 @@ public class HomeModule {
         for (int slot : HOME_SLOTS) {
             if (index < homes.size()) {
                 HomePoint home = homes.get(index);
-                builder.addButtonAt(slot, "§b" + home.getName(), Material.ENDER_PEARL, "§7" + home.formatLocation() + "\n§aクリックで移動");
+                builder.addButtonAt(slot, "§b" + home.getName(), Material.ENDER_PEARL, "§7" + home.formatLocation(plugin) + "\n§aクリックで移動");
             } else if (index < unlocked) {
                 builder.addButtonAt(slot, "§a開放済みスロット #" + (index + 1), Material.LIME_STAINED_GLASS_PANE, "§7この枠は使えます\n§7下段の『現在地を登録』で追加");
             } else {
@@ -164,7 +164,7 @@ public class HomeModule {
         for (int slot : HOME_SLOTS) {
             if (index < homes.size()) {
                 HomePoint home = homes.get(index);
-                builder.addButtonAt(slot, "§c" + home.getName(), Material.RED_DYE, "§7" + home.formatLocation() + "\n§cクリックで削除");
+                builder.addButtonAt(slot, "§c" + home.getName(), Material.RED_DYE, "§7" + home.formatLocation(plugin) + "\n§cクリックで削除");
             } else builder.addButtonAt(slot, " ", Material.GRAY_STAINED_GLASS_PANE);
             index++;
         }

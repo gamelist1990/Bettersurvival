@@ -9,6 +9,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.pexserver.koukunn.bettersurvival.Core.Util.PlayerDisplayFormatter;
 import org.pexserver.koukunn.bettersurvival.Loader;
+import org.pexserver.koukunn.bettersurvival.Modules.Feature.Otherworld.OtherworldDisplayLabel;
 import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule;
 
 import java.util.ArrayList;
@@ -47,6 +48,10 @@ public class PartyModule implements Listener {
         if (world == null || plugin.getOtherworldModule() == null) return "default";
         String group = plugin.getOtherworldModule().getGroup(world);
         return group == null || group.isBlank() ? "default" : group.toLowerCase(Locale.ROOT);
+    }
+
+    public String scopeDisplayName(String scope) {
+        return OtherworldDisplayLabel.forGroup(plugin, normalizeScope(scope));
     }
 
     private String normalizeScope(String scope) {

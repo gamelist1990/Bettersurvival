@@ -112,6 +112,17 @@ public class WebMapSettings {
     public Set<String> getPublicationGroups() { return publicationGroups; }
     public void setPublicationGroups(Set<String> groups) { this.publicationGroups = groups == null ? new LinkedHashSet<>() : new LinkedHashSet<>(groups); }
 
+    /** Evaluate publication independently from per-dimension visibility; the selection lobby is never published. */
+    public boolean isGroupPublished(String group) {
+        if (group == null || "selection-lobby".equalsIgnoreCase(group)) return false;
+        if ("all".equalsIgnoreCase(publicationMode)) return true;
+        if ("group".equalsIgnoreCase(publicationMode)) return group.equalsIgnoreCase(publicationGroup);
+        if ("selected".equalsIgnoreCase(publicationMode)) {
+            return publicationGroups.stream().anyMatch(group::equalsIgnoreCase);
+        }
+        return "default".equalsIgnoreCase(group);
+    }
+
     public EventSettings getEvents() {
         return events;
     }
