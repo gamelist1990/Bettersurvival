@@ -7,6 +7,10 @@ authors: [ Koukunn ]
 description: PEXServer Plugin
 dependencies:
   server:
+    packetevents:
+      load: BEFORE
+      required: true
+      join-classpath: true
     floodgate:
       load: BEFORE
       required: false

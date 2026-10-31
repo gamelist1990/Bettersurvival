@@ -244,14 +244,13 @@ public class LoginInterceptor extends ChannelDuplexHandler {
         String playerName = gameProfile.name();
         UUID uniqueId = gameProfile.id();
         InetAddress address = ((InetSocketAddress) connection.getRemoteAddress()).getAddress();
-        InetAddress rawAddress = ((InetSocketAddress) connection.channel.remoteAddress()).getAddress();
 
         PlayerProfile profile = CraftPlayerProfile.asBukkitCopy(gameProfile);
         PaperPlayerLoginConnection loginConnection = new PaperPlayerLoginConnection(loginListener);
         AsyncPlayerPreLoginEvent asyncEvent = new AsyncPlayerPreLoginEvent(
                 playerName,
                 address,
-                rawAddress,
+                connection.channel.remoteAddress(),
                 uniqueId,
                 loginListener.transferred,
                 profile,

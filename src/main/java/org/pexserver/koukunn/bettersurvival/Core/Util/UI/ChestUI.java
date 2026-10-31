@@ -56,6 +56,7 @@ public class ChestUI implements InventoryHolder {
     private static final long BEDROCK_RESPAWN_UI_DELAY_MS = 500L;
     private static final long MILLIS_PER_TICK = 50L;
     private static final long MENU_TRANSITION_DELAY_TICKS = 1L;
+    private static final long BEDROCK_MENU_TRANSITION_DELAY_TICKS = 10L;
 
     private final int size;
     private final Map<Integer, ButtonInfo> buttons = new HashMap<>();
@@ -457,7 +458,8 @@ public class ChestUI implements InventoryHolder {
             handlers.put(playerId, handler);
 
             cancelPendingOpen(playerId);
-            long delayTicks = Math.max(calculateOpenDelayTicks(player), hadOpenTopInventory ? MENU_TRANSITION_DELAY_TICKS : 0L);
+            long delayTicks = transitionDelayTicks(FloodgateUtil.isBedrock(player), hadOpenTopInventory,
+                    calculateOpenDelayTicks(player));
             BukkitTask task = Loader.getPlugin(Loader.class).getServer().getScheduler().runTaskLater(
                     Loader.getPlugin(Loader.class),
                     () -> {
@@ -750,8 +752,8 @@ public class ChestUI implements InventoryHolder {
             if (menu != null && event.getInventory() == menu.getInventory()) {
                 openMenus.remove(playerId);
                 handlers.remove(playerId);
+                cancelPendingOpen(playerId);
             }
-            cancelPendingOpen(playerId);
         }
     }
 
@@ -877,7 +879,15 @@ public class ChestUI implements InventoryHolder {
             return false;
         }
         Inventory topInventory = player.getOpenInventory().getTopInventory();
-        return topInventory != null && topInventory.getType() != org.bukkit.event.inventory.InventoryType.PLAYER;
+        return topInventory != null && topInventory.getType() != org.bukkit.event.inventory.InventoryType.PLAYER
+                && topInventory.getType() != org.bukkit.event.inventory.InventoryType.CRAFTING
+                && topInventory.getType() != org.bukkit.event.inventory.InventoryType.CREATIVE;
+    }
+
+    static long transitionDelayTicks(boolean bedrock, boolean hadOpenTopInventory, long protectedDelay) {
+        long transitionDelay = !hadOpenTopInventory ? 0L
+                : bedrock ? BEDROCK_MENU_TRANSITION_DELAY_TICKS : MENU_TRANSITION_DELAY_TICKS;
+        return Math.max(protectedDelay, transitionDelay);
     }
 
     private static void openMenuInventory(Player player, ChestUI menu) {

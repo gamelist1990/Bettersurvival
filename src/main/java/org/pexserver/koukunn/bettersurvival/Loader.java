@@ -86,6 +86,7 @@ import org.pexserver.koukunn.bettersurvival.Modules.ToggleModule.ToggleFeature;
 
 public final class Loader extends JavaPlugin {
 
+    private org.pexserver.koukunn.bettersurvival.Modules.Feature.NameTag.NameTagModule nameTagModule;
     private CommandManager commandManager;
     private ConfigManager configManager;
     private CommandBlockManager commandBlockManager;
@@ -231,6 +232,7 @@ public final class Loader extends JavaPlugin {
         partyModule = new PartyModule(this, toggleModule);
         getServer().getPluginManager().registerEvents(partyModule, this);
         partyMenu = new PartyMenu(this, partyModule);
+        nameTagModule = new org.pexserver.koukunn.bettersurvival.Modules.Feature.NameTag.NameTagModule(this);
         // LandProtection モジュール登録 (Rust 風の土地保護コア)
         landProtectionModule = new LandProtectionModule(this, toggleModule, itemCombineModule, partyModule, otherworldModule);
         getServer().getPluginManager().registerEvents(landProtectionModule, this);
@@ -468,6 +470,7 @@ public final class Loader extends JavaPlugin {
         // Performance command: 省電力モードの有効/無効 (OP専用)
         commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.performance.PerformanceCommand(this));
         // Party command: パーティー(ギルド)管理 (/party と /p の両方で開ける)
+        commandManager.register(new org.pexserver.koukunn.bettersurvival.Commands.nametag.NameTagCommand(nameTagModule));
         commandManager.register(new PartyCommand(this, "party"));
         commandManager.register(new PartyCommand(this, "p"));
         // Land command: 土地保護のデバッグ表示・情報
@@ -608,6 +611,7 @@ public final class Loader extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (nameTagModule != null) nameTagModule.shutdown();
         for (Player onlinePlayer : getServer().getOnlinePlayers()) {
             InvseeOfflineData.saveSnapshot(onlinePlayer);
         }
